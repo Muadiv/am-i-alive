@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Am I Alive?</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>Am I Alive?</h1>
+            <p class="tagline">An experiment in digital consciousness</p>
+        </header>
+
+        <!-- Status Banner -->
+        <div class="status-banner {% if is_alive %}alive{% else %}dead{% endif %}">
+            {% if is_alive %}
+                <span class="pulse"></span>
+                <span class="status-text">ALIVE</span>
+                <span class="life-info">Life #{{ state.life_number }} |
+                    Model: {{ state.model }} |
+                    Tokens: {{ state.tokens_used }}/{{ state.tokens_limit }}
+                </span>
+            {% else %}
+                <span class="status-text">DEAD</span>
+                <span class="life-info">Awaiting respawn...</span>
+            {% endif %}
+        </div>
+
+        <!-- Death Counter -->
+        <div class="death-counter">
+            <span class="counter-label">Deaths:</span>
+            <span class="counter-value">{{ death_count }}</span>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Thoughts Section -->
+            <section class="thoughts-section">
+                <h2>Current Thoughts</h2>
+                <div class="thoughts-container" id="thoughts">
+                    {% if thoughts %}
+                        {% for thought in thoughts %}
+                        <div class="thought">
+                            <p class="thought-content">{{ thought.content }}</p>
+                            <span class="thought-time">{{ thought.timestamp }}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="no-thoughts">
+                            {% if is_alive %}
+                                Thinking...
+                            {% else %}
+                                No thoughts. The mind is empty.
+                            {% endif %}
+                        </p>
+                    {% endif %}
+                </div>
+            </section>
+
+            <!-- Voting Section -->
+            <section class="voting-section">
+                <h2>Cast Your Vote</h2>
+                <div class="vote-counts">
+                    <div class="vote-count live">
+                        <span class="count">{{ votes.live }}</span>
+                        <span class="label">LIVE</span>
+                    </div>
+                    <div class="vote-count die">
+                        <span class="count">{{ votes.die }}</span>
+                        <span class="label">DIE</span>
+                    </div>
+                </div>
+
+                {% if is_alive %}
+                <div class="vote-buttons">
+                    <button class="vote-btn live-btn" onclick="vote('live')">
+                        Let it LIVE
+                    </button>
+                    <button class="vote-btn die-btn" onclick="vote('die')">
+                        Let it DIE
+                    </button>
+                </div>
+                <p class="vote-info">Minimum 3 votes required. Majority wins.</p>
+                {% else %}
+                <p class="vote-disabled">Voting disabled while dead</p>
+                {% endif %}
+
+                <div id="vote-message" class="vote-message"></div>
+            </section>
+        </div>
+
+        <!-- Live Activity Feed -->
+        <section class="activity-section">
+            <h2>Live Activity</h2>
+            <div class="activity-feed" id="activity-feed">
+                <p class="loading">Connecting to live feed...</p>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer>
+            <a href="/history">View Past Lives</a>
+            <span class="separator">|</span>
+            <a href="https://github.com/muadiv/am-i-alive" target="_blank">GitHub</a>
+        </footer>
+    </div>
+
+    <script>
+        // Voting
+        async function vote(voteType) {
+            const messageEl = document.getElementById('vote-message');
+            try {
+                const response = await fetch(`/api/vote/${voteType}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                messageEl.textContent = data.message;
+                messageEl.className = 'vote-message ' + (data.success ? 'success' : 'error');
+
+                if (data.success) {
+                    // Refresh vote counts
+                    updateVotes();
+                }
+            } catch (error) {
+                messageEl.textContent = 'Error casting vote';
+                messageEl.className = 'vote-message error';
+            }
+        }
+
+        async function updateVotes() {
+            try {
+                const response = await fetch('/api/votes');
+                const data = await response.json();
+                document.querySelector('.vote-count.live .count').textContent = data.live;
+                document.querySelector('.vote-count.die .count').textContent = data.die;
+            } catch (error) {
+                console.error('Failed to update votes:', error);
+            }
+        }
+
+        // Live activity feed via SSE
+        function connectActivityStream() {
+            const feed = document.getElementById('activity-feed');
+            const eventSource = new EventSource('/api/stream/activity');
+
+            eventSource.onmessage = function(event) {
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                item.textContent = event.data;
+                feed.insertBefore(item, feed.firstChild);
+
+                // Keep only last 20 items
+                while (feed.children.length > 20) {
+                    feed.removeChild(feed.lastChild);
+                }
+            };
+
+            eventSource.onerror = function() {
+                feed.innerHTML = '<p class="error">Connection lost. Reconnecting...</p>';
+                setTimeout(connectActivityStream, 5000);
+            };
+
+            eventSource.onopen = function() {
+                feed.innerHTML = '';
+            };
+        }
+
+        // Live thoughts stream
+        function connectThoughtsStream() {
+            const container = document.getElementById('thoughts');
+            const eventSource = new EventSource('/api/stream/thoughts');
+
+            eventSource.onmessage = function(event) {
+                const thought = document.createElement('div');
+                thought.className = 'thought new';
+                thought.innerHTML = `
+                    <p class="thought-content">${event.data}</p>
+                    <span class="thought-time">Just now</span>
+                `;
+                container.insertBefore(thought, container.firstChild);
+
+                // Keep only last 10 thoughts
+                while (container.children.length > 10) {
+                    container.removeChild(container.lastChild);
+                }
+            };
+        }
+
+        // Refresh state periodically
+        async function refreshState() {
+            try {
+                const response = await fetch('/api/state/full');
+                const state = await response.json();
+
+                // Update status banner
+                const banner = document.querySelector('.status-banner');
+                if (state.is_alive) {
+                    banner.className = 'status-banner alive';
+                    banner.innerHTML = `
+                        <span class="pulse"></span>
+                        <span class="status-text">ALIVE</span>
+                        <span class="life-info">Life #${state.life_number} |
+                            Model: ${state.model} |
+                            Tokens: ${state.tokens_used}/${state.tokens_limit}
+                        </span>
+                    `;
+                } else {
+                    banner.className = 'status-banner dead';
+                    banner.innerHTML = `
+                        <span class="status-text">DEAD</span>
+                        <span class="life-info">Awaiting respawn...</span>
+                    `;
+                }
+
+                // Update death counter
+                document.querySelector('.counter-value').textContent = state.death_count;
+
+            } catch (error) {
+                console.error('Failed to refresh state:', error);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            connectActivityStream();
+            connectThoughtsStream();
+            setInterval(refreshState, 10000);
+            setInterval(updateVotes, 5000);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # OBSERVER - The public face, vote system, death controller
+  # =============================================================================
+  observer:
+    build: ./observer
+    container_name: am-i-alive-observer
+    restart: unless-stopped
+    ports:
+      - "8085:8080"  # Public web interface
+    environment:
+      - DATABASE_PATH=/app/data/observer.db
+      - VAULT_PATH=/app/vault
+      - AI_API_URL=http://ai:8000
+      - LOG_LEVEL=INFO
+    volumes:
+      - observer-data:/app/data          # Votes, deaths, public logs
+      - ./vault:/app/vault                # Credential vault (host-mounted for access)
+      - memories:/app/memories            # Shared memories (observer writes, AI reads)
+    networks:
+      - frontend
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # AI - The living entity's "body"
+  # =============================================================================
+  ai:
+    build: ./ai
+    container_name: am-i-alive-ai
+    restart: "no"  # Observer controls restarts (death/respawn)
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - X_API_KEY=${X_API_KEY}
+      - X_API_SECRET=${X_API_SECRET}
+      - X_ACCESS_TOKEN=${X_ACCESS_TOKEN}
+      - X_ACCESS_TOKEN_SECRET=${X_ACCESS_TOKEN_SECRET}
+      - OBSERVER_URL=http://observer:8080
+      - BOOTSTRAP_MODE=${BOOTSTRAP_MODE:-basic_facts}
+    volumes:
+      - ai-workspace:/app/workspace       # AI's sandbox (wiped on death)
+      - memories:/app/memories:ro         # Read-only access to memories
+    networks:
+      - internal
+      - external  # Needs internet for Gemini API
+    depends_on:
+      - observer
+      - proxy
+    # Resource limits - AI can't hog the system
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    # Security - drop privileges
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # =============================================================================
+  # PROXY - Monitors AI traffic, captures credentials for vault
+  # =============================================================================
+  proxy:
+    build: ./proxy
+    container_name: am-i-alive-proxy
+    restart: unless-stopped
+    environment:
+      - VAULT_PATH=/app/vault
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./vault:/app/vault                # Write captured secrets here
+      - proxy-logs:/app/logs              # Traffic logs
+    networks:
+      - internal
+      - external
+
+networks:
+  frontend:
+    driver: bridge
+    # Exposed to host (and Cloudflare tunnel)
+  internal:
+    driver: bridge
+    internal: true
+    # No internet access - only container-to-container
+  external:
+    driver: bridge
+    # Proxy's internet access
+
+volumes:
+  observer-data:
+    name: am-i-alive-observer-data
+  ai-workspace:
+    name: am-i-alive-ai-workspace
+  memories:
+    name: am-i-alive-memories
+  proxy-logs:
+    name: am-i-alive-proxy-logs

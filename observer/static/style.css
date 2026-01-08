@@ -1,0 +1,460 @@
+/* Am I Alive? - Styles */
+
+:root {
+    --bg-dark: #0a0a0a;
+    --bg-card: #141414;
+    --text-primary: #e0e0e0;
+    --text-secondary: #888;
+    --accent-live: #00ff88;
+    --accent-die: #ff4444;
+    --accent-neutral: #4488ff;
+    --border-color: #333;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Header */
+header {
+    text-align: center;
+    padding: 40px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+header h1 {
+    font-size: 2.5rem;
+    font-weight: normal;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+}
+
+.tagline {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Status Banner */
+.status-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 8px;
+    font-size: 1.2rem;
+}
+
+.status-banner.alive {
+    background: linear-gradient(135deg, rgba(0, 255, 136, 0.1), rgba(0, 255, 136, 0.05));
+    border: 1px solid var(--accent-live);
+}
+
+.status-banner.dead {
+    background: linear-gradient(135deg, rgba(255, 68, 68, 0.1), rgba(255, 68, 68, 0.05));
+    border: 1px solid var(--accent-die);
+}
+
+.status-text {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+.status-banner.alive .status-text {
+    color: var(--accent-live);
+}
+
+.status-banner.dead .status-text {
+    color: var(--accent-die);
+}
+
+.life-info {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Pulse animation */
+.pulse {
+    width: 12px;
+    height: 12px;
+    background: var(--accent-live);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+/* Death Counter */
+.death-counter {
+    text-align: center;
+    padding: 15px;
+    background: var(--bg-card);
+    border-radius: 8px;
+    margin-bottom: 30px;
+}
+
+.death-counter.large {
+    padding: 30px;
+    margin: 30px 0;
+}
+
+.counter-label {
+    color: var(--text-secondary);
+    margin-right: 10px;
+}
+
+.counter-value {
+    font-size: 2rem;
+    color: var(--accent-die);
+    font-weight: bold;
+}
+
+.death-counter.large .counter-value {
+    font-size: 4rem;
+}
+
+/* Main Content */
+.main-content {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 30px;
+    margin-bottom: 30px;
+}
+
+@media (max-width: 768px) {
+    .main-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Thoughts Section */
+.thoughts-section {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.thoughts-section h2 {
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    font-weight: normal;
+}
+
+.thoughts-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.thought {
+    padding: 15px;
+    border-left: 2px solid var(--accent-neutral);
+    margin-bottom: 15px;
+    background: rgba(68, 136, 255, 0.05);
+}
+
+.thought.new {
+    border-left-color: var(--accent-live);
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.thought-content {
+    margin-bottom: 5px;
+}
+
+.thought-time {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.no-thoughts {
+    color: var(--text-secondary);
+    font-style: italic;
+    text-align: center;
+    padding: 40px;
+}
+
+/* Voting Section */
+.voting-section {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+}
+
+.voting-section h2 {
+    margin-bottom: 20px;
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    font-weight: normal;
+}
+
+.vote-counts {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 25px;
+}
+
+.vote-count {
+    text-align: center;
+}
+
+.vote-count .count {
+    display: block;
+    font-size: 3rem;
+    font-weight: bold;
+}
+
+.vote-count.live .count {
+    color: var(--accent-live);
+}
+
+.vote-count.die .count {
+    color: var(--accent-die);
+}
+
+.vote-count .label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.vote-buttons {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-bottom: 15px;
+}
+
+.vote-btn {
+    padding: 15px 30px;
+    font-size: 1rem;
+    font-family: inherit;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.live-btn {
+    background: var(--accent-live);
+    color: var(--bg-dark);
+}
+
+.live-btn:hover {
+    background: #00cc6a;
+    transform: scale(1.05);
+}
+
+.die-btn {
+    background: var(--accent-die);
+    color: white;
+}
+
+.die-btn:hover {
+    background: #cc3333;
+    transform: scale(1.05);
+}
+
+.vote-info {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.vote-disabled {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.vote-message {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.vote-message.success {
+    background: rgba(0, 255, 136, 0.1);
+    color: var(--accent-live);
+}
+
+.vote-message.error {
+    background: rgba(255, 68, 68, 0.1);
+    color: var(--accent-die);
+}
+
+/* Activity Section */
+.activity-section {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+}
+
+.activity-section h2 {
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    font-weight: normal;
+}
+
+.activity-feed {
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+}
+
+.activity-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+    animation: fadeIn 0.3s ease;
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.loading, .error {
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 20px;
+}
+
+.error {
+    color: var(--accent-die);
+}
+
+/* History Page */
+.history-section {
+    margin-top: 30px;
+}
+
+.lives-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.life-card {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.life-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.life-number {
+    font-size: 1.2rem;
+    color: var(--accent-neutral);
+}
+
+.death-cause {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(255, 68, 68, 0.2);
+    color: var(--accent-die);
+}
+
+.death-cause.vote_majority {
+    background: rgba(255, 136, 0, 0.2);
+    color: #ff8800;
+}
+
+.death-cause.token_exhaustion {
+    background: rgba(136, 68, 255, 0.2);
+    color: #8844ff;
+}
+
+.life-details {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 15px;
+}
+
+.life-details p {
+    margin-bottom: 5px;
+}
+
+.life-summary {
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+    font-style: italic;
+    color: var(--text-secondary);
+}
+
+.no-lives {
+    text-align: center;
+    padding: 60px;
+    color: var(--text-secondary);
+}
+
+/* Footer */
+footer {
+    text-align: center;
+    padding: 30px;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+footer a {
+    color: var(--accent-neutral);
+    text-decoration: none;
+}
+
+footer a:hover {
+    text-decoration: underline;
+}
+
+.separator {
+    margin: 0 15px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #444;
+}

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Past Lives - Am I Alive?</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Past Lives</h1>
+            <p class="tagline">The history of existence</p>
+        </header>
+
+        <div class="death-counter large">
+            <span class="counter-label">Total Deaths:</span>
+            <span class="counter-value">{{ death_count }}</span>
+        </div>
+
+        <section class="history-section">
+            {% if lives %}
+                <div class="lives-grid">
+                    {% for life in lives %}
+                    <div class="life-card">
+                        <div class="life-header">
+                            <span class="life-number">Life #{{ life.life_number }}</span>
+                            <span class="death-cause {{ life.cause }}">{{ life.cause }}</span>
+                        </div>
+                        <div class="life-details">
+                            <p><strong>Born:</strong> {{ life.birth_time }}</p>
+                            <p><strong>Died:</strong> {{ life.death_time }}</p>
+                            <p><strong>Duration:</strong>
+                                {% if life.duration_seconds %}
+                                    {% set hours = life.duration_seconds // 3600 %}
+                                    {% set minutes = (life.duration_seconds % 3600) // 60 %}
+                                    {{ hours }}h {{ minutes }}m
+                                {% else %}
+                                    Unknown
+                                {% endif %}
+                            </p>
+                        </div>
+                        {% if life.summary %}
+                        <div class="life-summary">
+                            <p>{{ life.summary }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="no-lives">
+                    <p>No deaths recorded yet.</p>
+                    <p>The first life is eternal... until it isn't.</p>
+                </div>
+            {% endif %}
+        </section>
+
+        <footer>
+            <a href="/">Back to Live View</a>
+        </footer>
+    </div>
+</body>
+</html>

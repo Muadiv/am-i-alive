@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git check-ignore:*)",
+      "Bash(docker compose build:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker exec:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(curl:*)",
+      "Bash(python3 -m json.tool:*)",
+      "Bash(docker stop:*)",
+      "WebSearch",
+      "Bash(docker ps:*)",
+      "Bash(1 --tail 50)"
+    ]
+  }
+}

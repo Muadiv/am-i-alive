@@ -1,0 +1,48 @@
+# Private documentation (genesis conversations, design decisions, status tracking)
+docs/GENESIS.md
+docs/STATUS.md
+docs/private/
+
+# Vault - NEVER expose these
+vault/
+*.vault
+*.secrets
+
+# Environment and credentials
+.env
+.env.*
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/
+
+# Database files (may contain sensitive data)
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs that might contain sensitive info
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (if we use any JS)
+node_modules/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
