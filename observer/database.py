@@ -347,6 +347,9 @@ async def record_death(
         state = await get_current_state()
         life_number = state.get("life_number", 0)
         birth_time = state.get("birth_time")
+        # TASK-004: Ensure birth_time is always set for death records.
+        if birth_time is None:
+            birth_time = datetime.utcnow()
         death_time = datetime.utcnow()
 
         duration = None
@@ -811,12 +814,17 @@ async def can_send_message(ip_hash: str) -> tuple[bool, Optional[int]]:
 async def submit_visitor_message(from_name: str, message: str, ip_hash: str) -> dict:
     """Submit a message from a visitor to the AI."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("""
+        cursor = await db.execute("""
             INSERT INTO visitor_messages (from_name, message, ip_hash)
             VALUES (?, ?, ?)
         """, (from_name, message, ip_hash))
         await db.commit()
-        return {"success": True, "message": "Message sent to the AI"}
+        # TASK-004: Return message id for tests and follow-up actions.
+        return {
+            "success": True,
+            "message": "Message sent to the AI",
+            "id": cursor.lastrowid
+        }
 
 
 async def get_unread_messages() -> list:
@@ -893,6 +901,19 @@ async def create_blog_post(life_number: int, title: str, content: str, tags: lis
     """Create a new blog post."""
     import re
 
+    # TASK-004: Validate inputs for direct DB calls.
+    if not title or not content:
+        return {"success": False, "error": "Title and content required"}
+
+    if len(title) > 200:
+        return {"success": False, "error": "Title too long (max 200 chars)"}
+
+    if len(content) < 100:
+        return {"success": False, "error": "Content too short (min 100 chars)"}
+
+    if len(content) > 50000:
+        return {"success": False, "error": "Content too long (max 50k chars)"}
+
     # Generate slug from title
     slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
     slug = f"{life_number}-{slug}"  # Prefix with life number for uniqueness
@@ -931,7 +952,7 @@ async def get_current_life_blog_posts(life_number: int, limit: int = 20) -> list
                    view_count, created_at, updated_at
             FROM blog_posts
             WHERE life_number = ?
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT ?
         """, (life_number, limit)) as cursor:
             posts = []
@@ -952,7 +973,7 @@ async def get_all_blog_posts(limit: int = 100, offset: int = 0) -> list:
             SELECT id, life_number, title, slug, content, tags, reading_time,
                    view_count, created_at, updated_at
             FROM blog_posts
-            ORDER BY life_number DESC, created_at DESC
+            ORDER BY life_number DESC, created_at DESC, id DESC
             LIMIT ? OFFSET ?
         """, (limit, offset)) as cursor:
             posts = []

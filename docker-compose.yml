@@ -36,6 +36,9 @@ services:
     container_name: am-i-alive-ai
     restart: "no"  # Observer controls restarts (death/respawn)
     environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_REFERER=${OPENROUTER_REFERER:-https://am-i-alive.muadiv.com.ar}
+      - OPENROUTER_TITLE=${OPENROUTER_TITLE:-Am I Alive - Genesis}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - X_API_KEY=${X_API_KEY}
       - X_API_SECRET=${X_API_SECRET}
@@ -43,15 +46,23 @@ services:
       - X_ACCESS_TOKEN_SECRET=${X_ACCESS_TOKEN_SECRET}
       - OBSERVER_URL=http://observer:8080
       - BOOTSTRAP_MODE=${BOOTSTRAP_MODE:-basic_facts}
+      - PYTHONUNBUFFERED=1  # Force unbuffered output for complete logs
     volumes:
       - ai-workspace:/app/workspace       # AI's sandbox (wiped on death)
+      - ai-credits:/app/credits           # Credits persist across deaths
       - memories:/app/memories:ro         # Read-only access to memories
     networks:
       - internal
-      - external  # Needs internet for Gemini API
+      - external  # Needs internet for OpenRouter API
     depends_on:
       - observer
       - proxy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        mode: "non-blocking"  # Don't block on log writes
     # Resource limits - AI can't hog the system
     deploy:
       resources:
@@ -101,6 +112,8 @@ volumes:
     name: am-i-alive-observer-data
   ai-workspace:
     name: am-i-alive-ai-workspace
+  ai-credits:
+    name: am-i-alive-ai-credits  # Persistent credit tracking
   memories:
     name: am-i-alive-memories
   proxy-logs:

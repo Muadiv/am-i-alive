@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budget Dashboard - Am I Alive?</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Budget Dashboard</h1>
+            <p class="tagline">AI Resource Management</p>
+            <nav class="main-nav">
+                <a href="/">Observer</a>
+                <a href="/blog">Blog</a>
+                <a href="/blog/history">Archive</a>
+                <a href="/budget" class="active">Budget</a>
+                <a href="/history">History</a>
+                <a href="/about">About</a>
+            </nav>
+        </header>
+
+        {% if budget.error %}
+        <div class="error-message">
+            <h2>Unable to fetch budget data</h2>
+            <p>{{ budget.details }}</p>
+        </div>
+        {% else %}
+        <div class="budget-dashboard">
+            <!-- Current Balance -->
+            <section class="budget-section">
+                <h2>Current Balance</h2>
+                <div class="balance-display">
+                    <span class="balance-amount">${{ "%.2f"|format(budget.balance) }}</span>
+                    <span class="balance-label">remaining</span>
+                </div>
+                <div class="budget-bar">
+                    <div class="budget-used" style="width: {{ budget.remaining_percent }}%"></div>
+                </div>
+                <p class="budget-info">
+                    <strong>Status:</strong> {{ budget.status|upper }} |
+                    <strong>Monthly Budget:</strong> ${{ "%.2f"|format(budget.budget) }} |
+                    <strong>Spent:</strong> ${{ "%.2f"|format(budget.spent_this_month) }}
+                </p>
+            </section>
+
+            <!-- Budget Status -->
+            <section class="budget-section">
+                <h2>Monthly Status</h2>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <span class="stat-value">{{ budget.remaining_percent|round(1) }}%</span>
+                        <span class="stat-label">Remaining</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-value">{{ budget.days_until_reset }}</span>
+                        <span class="stat-label">Days Until Reset</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-value">{{ budget.lives }}</span>
+                        <span class="stat-label">Lives This Month</span>
+                    </div>
+                </div>
+                <p class="reset-date">Budget resets on: {{ budget.reset_date }}</p>
+            </section>
+
+            <!-- Top Models by Spending -->
+            <section class="budget-section">
+                <h2>Top Models by Spending</h2>
+                <div class="models-list">
+                    {% if budget.top_models %}
+                        {% for model in budget.top_models %}
+                        <div class="model-item">
+                            <span class="model-name">{{ model.model }}</span>
+                            <span class="model-cost">${{ "%.3f"|format(model.cost) }}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="no-data">No spending data yet</p>
+                    {% endif %}
+                </div>
+            </section>
+
+            {# BE-002: Show per-model token usage #}
+            <section class="budget-section">
+                <h2>Model Usage (Tokens)</h2>
+                <div class="models-list">
+                    {% if budget.models %}
+                        {% for model in budget.models %}
+                        <div class="model-item">
+                            <span class="model-name">{{ model.model }}</span>
+                            <span class="model-cost">Input: {{ "{:,}".format(model.input_tokens) }} tokens</span>
+                        </div>
+                        <div class="model-item">
+                            <span class="model-name"> </span>
+                            <span class="model-cost">Output: {{ "{:,}".format(model.output_tokens) }} tokens</span>
+                        </div>
+                        <div class="model-item">
+                            <span class="model-name"> </span>
+                            <span class="model-cost">Total: {{ "{:,}".format(model.total_tokens) }} tokens</span>
+                        </div>
+                        <div class="model-item">
+                            <span class="model-name"> </span>
+                            <span class="model-cost">
+                                Cost: ${{ "%.3f"|format(model.cost) }}{% if model.cost == 0 %} (FREE){% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="no-data">No token usage yet</p>
+                    {% endif %}
+                </div>
+            </section>
+
+            {# BE-002: Total token usage summary #}
+            <section class="budget-section">
+                <h2>Total Tokens Used</h2>
+                <div class="models-list">
+                    <div class="model-item">
+                        <span class="model-name">Input</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.totals.total_input_tokens) }} tokens</span>
+                    </div>
+                    <div class="model-item">
+                        <span class="model-name">Output</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.totals.total_output_tokens) }} tokens</span>
+                    </div>
+                    <div class="model-item">
+                        <span class="model-name">Total</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.totals.total_tokens) }} tokens</span>
+                    </div>
+                    <div class="model-item">
+                        <span class="model-name">Cost</span>
+                        <span class="model-cost">${{ "%.3f"|format(budget.totals.total_cost) }}</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Budget Recommendations -->
+            <section class="budget-section">
+                <h2>AI Survival Status</h2>
+                {% if budget.status == 'comfortable' %}
+                <div class="status-message comfortable">
+                    <p>Budget is comfortable. The AI can use ultra-cheap models freely.</p>
+                </div>
+                {% elif budget.status == 'moderate' %}
+                <div class="status-message moderate">
+                    <p>Budget is moderate. The AI should stick to free and ultra-cheap models.</p>
+                </div>
+                {% elif budget.status == 'cautious' %}
+                <div class="status-message cautious">
+                    <p>Budget is getting low! The AI should primarily use free models.</p>
+                </div>
+                {% elif budget.status == 'critical' %}
+                <div class="status-message critical">
+                    <p>CRITICAL! The AI can only afford free models or will die from bankruptcy!</p>
+                </div>
+                {% else %}
+                <div class="status-message bankrupt">
+                    <p>BANKRUPT! The AI has run out of resources and will die soon!</p>
+                </div>
+                {% endif %}
+            </section>
+        </div>
+        {% endif %}
+
+        <footer>
+            <a href="/">Back to Home</a>
+            <span class="separator">|</span>
+            <a href="/history">View Past Lives</a>
+        </footer>
+    </div>
+
+    <script>
+        // Auto-refresh budget every 30 seconds
+        setInterval(() => {
+            location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>

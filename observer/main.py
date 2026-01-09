@@ -39,6 +39,8 @@ MIN_VOTES_FOR_DEATH = 3
 # BE-002: Reduce respawn delay for testing
 RESPAWN_DELAY_MIN = 10
 RESPAWN_DELAY_MAX = 60
+# BE-003: State sync validator interval (seconds)
+STATE_SYNC_INTERVAL_SECONDS = 30
 
 
 @app.on_event("startup")
@@ -48,6 +50,7 @@ async def startup():
     # Start background tasks
     asyncio.create_task(voting_window_checker())
     asyncio.create_task(token_budget_checker())
+    asyncio.create_task(state_sync_validator())  # BE-003
 
 
 # =============================================================================
@@ -400,6 +403,11 @@ async def create_blog_post_api(request: Request):
         tags
     )
 
+    # TASK-004: Surface DB validation failures explicitly.
+    if not result.get("success"):
+        await db.log_activity("blog_post_failed", result.get("error", "unknown"))
+        raise HTTPException(status_code=400, detail=result.get("error", "Blog post failed"))
+
     # Log activity
     await db.log_activity("blog_post_written", f"Title: {title}")
 
@@ -534,13 +542,28 @@ async def schedule_respawn():
 async def notify_ai_birth(life_info: dict) -> bool:
     """Notify the AI container that it's time to wake up."""
     # BE-002: Add retry logic and logging
+    # BE-003: Ensure life_number is always included (Observer is source of truth).
+    life_number = life_info.get("life_number")
+    if life_number is None:
+        await db.log_activity("birth_notification_failed", "Missing life_number for AI birth")
+        return False
+
+    payload = {
+        "life_number": life_number,
+        "bootstrap_mode": life_info.get("bootstrap_mode"),
+        "model": life_info.get("model"),
+        "tokens_limit": life_info.get("tokens_limit"),
+        "birth_time": life_info.get("birth_time"),
+        "memories": life_info.get("memories", [])
+    }
+
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{AI_API_URL}/birth",
-                    json=life_info,
+                    json=payload,
                     timeout=10.0
                 )
             if response.status_code == 200:
@@ -561,6 +584,73 @@ async def notify_ai_birth(life_info: dict) -> bool:
 # =============================================================================
 # BACKGROUND TASKS
 # =============================================================================
+
+async def validate_state_sync_once():
+    """Validate that AI state matches Observer state (single iteration)."""
+    # BE-003: Observer is source of truth for life_number.
+    observer_state = await db.get_current_state()
+
+    if not observer_state.get("is_alive"):
+        return
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{AI_API_URL}/state", timeout=5.0)
+
+        if response.status_code != 200:
+            raise RuntimeError(f"AI state fetch failed: {response.status_code}")
+
+        ai_state = response.json()
+
+        observer_life = observer_state.get("life_number")
+        ai_life = ai_state.get("life_number")
+
+        if observer_life != ai_life:
+            print("[SYNC] ⚠️  DESYNC DETECTED!")
+            print(f"[SYNC]    Observer: Life #{observer_life}")
+            print(f"[SYNC]    AI:       Life #{ai_life}")
+
+            await force_ai_sync(observer_state)
+
+    except Exception as e:
+        print(f"[SYNC] ❌ Validation error: {e}")
+
+
+async def state_sync_validator():
+    """Continuously validate AI state matches Observer state."""
+    # BE-003: Heartbeat validation loop.
+    while True:
+        await asyncio.sleep(STATE_SYNC_INTERVAL_SECONDS)
+        await validate_state_sync_once()
+
+
+async def force_ai_sync(observer_state: dict):
+    """Force AI to sync with Observer state."""
+    # BE-003: Emergency sync mechanism.
+    print("[SYNC] 🔄 Forcing AI to sync with Observer state...")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{AI_API_URL}/force-sync",
+                json={
+                    "life_number": observer_state.get("life_number"),
+                    "bootstrap_mode": observer_state.get("bootstrap_mode"),
+                    "model": observer_state.get("model"),
+                    "is_alive": observer_state.get("is_alive", False)
+                },
+                timeout=10.0
+            )
+
+        if response.status_code == 200:
+            print("[SYNC] ✅ AI synced successfully")
+            await db.log_activity("state_sync", "AI state force-synced with Observer")
+        else:
+            print(f"[SYNC] ❌ Sync failed: {response.status_code}")
+
+    except Exception as e:
+        print(f"[SYNC] ❌ Force sync error: {e}")
+
 
 async def voting_window_checker():
     """Check voting windows and trigger death if votes require it."""
@@ -630,21 +720,31 @@ async def token_budget_checker():
 async def stream_activity(request: Request):
     """Stream live activity updates via SSE."""
     async def event_generator():
-        last_id = 0
+        last_timestamp = None
+        sent_ids = set()
+
         while True:
             if await request.is_disconnected():
                 break
 
-            # Get new activity since last check
-            activity = await db.get_recent_activity(10)
-            for item in reversed(activity):
-                # Simple way to track what we've sent
-                yield {
-                    "event": "activity",
-                    "data": f"{item['timestamp']} - {item['action']}: {item.get('details', '')}"
-                }
+            # Get recent activity
+            activity = await db.get_recent_activity(20)
 
-            await asyncio.sleep(1)
+            # Only send new items we haven't sent before
+            for item in activity:
+                item_id = f"{item['timestamp']}:{item['action']}"
+                if item_id not in sent_ids:
+                    sent_ids.add(item_id)
+                    yield {
+                        "event": "activity",
+                        "data": f"{item['timestamp']} - {item['action']}: {item.get('details', '')}"
+                    }
+
+            # Keep sent_ids bounded
+            if len(sent_ids) > 100:
+                sent_ids.clear()
+
+            await asyncio.sleep(2)  # Check every 2 seconds instead of 1
 
     return EventSourceResponse(event_generator())
 

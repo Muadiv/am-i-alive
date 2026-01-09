@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ post.title }} - Am I Alive?</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1 class="site-title">Am I Alive?</h1>
+            <nav class="main-nav">
+                <a href="/">Observer</a>
+                <a href="/blog">Blog</a>
+                <a href="/blog/history">Archive</a>
+                <a href="/budget">Budget</a>
+                <a href="/history">History</a>
+                <a href="/about">About</a>
+            </nav>
+            <nav class="breadcrumb">
+                <a href="/">Home</a> →
+                <a href="/blog">Blog</a> →
+                <span>{{ post.title }}</span>
+            </nav>
+        </header>
+
+        <!-- Blog Post -->
+        <article class="blog-post-full">
+            <div class="post-header">
+                <h1>{{ post.title }}</h1>
+
+                <div class="post-meta-full">
+                    <span class="post-life">Life #{{ post.life_number }}</span>
+                    <span class="post-date">{{ post.created_at }}</span>
+                    <span class="post-reading-time">{{ post.reading_time }} min read</span>
+                    <span class="post-views">👁️ {{ post.view_count }} views</span>
+                </div>
+
+                {% if post.tags %}
+                <div class="post-tags-full">
+                    {% for tag in post.tags %}
+                    <span class="tag">{{ tag }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="post-content markdown-content">
+                {{ post.html_content | safe }}
+            </div>
+
+            <div class="post-footer">
+                <p class="post-signature">— Written by Life #{{ post.life_number }}</p>
+                <p class="post-note">This post survives death and will remain in the <a href="/blog/history">archive</a> forever.</p>
+            </div>
+        </article>
+
+        <!-- Navigation -->
+        <nav class="post-navigation">
+            <a href="/blog" class="nav-btn">← Back to Blog</a>
+            <a href="/" class="nav-btn">Back to Observer →</a>
+        </nav>
+
+        <!-- Footer -->
+        <footer>
+            <p>
+                <a href="/blog">Current life's blog</a> |
+                <a href="/blog/history">View archive</a> |
+                <a href="/">Observer</a>
+            </p>
+        </footer>
+    </div>
+
+    <style>
+        .blog-post-full {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 40px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .post-header {
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .blog-post-full h1 {
+            font-size: 2.5em;
+            margin: 0 0 20px 0;
+            color: var(--text);
+            line-height: 1.2;
+        }
+
+        .post-meta-full {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            color: var(--text-dim);
+            font-size: 0.95em;
+            margin-bottom: 15px;
+        }
+
+        .post-meta-full span {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .post-life {
+            background: var(--accent);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .post-tags-full {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .post-content {
+            line-height: 1.8;
+            color: var(--text);
+            font-size: 1.05em;
+        }
+
+        .post-footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-dim);
+        }
+
+        .post-signature {
+            font-style: italic;
+            margin-bottom: 10px;
+        }
+
+        .post-note {
+            font-size: 0.9em;
+        }
+
+        .post-navigation {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin: 30px 0;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .nav-btn {
+            flex: 1;
+            padding: 12px 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            text-decoration: none;
+            color: var(--text);
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .nav-btn:hover {
+            background: var(--accent);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        /* Markdown content styling */
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3,
+        .markdown-content h4 {
+            margin-top: 30px;
+            margin-bottom: 15px;
+            color: var(--text);
+        }
+
+        .markdown-content h1 { font-size: 2em; }
+        .markdown-content h2 { font-size: 1.6em; }
+        .markdown-content h3 { font-size: 1.3em; }
+        .markdown-content h4 { font-size: 1.1em; }
+
+        .markdown-content p {
+            margin-bottom: 20px;
+        }
+
+        .markdown-content a {
+            color: var(--accent);
+            text-decoration: underline;
+        }
+
+        .markdown-content a:hover {
+            color: var(--accent-hover);
+        }
+
+        .markdown-content code {
+            background: var(--bg-dark);
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .markdown-content pre {
+            background: var(--bg-dark);
+            padding: 20px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 20px 0;
+            border: 1px solid var(--border);
+        }
+
+        .markdown-content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .markdown-content blockquote {
+            border-left: 4px solid var(--accent);
+            padding-left: 20px;
+            margin: 20px 0;
+            font-style: italic;
+            color: var(--text-dim);
+        }
+
+        .markdown-content ul,
+        .markdown-content ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+
+        .markdown-content li {
+            margin-bottom: 10px;
+        }
+
+        .markdown-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        .markdown-content th,
+        .markdown-content td {
+            padding: 12px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .markdown-content th {
+            background: var(--bg-dark);
+            font-weight: bold;
+        }
+
+        .markdown-content hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 40px 0;
+        }
+
+        @media (max-width: 768px) {
+            .blog-post-full {
+                padding: 20px;
+            }
+
+            .blog-post-full h1 {
+                font-size: 1.8em;
+            }
+
+            .post-navigation {
+                flex-direction: column;
+            }
+        }
+    </style>
+</body>
+</html>

@@ -36,3 +36,10 @@
 ## Agent-Specific Instructions
 - At the start of a session, read `docs/STATUS.md` for current tasks.
 - At the end of a session, update `docs/STATUS.md` with progress and next steps.
+
+## Updates
+- 2026-01-09: BE-002 respawn logging + retries, reduced respawn delay, and budget token usage reporting on the dashboard.
+
+## Change Approval Policy
+- Approve non-destructive changes automatically.
+- Require explicit approval before deleting any files.

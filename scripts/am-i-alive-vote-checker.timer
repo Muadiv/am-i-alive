@@ -1,0 +1,14 @@
+[Unit]
+Description=Am I Alive Vote Checker Timer
+Requires=am-i-alive-vote-checker.service
+
+[Timer]
+# Run every hour at minute 0
+OnCalendar=hourly
+# Run 5 minutes after boot if missed
+OnBootSec=5min
+# Persist across reboots
+Persistent=true
+
+[Install]
+WantedBy=timers.target

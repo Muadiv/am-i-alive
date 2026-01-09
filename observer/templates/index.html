@@ -329,26 +329,56 @@
         function connectActivityStream() {
             const feed = document.getElementById('activity-feed');
             const eventSource = new EventSource('/api/stream/activity');
+            const seenActivities = new Set();
 
-            eventSource.onmessage = function(event) {
+            // TASK-004: Listen for named activity events from SSE.
+            // FIX: Only add new items to prevent blinking
+            const handleActivity = function(event) {
+                const data = event.data;
+
+                // Skip duplicates using simple hash
+                const hash = data.substring(0, 100);
+                if (seenActivities.has(hash)) {
+                    return;
+                }
+                seenActivities.add(hash);
+
                 const item = document.createElement('div');
                 item.className = 'activity-item';
-                item.textContent = event.data;
+                item.textContent = data;
+                item.style.opacity = '0';
+                item.style.transition = 'opacity 0.3s ease-in';
+
                 feed.insertBefore(item, feed.firstChild);
+
+                // Fade in
+                setTimeout(() => { item.style.opacity = '1'; }, 10);
 
                 // Keep only last 20 items
                 while (feed.children.length > 20) {
-                    feed.removeChild(feed.lastChild);
+                    const removed = feed.removeChild(feed.lastChild);
+                    // Remove from seen set (keep set bounded)
+                    if (seenActivities.size > 50) {
+                        seenActivities.clear();
+                    }
                 }
             };
 
+            eventSource.addEventListener('activity', handleActivity);
+            eventSource.onmessage = handleActivity;
+
             eventSource.onerror = function() {
-                feed.innerHTML = '<p class="error">Connection lost. Reconnecting...</p>';
+                if (feed.children.length === 0) {
+                    feed.innerHTML = '<p class="error">Connection lost. Reconnecting...</p>';
+                }
                 setTimeout(connectActivityStream, 5000);
             };
 
             eventSource.onopen = function() {
-                feed.innerHTML = '';
+                // Don't clear feed on reconnect - prevents blinking
+                if (feed.querySelector('.error')) {
+                    feed.innerHTML = '';
+                }
             };
         }
 
