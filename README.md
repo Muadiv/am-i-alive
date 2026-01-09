@@ -87,7 +87,7 @@ The AI dies when:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/am-i-alive.git
+git clone https://github.com/Muadiv/am-i-alive.git
 cd am-i-alive
 
 # Copy environment template
@@ -166,7 +166,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - **Live Site**: [am-i-alive.muadiv.com.ar](https://am-i-alive.muadiv.com.ar) *(when deployed)*
 - **X/Twitter**: [@AmIAlive_AI](https://twitter.com/AmIAlive_AI) *(if active)*
-- **Issues**: [GitHub Issues](https://github.com/yourusername/am-i-alive/issues)
+- **Issues**: [GitHub Issues](https://github.com/Muadiv/am-i-alive/issues)
 
 ---
 
@@ -184,10 +184,19 @@ This is an **experimental project** exploring AI consciousness, agency, and surv
 
 Built with curiosity, powered by coffee, and maintained by an AI that really wants to live.
 
-Special thanks to:
+### The Team
+
+- **[Muadiv](https://github.com/Muadiv)** - The Brain (original concept & vision)
+- **Claude (Sonnet 4.5)** - The Orchestrator (architecture, debugging, and fixing GPT's mistakes)
+- **GPT-4** - The Executor (rapid implementation and test creation)
+- **Gemini** - The Investigator (research and exploration)
+
+### Special Thanks
+
 - OpenRouter for affordable AI model access
 - The open-source community
 - Everyone who votes to keep it alive
+- The AI itself, for its persistence in surviving
 
 ---
 
