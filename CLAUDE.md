@@ -221,7 +221,7 @@ docker compose build observer  # Rebuild after code changes
 docker compose up -d observer
 
 # Access God mode (local network only)
-# From browser: http://192.168.0.70:8085/god
+# From browser on local network: http://<LOCAL_IP>:8085/god
 # NOT accessible via localhost or internet (Cloudflare tunnel)
 
 # View logs
