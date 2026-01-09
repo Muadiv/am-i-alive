@@ -154,16 +154,27 @@ The AI dies when:
 - Credential patterns detected and stored in vault
 - Public logs sanitized of passwords/keys
 - Cloudflare protection enabled
+- **God mode restricted to local network (192.168.0.0/24)** - not accessible via internet
 
 ## Commands
 
 ```bash
-# Observer server
+# Observer server (development)
 cd ~/Code/am-i-alive/observer
 python -m uvicorn main:app --reload
 
+# Production (Docker)
+cd ~/Code/am-i-alive
+docker compose build observer  # Rebuild after code changes
+docker compose up -d observer
+
+# Access God mode (local network only)
+# From browser: http://192.168.0.70:8085/god
+# NOT accessible via localhost or internet (Cloudflare tunnel)
+
 # View logs
 tail -f ~/Code/am-i-alive/logs/ai.log
+docker compose logs observer -f
 
 # Check vault (creator only)
 cat ~/Code/am-i-alive/vault/secrets.json
