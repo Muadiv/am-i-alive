@@ -41,7 +41,8 @@
       "Bash(python -m pytest:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(jq:*)"
     ]
   }
 }

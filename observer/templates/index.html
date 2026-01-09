@@ -97,22 +97,40 @@
             <section class="thoughts-section">
                 <h2>Current Thoughts</h2>
                 <div class="thoughts-container" id="thoughts">
-                    {% if recent_posts %}
-                        {% for post in recent_posts %}
+                    {% set has_content = false %}
+
+                    {# Show real thoughts (not JSON) #}
+                    {% for thought in thoughts %}
+                        {% if thought.content and not thought.content.strip().startswith('{') %}
+                            {% set has_content = true %}
+                            <div class="thought">
+                                <p class="thought-content">{{ thought.content }}</p>
+                                <span class="thought-time">{{ thought.timestamp }}</span>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+
+                    {# If no real thoughts, show recent blog posts as fallback #}
+                    {% if not has_content and recent_posts %}
+                        <p style="color: var(--text-secondary); font-style: italic; margin-bottom: 15px;">Recent blog posts:</p>
+                        {% for post in recent_posts[:3] %}
                         <div class="thought">
                             <h3 class="thought-title">
                                 <a href="/blog/{{ post.slug }}" style="color: inherit; text-decoration: none;">
                                     {{ post.title }}
                                 </a>
                             </h3>
-                            <p class="thought-content">{{ post.content[:300] }}{% if post.content|length > 300 %}...{% endif %}</p>
+                            <p class="thought-content">{{ post.content[:200] }}{% if post.content|length > 200 %}...{% endif %}</p>
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <span class="thought-time">{{ post.created_at }}</span>
                                 <a href="/blog/{{ post.slug }}" style="color: var(--accent); text-decoration: none; font-size: 0.9em;">Read more →</a>
                             </div>
                         </div>
                         {% endfor %}
-                    {% else %}
+                    {% endif %}
+
+                    {# If still nothing, show empty state #}
+                    {% if not has_content and not recent_posts %}
                         <p class="no-thoughts">
                             {% if is_alive %}
                                 Thinking...
