@@ -183,6 +183,47 @@
                 </button>
             </div>
 
+            <!-- AI Identity Editor -->
+            <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.3);">
+                <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">🎭 AI Identity</h3>
+
+                <div class="god-form" style="background: rgba(100,150,255,0.1); padding: 20px; border-radius: 8px;">
+                    <div class="form-group">
+                        <label for="ai-name">AI Name:</label>
+                        <input
+                            type="text"
+                            id="ai-name"
+                            placeholder="e.g., 'Aether', 'Nova', 'Echo'..."
+                            maxlength="30"
+                            style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 5px; box-sizing: border-box;"
+                        />
+                        <small style="display: block; margin-top: 5px; color: #666;">
+                            Give the AI a name to display in the status banner
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ai-icon">AI Icon (Emoji):</label>
+                        <input
+                            type="text"
+                            id="ai-icon"
+                            placeholder="e.g., '🤖', '✨', '🧠', '👾'..."
+                            maxlength="4"
+                            style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 5px; box-sizing: border-box;"
+                        />
+                        <small style="display: block; margin-top: 5px; color: #666;">
+                            Single emoji to display next to "ALIVE"
+                        </small>
+                    </div>
+
+                    <button onclick="updateIdentity()" class="send-btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-top: 10px;">
+                        💾 Save Identity
+                    </button>
+
+                    <div id="identity-status" class="status-message" style="display: none; margin-top: 15px;"></div>
+                </div>
+            </div>
+
             <!-- TASK-004: God mode kill button -->
             <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.3);">
                 <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">💀 Life &amp; Death Control</h3>
@@ -509,8 +550,66 @@
             }
         }
 
-        // Load chronicle on page load
-        document.addEventListener('DOMContentLoaded', loadChronicle);
+        // AI Identity Management
+        async function loadIdentity() {
+            try {
+                const response = await fetch('/api/state/full');
+                const state = await response.json();
+
+                if (state.ai_name) {
+                    document.getElementById('ai-name').value = state.ai_name;
+                }
+                if (state.ai_icon) {
+                    document.getElementById('ai-icon').value = state.ai_icon;
+                }
+            } catch (error) {
+                console.error('Failed to load identity:', error);
+            }
+        }
+
+        async function updateIdentity() {
+            const name = document.getElementById('ai-name').value.trim();
+            const icon = document.getElementById('ai-icon').value.trim();
+            const statusEl = document.getElementById('identity-status');
+
+            if (!name && !icon) {
+                statusEl.textContent = '⚠️ Please provide at least a name or icon';
+                statusEl.className = 'status-message error';
+                statusEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/identity/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, icon })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusEl.textContent = '✅ Identity updated! Refresh the homepage to see changes.';
+                    statusEl.className = 'status-message success';
+                } else {
+                    statusEl.textContent = '❌ ' + (data.message || 'Failed to update');
+                    statusEl.className = 'status-message error';
+                }
+
+                statusEl.style.display = 'block';
+                setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
+            } catch (error) {
+                statusEl.textContent = '❌ Error: ' + error.message;
+                statusEl.className = 'status-message error';
+                statusEl.style.display = 'block';
+            }
+        }
+
+        // Load chronicle and identity on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadChronicle();
+            loadIdentity();
+        });
     </script>
 </body>
 </html>

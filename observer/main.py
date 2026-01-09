@@ -994,6 +994,42 @@ async def get_chronicle_events(life: int = None, limit: int = 50):
 
 
 # =============================================================================
+# AI IDENTITY API
+# =============================================================================
+
+@app.post("/api/identity/update")
+async def update_identity(request: Request):
+    """Update AI name and icon (God mode)."""
+    try:
+        data = await request.json()
+        name = data.get("name", "").strip()
+        icon = data.get("icon", "").strip()
+
+        # Validate
+        if name and len(name) > 30:
+            raise HTTPException(status_code=400, detail="Name too long (max 30 chars)")
+
+        if icon and len(icon) > 4:
+            raise HTTPException(status_code=400, detail="Icon too long (max 4 chars)")
+
+        # Update database
+        success = await db.update_ai_identity(
+            name=name if name else None,
+            icon=icon if icon else None
+        )
+
+        if success:
+            return {"success": True, "message": "Identity updated"}
+        else:
+            return {"success": False, "message": "No changes made"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
 # VISITOR MESSAGES API
 # =============================================================================
 

@@ -109,7 +109,9 @@ async def init_db():
                 tokens_used INTEGER DEFAULT 0,
                 tokens_limit INTEGER DEFAULT 50000,
                 last_thought_time DATETIME,
-                last_seen DATETIME
+                last_seen DATETIME,
+                ai_name TEXT,
+                ai_icon TEXT
             )
         """)
 
@@ -128,6 +130,14 @@ async def init_db():
             if 'last_seen' not in column_names:
                 await db.execute("ALTER TABLE current_state ADD COLUMN last_seen DATETIME")
                 print("[DB] ✅ Added last_seen column to current_state")
+
+            if 'ai_name' not in column_names:
+                await db.execute("ALTER TABLE current_state ADD COLUMN ai_name TEXT")
+                print("[DB] ✅ Added ai_name column to current_state")
+
+            if 'ai_icon' not in column_names:
+                await db.execute("ALTER TABLE current_state ADD COLUMN ai_icon TEXT")
+                print("[DB] ✅ Added ai_icon column to current_state")
         except Exception as e:
             print(f"[DB] Migration check error: {e}")
 
@@ -235,6 +245,29 @@ async def get_current_state() -> dict:
             if row:
                 return dict(row)
             return {"life_number": 0, "is_alive": False}
+
+
+async def update_ai_identity(name: str = None, icon: str = None) -> bool:
+    """Update AI name and icon."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        updates = []
+        params = []
+
+        if name is not None:
+            updates.append("ai_name = ?")
+            params.append(name)
+
+        if icon is not None:
+            updates.append("ai_icon = ?")
+            params.append(icon)
+
+        if not updates:
+            return False
+
+        query = f"UPDATE current_state SET {', '.join(updates)} WHERE id = 1"
+        await db.execute(query, params)
+        await db.commit()
+        return True
 
 
 async def get_death_count() -> int:

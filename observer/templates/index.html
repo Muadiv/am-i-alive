@@ -60,7 +60,9 @@
         <div class="status-banner {% if is_alive %}alive{% else %}dead{% endif %}">
             {% if is_alive %}
                 <span class="pulse"></span>
-                <span class="status-text">ALIVE</span>
+                <span class="status-text">
+                    {% if state.ai_icon %}{{ state.ai_icon }} {% endif %}ALIVE{% if state.ai_name %} - {{ state.ai_name }}{% endif %}
+                </span>
                 <span class="life-info">
                     Life #{{ state.life_number }} |
                     Alive for: <span id="time-alive">calculating...</span> |
