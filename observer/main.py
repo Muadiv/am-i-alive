@@ -5,6 +5,7 @@ The public face of the experiment: voting, viewing, and life/death control.
 
 import asyncio
 import hashlib
+import ipaddress
 import os
 import random
 from datetime import datetime
@@ -41,6 +42,31 @@ RESPAWN_DELAY_MIN = 10
 RESPAWN_DELAY_MAX = 60
 # BE-003: State sync validator interval (seconds)
 STATE_SYNC_INTERVAL_SECONDS = 30
+
+# Local network for God mode access
+LOCAL_NETWORK = ipaddress.ip_network("192.168.0.0/24")
+
+
+def is_local_request(request: Request) -> bool:
+    """Check if request comes from local network."""
+    if not request.client:
+        return False
+
+    try:
+        client_ip = ipaddress.ip_address(request.client.host)
+        return client_ip in LOCAL_NETWORK
+    except ValueError:
+        # Invalid IP format
+        return False
+
+
+def require_local_network(request: Request):
+    """Raise HTTPException if request is not from local network."""
+    if not is_local_request(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: God mode only accessible from local network"
+        )
 
 
 @app.on_event("startup")
@@ -203,8 +229,8 @@ async def blog_post(request: Request, slug: str):
 
 @app.get("/god", response_class=HTMLResponse)
 async def god_mode(request: Request):
-    """God Mode interface - secret admin page."""
-    # TODO: Add authentication in production
+    """God Mode interface - secret admin page (local network only)."""
+    require_local_network(request)
     return templates.TemplateResponse("god.html", {
         "request": request
     })
@@ -461,8 +487,8 @@ def sanitize_log(text: str) -> str:
 
 @app.post("/api/kill")
 async def kill_ai(request: Request, background_tasks: BackgroundTasks):
-    """Kill the AI (manual death by creator)."""
-    # TODO: Add authentication for creator
+    """Kill the AI (manual death by creator - local network only)."""
+    require_local_network(request)
     data = await request.json()
     cause = data.get("cause", "manual_kill")
 
@@ -477,8 +503,9 @@ async def kill_ai(request: Request, background_tasks: BackgroundTasks):
 
 
 @app.post("/api/respawn")
-async def respawn_ai():
-    """Force respawn (for testing)."""
+async def respawn_ai(request: Request):
+    """Force respawn (for testing - local network only)."""
+    require_local_network(request)
     state = await db.get_current_state()
     if state.get("is_alive"):
         return {"success": False, "message": "AI is still alive"}
