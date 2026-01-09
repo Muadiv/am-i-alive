@@ -118,6 +118,8 @@ async def test_death_triggers_respawn(main_module, test_db, monkeypatch):
     monkeypatch.setattr(main_module, "notify_ai_birth", AsyncMock(return_value=True))
 
     class MockRequest:
+        client = type("Client", (), {"host": "192.168.0.10"})()
+
         async def json(self):
             return {"cause": "manual_kill"}
 

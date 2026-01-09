@@ -5,7 +5,7 @@
 ### ISSUE-001: State Desync Between Observer and AI Containers
 
 **Priority:** High
-**Status:** Open
+**Status:** Partially Resolved
 **Discovered:** 2026-01-09
 **Component:** Observer/AI Communication
 
@@ -131,10 +131,10 @@ docker compose restart observer ai
 
 #### Files to Modify
 
-- [ ] `ai/brain.py` - Remove autonomous life management
-- [ ] `observer/main.py` - Add state validation
-- [ ] `observer/database.py` - Add sync_state() function
-- [ ] `observer/tests/test_birth_sync.py` - Add sync tests
+- [x] `ai/brain.py` - Remove autonomous life management
+- [x] `observer/main.py` - Add state validation
+- [x] `observer/database.py` - Add sync support
+- [x] `observer/tests/test_state_sync.py` - Added sync tests
 
 #### Related Issues
 
@@ -149,9 +149,64 @@ docker compose restart observer ai
 
 ---
 
+### ISSUE-003: Token Exhaustion Desync (AI Continues After Death)
+
+**Priority:** High  
+**Status:** Open  
+**Discovered:** 2026-01-09  
+**Component:** Observer/AI State Consistency
+
+#### Description
+
+Observer marks the AI dead due to token exhaustion, but the AI continues running and
+sending heartbeats (last_seen keeps updating). This creates a "dead-but-alive" desync.
+
+#### Evidence (Life #105)
+
+- `current_state`: `is_alive=0`, `life_number=105`, `model="NVIDIA Nemotron Nano"`,  
+  `tokens_used=227815`, `tokens_limit=83000`, `last_seen=2026-01-09 16:19:57`.
+- Latest death: `cause="token_exhaustion"` at `2026-01-09 15:50:48` for Life #105.
+- Model switches happened after that death.
+
+#### Impact
+
+- Observer UI shows DEAD while AI is still acting.
+- Votes are blocked even though AI is active.
+- State consistency breaks (token death not enforced).
+
+#### Proposed Directions (no changes yet)
+
+1) Enforce death on AI side when Observer records a death.
+2) Detect "alive while dead" and either stop AI or reconcile state.
+3) Sync model changes without affecting life state (chosen direction).
+4) Review token exhaustion thresholds to avoid premature death.
+
+---
+
 ## 🟡 Medium Priority Issues
 
-*(None yet)*
+### ISSUE-002: God Mode Admin Tools Missing (Message History + Vote Override)
+
+**Priority:** Medium  
+**Status:** Open  
+**Discovered:** 2026-01-09  
+**Component:** Observer/God Mode
+
+#### Description
+
+God Mode should provide a full message history (visitor + god mode/oracle messages) and allow
+manual adjustment of the vote counters. This is currently missing.
+
+#### Requested Behavior
+
+- Show a list of all visitor messages (read + unread) in God Mode.
+- Show a list of all Oracle/God Mode messages sent to the AI.
+- Allow manual modification of live/die vote counters from God Mode.
+
+#### Notes
+
+- This is an admin-only feature (local network).
+- No changes implemented yet; requirements documented for future work.
 
 ---
 

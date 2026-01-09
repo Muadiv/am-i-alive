@@ -15,6 +15,8 @@ async def test_kill_endpoint_with_custom_cause(main_module, monkeypatch, test_db
     request_data = {"cause": "code_restart"}
 
     class FakeRequest:
+        client = type("Client", (), {"host": "192.168.0.10"})()
+
         async def json(self):
             return request_data
 

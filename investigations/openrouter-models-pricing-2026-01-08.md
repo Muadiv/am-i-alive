@@ -1,5 +1,7 @@
 # OpenRouter Models & Pricing Research
 
+> Historical draft. Canonical pricing now lives in `docs/OPENROUTER_MODELS.md`.
+
 **Research Date**: 2026-01-08
 **Status**: 📋 Draft - Awaiting Gemini Research
 **Researcher**: Gemini + Claude Validation

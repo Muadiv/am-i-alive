@@ -1,5 +1,7 @@
 # GPT TASK-004: Fix Issues Found in BE-003 Review
 
+> Historical task spec (implemented). Keep for reference; do not treat as active work.
+
 ## Context
 
 User reviewed the BE-003 implementation and found several issues that need fixing. See `BE-003-ISSUES.md` for full details.

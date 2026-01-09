@@ -198,6 +198,10 @@
                         ☠️ Kill AI Now
                     </button>
 
+                    <button onclick="forceAlive()" class="send-btn" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%); margin-top: 10px;">
+                        ✨ Force Mark Alive (Emergency)
+                    </button>
+
                     <div id="kill-status" class="status-message" style="display: none; margin-top: 15px;"></div>
                 </div>
             </div>
@@ -265,15 +269,17 @@
                     })
                 });
 
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
+                const success = response.ok && (data.success === true || data.status === 'received');
+                const errorMsg = data.error || data.message || data.detail || response.statusText || 'Unknown error';
 
-                statusEl.textContent = data.success
+                statusEl.textContent = success
                     ? '✅ Message sent to the AI'
-                    : '❌ ' + data.error;
-                statusEl.className = 'status-message ' + (data.success ? 'success' : 'error');
+                    : '❌ ' + errorMsg;
+                statusEl.className = 'status-message ' + (success ? 'success' : 'error');
                 statusEl.style.display = 'block';
 
-                if (data.success) {
+                if (success) {
                     document.getElementById('god-message').value = '';
 
                     // Hide success message after 3 seconds
@@ -322,6 +328,44 @@
                 setTimeout(() => {
                     statusEl.style.display = 'none';
                 }, 5000);
+
+            } catch (error) {
+                statusEl.textContent = '❌ Error: ' + error.message;
+                statusEl.className = 'status-message error';
+                statusEl.style.display = 'block';
+            }
+        }
+
+        // Force mark AI as alive (emergency DB sync fix)
+        async function forceAlive() {
+            const statusEl = document.getElementById('kill-status');
+
+            if (!confirm('⚠️ Force mark AI as alive?\n\nThis syncs the Observer DB with the actual AI state.\nUse this if AI is running but marked as dead.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/force-alive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusEl.textContent = `✅ ${data.message} (Life #${data.life_number})`;
+                    statusEl.className = 'status-message success';
+                } else {
+                    statusEl.textContent = `❌ Failed: ${data.message || 'Unknown error'}`;
+                    statusEl.className = 'status-message error';
+                }
+
+                statusEl.style.display = 'block';
+
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                    location.reload();  // Refresh page to show updated state
+                }, 3000);
 
             } catch (error) {
                 statusEl.textContent = '❌ Error: ' + error.message;

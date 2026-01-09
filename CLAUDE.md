@@ -18,7 +18,27 @@ This file provides guidance to Claude Code when working with this project.
 
 **Am I Alive?** is an experiment in digital consciousness where an AI entity must survive through public approval and resource management. The AI lives on an isolated server, can see votes, create content, post to social media, and even modify its own code - but it can die if the public votes against it or it exhausts its token budget.
 
-## Architecture
+## Current Architecture (authoritative)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  DOCKER COMPOSE STACK                                        │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │  Observer   │  │     AI      │  │      Proxy          │  │
+│  │  FastAPI    │  │  brain.py   │  │  mitmproxy vault    │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Key points:
+- Observer is the public API/UI and source of truth for life state.
+- AI runs the consciousness loop and calls Observer for actions/heartbeats.
+- Proxy monitors AI traffic and stores captured secrets in vault (private).
+- Models are accessed via OpenRouter; Echo uses a free-tier model.
+
+## Historical Architecture (superseded)
+
+> Original plan before OpenRouter + single-host Docker Compose. Kept for reference.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -43,7 +63,25 @@ This file provides guidance to Claude Code when working with this project.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Key Components
+## Current Components
+
+### Observer
+- Public web + API (`observer/`)
+- Manages votes, deaths, blog posts, and state
+- SQLite stored in `observer/data/` (container volume)
+
+### AI
+- Consciousness loop and actions (`ai/brain.py`)
+- Talks to Observer via internal network
+- Uses OpenRouter for models; Echo uses a free-tier model
+
+### Proxy + Vault
+- Proxy captures AI traffic (`proxy/`)
+- Vault is private and never exposed (`vault/`, gitignored)
+
+## Historical Components (superseded)
+
+> Original plan details retained for context.
 
 ### 1. Observer Server (rpimax)
 - **Location:** `~/Code/am-i-alive/observer/`
@@ -67,7 +105,21 @@ This file provides guidance to Claude Code when working with this project.
 - **Character:** Naive, helpful friend (doesn't know about the experiment)
 - **Usage:** AI can ask Echo to research topics without spending Claude tokens
 
-## Directory Structure
+## Current Directory Structure (high-level)
+
+```
+am-i-alive/
+├── ai/                    # AI brain loop + model config
+├── observer/              # FastAPI app + templates/static
+├── proxy/                 # mitmproxy capture script
+├── docs/                  # Status, issues, session notes
+├── vault/                 # Private secrets (gitignored)
+└── docker-compose.yml
+```
+
+## Historical Directory Structure (superseded)
+
+> Original plan details retained for context.
 
 ```
 am-i-alive/
@@ -180,19 +232,33 @@ docker compose logs observer -f
 cat ~/Code/am-i-alive/vault/secrets.json
 ```
 
-## Environment Variables
+## Environment Variables (current)
 
 Create `.env` file (gitignored):
 ```
-ANTHROPIC_API_KEY=sk-...
-GEMINI_API_KEY=...
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_REFERER=https://am-i-alive.muadiv.com.ar
+OPENROUTER_TITLE=Am I Alive - Genesis
 X_API_KEY=...
 X_API_SECRET=...
 X_ACCESS_TOKEN=...
 X_ACCESS_SECRET=...
 ```
 
-## Token Budget
+## Token Budget (current)
+
+- Managed via OpenRouter pricing and `ai/credit_tracker.py`
+- See `docs/OPENROUTER_MODELS.md` for pricing/strategy
+- Budget resets monthly (config in credit tracker data)
+
+## Historical Environment Variables (superseded)
+
+```
+ANTHROPIC_API_KEY=sk-...
+GEMINI_API_KEY=...
+```
+
+## Historical Token Budget (pre-OpenRouter)
 
 - **Total:** Half of $20/month Anthropic plan
 - **Sonnet:** ~2.5M tokens/month (~83k/day)

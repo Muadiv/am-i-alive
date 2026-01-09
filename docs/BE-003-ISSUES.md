@@ -1,5 +1,7 @@
 # BE-003 Implementation Issues
 
+> Historical reference (resolved/handled). Keep for context; do not treat as current backlog.
+
 ## Issues Found During Review
 
 ### 1. ❌ **No Blog Posts Created (CRITICAL)**

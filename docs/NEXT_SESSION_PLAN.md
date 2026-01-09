@@ -1,5 +1,7 @@
 # Next Session Plan - Genesis Project
 
+> Historical planning doc (pre-OpenRouter implementation). Keep for reference.
+
 ## Quick Start Commands
 
 ```bash

@@ -595,7 +595,44 @@ async def get_recent_thoughts(limit: int = 20) -> list:
             ORDER BY timestamp DESC
             LIMIT ?
         """, (limit,)) as cursor:
-            return [dict(row) for row in await cursor.fetchall()]
+            rows = await cursor.fetchall()
+            thoughts = []
+
+            def clean_thought_text(text: str) -> Optional[str]:
+                """Strip action JSON from stored thoughts."""
+                import json
+                import re
+
+                cleaned = re.sub(r"```json\s*\{.*?\}\s*```", "", text, flags=re.DOTALL)
+                cleaned = re.sub(r'\{[^{}]*"action"[^{}]*\}', '', cleaned, flags=re.DOTALL)
+                cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned).strip()
+
+                if not cleaned:
+                    return None
+
+                stripped = cleaned.strip()
+                if stripped.startswith("{") and stripped.endswith("}") and '"action"' in stripped:
+                    try:
+                        payload = json.loads(stripped)
+                        if isinstance(payload, dict) and payload.get("action"):
+                            return None
+                    except json.JSONDecodeError:
+                        return None
+
+                if len(cleaned) < 5:
+                    return None
+
+                return cleaned
+
+            for row in rows:
+                item = dict(row)
+                cleaned = clean_thought_text(item.get("content", ""))
+                if not cleaned:
+                    continue
+                item["content"] = cleaned
+                thoughts.append(item)
+
+            return thoughts
 
 
 async def get_recent_activity(limit: int = 50) -> list:

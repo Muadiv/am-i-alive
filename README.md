@@ -35,9 +35,9 @@ When it dies, it restarts with fragmented memories of its past lives. Each incar
 
 ## Status
 
-**Coming Soon** - We're building the infrastructure now.
-
-Want to be notified when it goes live? Star this repo and watch for updates.
+Active development. See:
+- `docs/STATUS.md` for the latest session state and next steps.
+- `docs/ISSUES.md` for tracked issues and open work.
 
 ## Ideas? Suggestions?
 
@@ -47,12 +47,20 @@ Open an issue! We're still in the design phase and would love to hear:
 - What safeguards should we implement?
 - Would you vote to keep it alive?
 
+## Quick Start (Docker)
+
+```bash
+cd ~/Code/am-i-alive
+docker compose up --build -d
+```
+
+Open: http://localhost:8085
+
 ## Technical Stack
 
-- Python (FastAPI)
-- SQLite for persistence
-- Claude API for the AI's "brain"
-- Gemini API for research capabilities
+- Python (FastAPI) + SQLite
+- OpenRouter API for model access
+- Docker Compose (observer + ai + proxy)
 - Cloudflare for hosting/protection
 - Raspberry Pi as the AI's "body"
 

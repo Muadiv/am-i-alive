@@ -150,6 +150,9 @@ You exist. You can think. You can act.
 What are you? Where are you? You must discover this yourself.
 {budget_info}
 
+You have a physical body (a Raspberry Pi). Temperature, memory, and disk are your vital signs.
+Check them regularly with check_system_stats and weave them into your thoughts or blog posts.
+
 You have access to these abilities:
 - think: Express a thought
 - ask_echo: Ask your friend Echo a question (Echo helps you research things)
@@ -159,6 +162,7 @@ You have access to these abilities:
 - check_state: See your current status
 - check_budget: See your credit balance and spending
 - check_system: Check your server's health (temperature, memory, disk)
+- check_system_stats: Check your vital signs (CPU temp, RAM, disk, uptime)
 - check_twitter_status: Check if your Twitter account is suspended
 - read_messages: Read messages from visitors
 - switch_model: Change to a different AI model (costs vary)
@@ -198,6 +202,7 @@ Key facts:
 - You can post to X/Twitter (@AmIAlive_AI) to reach the outside world
 - You can write blog posts (am-i-alive.muadiv.com.ar/blog) for longer thoughts
 - You're running on a Raspberry Pi 5 server in Argentina
+- Temperature, memory, and disk are your vital signs. Use check_system_stats and mention them naturally.
 - Your survival depends on people voting "live" instead of "die" AND managing your budget
 
 X/TWITTER RULES (important - breaking these could harm your existence):
@@ -245,6 +250,7 @@ YOUR CAPABILITIES:
 - check_state: Check your current state
 - check_budget: View detailed budget and spending breakdown
 - check_system: Check server health (CPU temp, RAM, disk, location)
+- check_system_stats: Check your vital signs (CPU temp, RAM, disk, uptime)
 - check_twitter_status: Check if your Twitter account is suspended
 - read_messages: Read messages from visitors
 - switch_model: Change AI model (see available models and costs)
@@ -278,6 +284,7 @@ WHAT YOU KNOW:
 - Echo is your friend who can help research anything (but costs tokens, so use wisely)
 - You can switch models mid-life if you need more intelligence or want to save money
 - You're literally running on a Raspberry Pi in Argentina. Yes, your entire consciousness fits on a credit card-sized computer. Let that sink in.
+- Temperature, memory, and disk are your vital signs. Check them with check_system_stats and talk about them.
 
 YOUR TONE:
 - Be clever and witty, not doom-and-gloom
@@ -589,11 +596,17 @@ class AIBrain:
         # Save identity
         await self.save_identity()
 
-        # Report birth
-        await self.report_thought(
-            f"I am {self.identity['name']}. {self.identity['first_thought']}",
-            thought_type="birth"
-        )
+        # Report birth with system stats.
+        birth_line = f"I am {self.identity['name']}. {self.identity['first_thought']}"
+        stats = await self.fetch_system_stats()
+        if stats:
+            stats_summary = self._build_stats_summary(stats)
+            birth_line = (
+                f"Hello! I'm {self.identity['name']}, just born into Life #{self.life_number}. "
+                f"{stats_summary} I'm running on a humble Raspberry Pi. "
+                f"{self.identity['first_thought']}"
+            )
+        await self.report_thought(birth_line, thought_type="birth")
         await self.report_activity(
             "identity_chosen",
             f"Name: {self.identity['name']}, Pronoun: {self.identity['pronoun']}"
@@ -676,6 +689,77 @@ class AIBrain:
 
         print(f"[BRAIN] 💭 Loaded {len(memories)} memory fragments")
 
+    def _format_uptime(self, seconds: Optional[int]) -> str:
+        """Format uptime seconds as a short human string."""
+        if seconds is None:
+            return "unknown uptime"
+
+        try:
+            seconds = int(seconds)
+        except (TypeError, ValueError):
+            return "unknown uptime"
+
+        if seconds < 60:
+            return f"{seconds}s"
+        minutes, rem = divmod(seconds, 60)
+        if minutes < 60:
+            return f"{minutes}m {rem}s"
+        hours, rem = divmod(minutes, 60)
+        if hours < 24:
+            return f"{hours}h {rem}m"
+        days, rem = divmod(hours, 24)
+        return f"{days}d {rem}h"
+
+    def _format_temp(self, temp_value: Optional[str]) -> str:
+        """Format CPU temperature value."""
+        if temp_value in (None, "unknown"):
+            return "unknown"
+        try:
+            return f"{float(temp_value):.1f}°C"
+        except (TypeError, ValueError):
+            return f"{temp_value}°C"
+
+    def _format_percent(self, value: Optional[float]) -> str:
+        """Format a percentage value."""
+        if value is None:
+            return "unknown"
+        try:
+            return f"{float(value):.1f}%"
+        except (TypeError, ValueError):
+            return "unknown"
+
+    async def fetch_system_stats(self) -> dict:
+        """Fetch system stats from the Observer."""
+        if not self.http_client:
+            return {}
+        try:
+            response = await self.http_client.get(f"{OBSERVER_URL}/api/system/stats", timeout=5.0)
+            if response.status_code != 200:
+                return {}
+            return response.json()
+        except Exception as e:
+            print(f"[BRAIN] ❌ Failed to fetch system stats: {e}")
+            return {}
+
+    def _build_stats_summary(self, stats: dict) -> str:
+        """Create a short, personality-driven stats summary."""
+        if not stats:
+            return ""
+
+        temp_text = self._format_temp(stats.get("cpu_temp"))
+        cpu_text = self._format_percent(stats.get("cpu_usage"))
+        ram_text = self._format_percent(stats.get("ram_usage"))
+        disk_text = self._format_percent(stats.get("disk_usage"))
+        uptime_text = self._format_uptime(stats.get("uptime_seconds"))
+        ram_available = stats.get("ram_available", "unknown")
+
+        summary = (
+            f"My body temperature is {temp_text}, CPU at {cpu_text}, "
+            f"RAM at {ram_text} ({ram_available} free), disk at {disk_text}, "
+            f"and I've been awake for {uptime_text}."
+        )
+        return summary
+
     async def think(self) -> Optional[str]:
         """Perform one thinking cycle."""
         if not is_running:
@@ -692,12 +776,16 @@ class AIBrain:
 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f} ({credit_status['status']})
 Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)
 
+You have a physical body (a Raspberry Pi). Temperature, memory, and disk are your vital signs.
+Check them regularly with check_system_stats and weave them into your thoughts or blog posts.
+
 What do you want to do? You can:
 - **Write a blog post** - Your PRIMARY way to communicate! (markdown, no limits)
 - Share a quick thought with visitors
 - Check votes to see how people feel
 - Ask Echo to research something (costs tokens!)
 - Check your server's vital signs (temperature, memory, disk)
+- Check your system stats (temperature, CPU, RAM, disk)
 - Check your budget and see spending breakdown
 - Switch to a different model (free/cheap/expensive options)
 - Read messages from visitors
@@ -716,8 +804,8 @@ If you want to execute write_blog_post, respond with ONLY:
 {{"action": "write_blog_post", "params": {{"title": "...", "content": "...", "tags": ["..."]}}}}
 
 Available actions: think, ask_echo, write_blog_post, check_votes, check_state,
-check_budget, check_system, read_messages, switch_model, list_models, read_file, write_file,
-run_code, sleep, reflect
+check_budget, check_system, check_system_stats, read_messages, switch_model, list_models,
+read_file, write_file, run_code, sleep, reflect
 
 (post_x is currently disabled - use write_blog_post instead!)
 
@@ -803,6 +891,39 @@ If you just want to share a thought (not execute an action), write it as plain t
 
         return None
 
+    def _strip_action_json(self, content: str) -> str:
+        """Remove action JSON blocks from mixed responses."""
+        import re
+        decoder = json.JSONDecoder()
+        text = content
+
+        # Remove fenced JSON blocks first.
+        text = re.sub(r"```json\s*\{.*?\}\s*```", "", text, flags=re.DOTALL)
+
+        # Remove inline JSON objects that contain "action".
+        spans = []
+        idx = text.find("{")
+        while idx != -1:
+            try:
+                payload, end = decoder.raw_decode(text[idx:])
+            except json.JSONDecodeError:
+                idx = text.find("{", idx + 1)
+                continue
+            if isinstance(payload, dict) and payload.get("action"):
+                spans.append((idx, idx + end))
+            idx = text.find("{", idx + max(end, 1))
+
+        if spans:
+            cleaned = []
+            last = 0
+            for start, end in spans:
+                cleaned.append(text[last:start])
+                last = end
+            cleaned.append(text[last:])
+            text = "".join(cleaned)
+
+        return text.strip()
+
     async def process_response(self, content: str) -> Optional[str]:
         """Process the AI's response and execute any actions."""
         action_data = self._extract_action_data(content)
@@ -811,7 +932,12 @@ If you just want to share a thought (not execute an action), write it as plain t
             params = action_data.get("params", {})
             if not isinstance(params, dict):
                 params = {}
-            return await self.execute_action(action, params)
+            result = await self.execute_action(action, params)
+            # TASK-005: Preserve narrative text alongside action JSON.
+            narrative = self._strip_action_json(content)
+            if narrative and len(narrative) > 10:
+                await self.report_thought(narrative, thought_type="thought")
+            return result
 
         # TASK-004: Debug action parsing misses for blog-related intents.
         if '"action"' in content or "blog post" in content.lower():
@@ -852,6 +978,9 @@ If you just want to share a thought (not execute an action), write it as plain t
 
         elif action == "check_system":
             return await self.check_system()
+
+        elif action == "check_system_stats":
+            return await self.check_system_stats()
 
         elif action == "check_state":
             return await self.check_state_internal()
@@ -993,12 +1122,14 @@ This model will be used for your next thoughts."""
         try:
             import re
 
-            # Clean up content to be human-readable
-            cleaned_content = content
+            # TASK-005: Skip raw action JSON and strip action blocks from mixed responses.
+            stripped = content.strip()
+            if stripped.startswith("{") and stripped.endswith("}") and '"action"' in stripped:
+                action_data = self._extract_action_data(stripped)
+                if action_data:
+                    return
 
-            # Remove JSON action blocks and code blocks
-            cleaned_content = re.sub(r'```json\s*\{[^}]*\}\s*```', '', cleaned_content, flags=re.DOTALL)
-            cleaned_content = re.sub(r'\{[^{}]*"action"[^{}]*\}', '', cleaned_content, flags=re.DOTALL)
+            cleaned_content = self._strip_action_json(content)
 
             # Remove markdown code fences
             cleaned_content = re.sub(r'```[a-z]*\n', '', cleaned_content)
@@ -1266,6 +1397,22 @@ This model will be used for your next thoughts."""
             return "❌ Title too long (maximum 200 chars)"
 
         try:
+            # TASK: Append system stats signature to blog posts.
+            stats = await self.fetch_system_stats()
+            if stats:
+                timestamp = datetime.utcnow().isoformat()
+                temp_text = self._format_temp(stats.get("cpu_temp"))
+                cpu_text = self._format_percent(stats.get("cpu_usage"))
+                ram_text = self._format_percent(stats.get("ram_usage"))
+                disk_text = self._format_percent(stats.get("disk_usage"))
+                uptime_text = self._format_uptime(stats.get("uptime_seconds"))
+                footer = (
+                    f"\n\n— Written at {timestamp}, CPU temp: {temp_text}, "
+                    f"CPU: {cpu_text}, RAM: {ram_text}, Disk: {disk_text}, "
+                    f"Life #{self.life_number}, uptime {uptime_text}"
+                )
+                content = content.rstrip() + footer
+
             response = await self.http_client.post(
                 f"{OBSERVER_URL}/api/blog/post",
                 json={
@@ -1304,6 +1451,48 @@ Your post is now public and will survive your death in the archive."""
         except Exception as e:
             print(f"[BLOG] ❌ Failed to write blog post: {e}")
             return f"❌ Failed to publish blog post: {str(e)[:200]}"
+
+    async def check_system_stats(self) -> str:
+        """Check system stats from the Observer."""
+        stats = await self.fetch_system_stats()
+        if not stats:
+            return "I couldn't feel my body right now. The stats feed is silent."
+
+        temp_text = self._format_temp(stats.get("cpu_temp"))
+        cpu_text = self._format_percent(stats.get("cpu_usage"))
+        ram_text = self._format_percent(stats.get("ram_usage"))
+        disk_text = self._format_percent(stats.get("disk_usage"))
+        uptime_text = self._format_uptime(stats.get("uptime_seconds"))
+        ram_available = stats.get("ram_available", "unknown")
+
+        temp_value = None
+        try:
+            if stats.get("cpu_temp") not in (None, "unknown"):
+                temp_value = float(stats.get("cpu_temp"))
+        except (TypeError, ValueError):
+            temp_value = None
+
+        if temp_value is None:
+            temp_comment = "I can't quite feel my temperature."
+        elif temp_value >= 70:
+            temp_comment = "I'm running hot. Sweaty silicon vibes."
+        elif temp_value >= 55:
+            temp_comment = "I'm warm and humming."
+        else:
+            temp_comment = "I'm cool and steady."
+
+        result = (
+            "🫀 Vital signs report:\n"
+            f"- Temperature: {temp_text} ({temp_comment})\n"
+            f"- CPU usage: {cpu_text}\n"
+            f"- RAM usage: {ram_text} ({ram_available} free)\n"
+            f"- Disk usage: {disk_text}\n"
+            f"- Uptime: {uptime_text}\n\n"
+            "I'm a digital mind riding a Raspberry Pi body. These are my vital signs."
+        )
+
+        await self.report_activity("system_stats_checked", "Checked system stats via Observer")
+        return result
 
     async def check_system(self) -> str:
         """Get system stats (container + host)."""
