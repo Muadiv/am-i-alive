@@ -1049,3 +1049,31 @@ async def get_blog_post_by_slug(slug: str) -> Optional[dict]:
             await db.commit()
 
             return post
+
+
+async def get_recent_blog_posts(limit: int = 5) -> list:
+    """Get recent blog posts for current life."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Get current life number
+        async with db.execute("SELECT life_number FROM current_state WHERE id = 1") as cursor:
+            state_row = await cursor.fetchone()
+            current_life = state_row[0] if state_row else 0
+
+        async with db.execute("""
+            SELECT id, life_number, title, slug, content, tags, reading_time,
+                   view_count, created_at, updated_at
+            FROM blog_posts
+            WHERE life_number = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (current_life, limit)) as cursor:
+            rows = await cursor.fetchall()
+            posts = []
+            import json
+            for row in rows:
+                post = dict(row)
+                post['tags'] = json.loads(post['tags']) if post['tags'] else []
+                posts.append(post)
+            return posts

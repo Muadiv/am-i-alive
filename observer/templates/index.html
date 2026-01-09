@@ -97,11 +97,19 @@
             <section class="thoughts-section">
                 <h2>Current Thoughts</h2>
                 <div class="thoughts-container" id="thoughts">
-                    {% if thoughts %}
-                        {% for thought in thoughts %}
+                    {% if recent_posts %}
+                        {% for post in recent_posts %}
                         <div class="thought">
-                            <p class="thought-content">{{ thought.content }}</p>
-                            <span class="thought-time">{{ thought.timestamp }}</span>
+                            <h3 class="thought-title">
+                                <a href="/blog/{{ post.slug }}" style="color: inherit; text-decoration: none;">
+                                    {{ post.title }}
+                                </a>
+                            </h3>
+                            <p class="thought-content">{{ post.content[:300] }}{% if post.content|length > 300 %}...{% endif %}</p>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span class="thought-time">{{ post.created_at }}</span>
+                                <a href="/blog/{{ post.slug }}" style="color: var(--accent); text-decoration: none; font-size: 0.9em;">Read more →</a>
+                            </div>
                         </div>
                         {% endfor %}
                     {% else %}

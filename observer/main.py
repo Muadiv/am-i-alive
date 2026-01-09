@@ -99,11 +99,15 @@ async def home(request: Request):
     message_count = await db.get_unread_message_count()
     site_stats = await db.get_site_stats()
 
+    # Get recent blog posts for "Current Thoughts" section
+    recent_posts = await db.get_recent_blog_posts(5)
+
     return templates.TemplateResponse("index.html", {
         "request": request,
         "state": state,
         "votes": votes,
         "thoughts": thoughts,
+        "recent_posts": recent_posts,
         "death_count": death_count,
         "message_count": message_count,
         "site_stats": site_stats,
