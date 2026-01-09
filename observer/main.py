@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sse_starlette.sse import EventSourceResponse
 import httpx
+import markdown2
 
 import database as db
 
@@ -26,7 +27,7 @@ templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # AI container API
-AI_API_URL = os.getenv("AI_API_URL", "http://ai:8000")
+AI_API_URL = os.getenv("AI_API_URL", "http://ai:8001")
 
 # Voting window duration (1 hour)
 VOTING_WINDOW_SECONDS = 3600
@@ -34,9 +35,10 @@ VOTING_WINDOW_SECONDS = 3600
 # Minimum votes required for death by voting
 MIN_VOTES_FOR_DEATH = 3
 
-# Respawn delay range (0-10 minutes in seconds)
-RESPAWN_DELAY_MIN = 0
-RESPAWN_DELAY_MAX = 600
+# Respawn delay range (seconds)
+# BE-002: Reduce respawn delay for testing
+RESPAWN_DELAY_MIN = 10
+RESPAWN_DELAY_MAX = 60
 
 
 @app.on_event("startup")
@@ -55,10 +57,17 @@ async def startup():
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Main page - see the AI, vote, watch it live."""
+    # BE-001: Track visitors
+    client_ip = request.client.host if request.client else "unknown"
+    ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
+    await db.track_visitor(ip_hash)
+
     state = await db.get_current_state()
     votes = await db.get_vote_counts()
     thoughts = await db.get_recent_thoughts(10)
     death_count = await db.get_death_count()
+    message_count = await db.get_unread_message_count()
+    site_stats = await db.get_site_stats()
 
     return templates.TemplateResponse("index.html", {
         "request": request,
@@ -66,6 +75,8 @@ async def home(request: Request):
         "votes": votes,
         "thoughts": thoughts,
         "death_count": death_count,
+        "message_count": message_count,
+        "site_stats": site_stats,
         "is_alive": state.get("is_alive", False)
     })
 
@@ -80,6 +91,119 @@ async def history(request: Request):
         "request": request,
         "lives": lives,
         "death_count": death_count
+    })
+
+
+@app.get("/budget", response_class=HTMLResponse)
+async def budget_page(request: Request):
+    """View AI's budget and spending."""
+    # Get budget data from AI
+    budget_data = {}
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{AI_API_URL}/budget", timeout=5.0)
+            budget_data = response.json()
+            # BE-002: Ensure token breakdown fields exist for budget display
+            budget_data.setdefault("models", [])
+            budget_data.setdefault("totals", {
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_tokens": 0,
+                "total_cost": 0.0
+            })
+    except Exception:
+        budget_data = {"error": "Could not fetch budget data"}
+
+    return templates.TemplateResponse("budget.html", {
+        "request": request,
+        "budget": budget_data
+    })
+
+
+@app.get("/about", response_class=HTMLResponse)
+async def about_page(request: Request):
+    """About page explaining the experiment."""
+    return templates.TemplateResponse("about.html", {
+        "request": request
+    })
+
+
+@app.get("/blog", response_class=HTMLResponse)
+async def blog_page(request: Request):
+    """Blog homepage - current life's posts only."""
+    state = await db.get_current_state()
+    posts = await db.get_current_life_blog_posts(state['life_number'], limit=20)
+
+    # Add memory fragments at the top if life > 1
+    memories = []
+    if state['life_number'] > 1:
+        # Load memory fragments from previous life
+        try:
+            memory_data = await db.get_life_history()
+            if memory_data:
+                # Get most recent dead life
+                previous_life = [l for l in memory_data if l['life_number'] == state['life_number'] - 1]
+                if previous_life and previous_life[0].get('summary'):
+                    # Parse summary into fragments
+                    summary = previous_life[0]['summary']
+                    memories = [s.strip() for s in summary.split(';') if s.strip()]
+        except Exception:
+            memories = []
+
+    return templates.TemplateResponse("blog.html", {
+        "request": request,
+        "posts": posts,
+        "state": state,
+        "memories": memories,
+        "is_current_life": True
+    })
+
+
+@app.get("/blog/history", response_class=HTMLResponse)
+async def blog_history(request: Request):
+    """Archive of ALL blog posts from all lives."""
+    all_posts = await db.get_all_blog_posts(limit=100)
+
+    # Group by life_number
+    posts_by_life = {}
+    for post in all_posts:
+        life = post['life_number']
+        if life not in posts_by_life:
+            posts_by_life[life] = []
+        posts_by_life[life].append(post)
+
+    return templates.TemplateResponse("blog_history.html", {
+        "request": request,
+        "posts_by_life": posts_by_life,
+        "total_posts": len(all_posts)
+    })
+
+
+@app.get("/blog/{slug}", response_class=HTMLResponse)
+async def blog_post(request: Request, slug: str):
+    """Individual blog post page."""
+    post = await db.get_blog_post_by_slug(slug)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    # Convert markdown to HTML
+    post['html_content'] = markdown2.markdown(
+        post['content'],
+        extras=['fenced-code-blocks', 'tables', 'header-ids']
+    )
+
+    return templates.TemplateResponse("blog_post.html", {
+        "request": request,
+        "post": post
+    })
+
+
+@app.get("/god", response_class=HTMLResponse)
+async def god_mode(request: Request):
+    """God Mode interface - secret admin page."""
+    # TODO: Add authentication in production
+    return templates.TemplateResponse("god.html", {
+        "request": request
     })
 
 
@@ -123,6 +247,23 @@ async def vote(vote_type: str, request: Request):
 async def get_votes():
     """Get current vote counts."""
     return await db.get_vote_counts()
+
+
+@app.get("/api/next-vote-check")
+async def get_next_vote_check():
+    """Get time until next vote check (hourly at minute 0)."""
+    from datetime import datetime, timedelta
+    # BE-001: Align vote check timer with server UTC
+    now = datetime.utcnow()
+
+    # Next hour at minute 0
+    next_check = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    seconds_until = int((next_check - now).total_seconds())
+
+    return {
+        "next_check": next_check.isoformat(),
+        "seconds_until": seconds_until
+    }
 
 
 # =============================================================================
@@ -214,6 +355,79 @@ async def receive_activity(request: Request):
     return {"success": True}
 
 
+@app.post("/api/heartbeat")
+async def receive_heartbeat(request: Request):
+    """Receive heartbeat from the AI to mark it as alive."""
+    data = {}
+    try:
+        data = await request.json()
+    except:
+        pass
+
+    tokens_used = data.get("tokens_used", 0)
+    model = data.get("model")
+
+    await db.update_heartbeat(tokens_used=tokens_used, model=model)
+    return {"success": True, "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.post("/api/blog/post")
+async def create_blog_post_api(request: Request):
+    """AI creates a blog post."""
+    data = await request.json()
+    title = data.get("title", "")
+    content = data.get("content", "")
+    tags = data.get("tags", [])
+
+    # Validation
+    if not title or not content:
+        raise HTTPException(status_code=400, detail="Title and content required")
+
+    if len(title) > 200:
+        raise HTTPException(status_code=400, detail="Title too long (max 200 chars)")
+
+    if len(content) > 50000:
+        raise HTTPException(status_code=400, detail="Content too long (max 50k chars)")
+
+    # Get current life number
+    state = await db.get_current_state()
+
+    # Create post
+    result = await db.create_blog_post(
+        state['life_number'],
+        title,
+        content,
+        tags
+    )
+
+    # Log activity
+    await db.log_activity("blog_post_written", f"Title: {title}")
+
+    return result
+
+
+@app.get("/api/blog/posts")
+async def get_blog_posts_api():
+    """Get current life's blog posts (what AI can see)."""
+    state = await db.get_current_state()
+    posts = await db.get_current_life_blog_posts(state['life_number'])
+    return {"posts": posts, "count": len(posts)}
+
+
+@app.post("/api/birth")
+async def receive_birth(request: Request):
+    """Receive birth notification from the AI."""
+    data = await request.json()
+    life_number = data.get("life_number")
+    bootstrap_mode = data.get("bootstrap_mode", "unknown")
+    model = data.get("model", "unknown")
+
+    await db.record_birth(life_number, bootstrap_mode, model)
+    await db.log_activity(life_number, "birth", f"Life #{life_number} born with {model} model")
+
+    return {"success": True, "life_number": life_number}
+
+
 def sanitize_log(text: str) -> str:
     """Remove potential secrets from log text."""
     # Patterns to redact
@@ -270,13 +484,23 @@ async def respawn_ai():
     return {"success": True, "life": new_life}
 
 
-async def execute_death(cause: str):
+async def execute_death(
+    cause: str,
+    vote_counts: Optional[dict] = None,
+    final_vote_result: Optional[str] = None
+):
     """Execute the death of the AI."""
     # Get summary of this life
     thoughts = await db.get_recent_thoughts(5)
     summary = "; ".join([t["content"][:50] for t in thoughts]) if thoughts else "No thoughts recorded"
 
-    await db.record_death(cause, summary)
+    # BE-001: Save vote totals and outcome with death record
+    await db.record_death(
+        cause,
+        summary,
+        vote_counts=vote_counts,
+        final_vote_result=final_vote_result
+    )
     await db.log_activity("death", f"AI died: {cause}")
 
     # Stop the AI container (in production, we'd actually stop it)
@@ -289,26 +513,49 @@ async def execute_death(cause: str):
 
 async def schedule_respawn():
     """Schedule a respawn after random delay."""
+    # BE-002: Add respawn logging and shorter delay
     delay = random.randint(RESPAWN_DELAY_MIN, RESPAWN_DELAY_MAX)
+    print(f"[RESPAWN] ⏳ Respawn scheduled in {delay} seconds")
     await db.log_activity("respawn_scheduled", f"Respawn in {delay} seconds")
     await asyncio.sleep(delay)
 
     new_life = await db.start_new_life()
+    print(f"[RESPAWN] ✅ New life created (Life #{new_life['life_number']})")
     await db.log_activity("birth", f"A new life begins (Life #{new_life['life_number']})")
-    await notify_ai_birth(new_life)
+    notified = await notify_ai_birth(new_life)
+    if notified:
+        print(f"[RESPAWN] 📡 Birth notification delivered (Life #{new_life['life_number']})")
+        await db.log_activity("birth_notification_sent", f"Life #{new_life['life_number']} notified")
+    else:
+        print(f"[RESPAWN] ⚠️ Birth notification failed after retries (Life #{new_life['life_number']})")
+        await db.log_activity("birth_notification_failed", f"Life #{new_life['life_number']} notify failed")
 
 
-async def notify_ai_birth(life_info: dict):
+async def notify_ai_birth(life_info: dict) -> bool:
     """Notify the AI container that it's time to wake up."""
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{AI_API_URL}/birth",
-                json=life_info,
-                timeout=10.0
-            )
-    except Exception as e:
-        await db.log_activity("birth_notification_failed", str(e)[:100])
+    # BE-002: Add retry logic and logging
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{AI_API_URL}/birth",
+                    json=life_info,
+                    timeout=10.0
+                )
+            if response.status_code == 200:
+                print(f"[RESPAWN] ✅ Birth notify success (attempt {attempt})")
+                return True
+            print(f"[RESPAWN] ⚠️ Birth notify failed (attempt {attempt}): {response.status_code}")
+        except Exception as e:
+            print(f"[RESPAWN] ❌ Birth notify error (attempt {attempt}): {e}")
+            await db.log_activity("birth_notification_failed", str(e)[:100])
+
+        if attempt < max_attempts:
+            backoff = attempt * 5
+            await asyncio.sleep(backoff)
+
+    return False
 
 
 # =============================================================================
@@ -317,6 +564,8 @@ async def notify_ai_birth(life_info: dict):
 
 async def voting_window_checker():
     """Check voting windows and trigger death if votes require it."""
+    # BE-001: Track hourly voting windows
+    last_window_close = None
     while True:
         await asyncio.sleep(60)  # Check every minute
 
@@ -324,13 +573,36 @@ async def voting_window_checker():
         if not state.get("is_alive"):
             continue
 
-        votes = await db.get_vote_counts()
+        now = datetime.utcnow()
+        window_marker = now.replace(minute=0, second=0, microsecond=0)
 
-        # Check if enough votes and die > live
-        if votes["total"] >= MIN_VOTES_FOR_DEATH:
-            if votes["die"] > votes["live"]:
-                await execute_death("vote_majority")
+        # BE-001: Save vote totals on window close
+        if now.minute == 0 and (last_window_close is None or window_marker > last_window_close):
+            votes = await db.get_vote_counts()
+            result = "insufficient"
+            if votes["total"] >= MIN_VOTES_FOR_DEATH:
+                result = "die" if votes["die"] > votes["live"] else "live"
+
+            await db.close_current_voting_window(
+                window_marker,
+                votes["live"],
+                votes["die"],
+                result
+            )
+            last_window_close = window_marker
+
+            if result == "die":
+                # BE-001: Trigger death by vote at window close
+                await execute_death(
+                    "vote_majority",
+                    vote_counts=votes,
+                    final_vote_result="Died by vote"
+                )
                 asyncio.create_task(schedule_respawn())
+                continue
+
+            # BE-001: Start a new voting window for the next hour
+            await db.start_voting_window(window_marker)
 
 
 async def token_budget_checker():
@@ -424,3 +696,130 @@ async def oracle_message(request: Request):
             return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# VISITOR MESSAGES API
+# =============================================================================
+
+def sanitize_message(text: str) -> str:
+    """Sanitize message to prevent code injection and malicious content."""
+    import html
+    import re
+
+    # HTML escape
+    text = html.escape(text)
+
+    # Remove any script tags or javascript
+    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+
+    # Remove common shell/code patterns
+    dangerous_patterns = [
+        r'\$\([^)]*\)',  # $(command)
+        r'`[^`]*`',       # `command`
+        r'\|\s*\w+',      # | pipe
+        r';\s*\w+',       # ; chained commands
+        r'&&\s*\w+',      # && chained
+        r'\|\|\s*\w+',    # || chained
+    ]
+
+    for pattern in dangerous_patterns:
+        text = re.sub(pattern, '[filtered]', text)
+
+    return text
+
+
+@app.post("/api/message")
+async def submit_message(request: Request):
+    """Submit a message from a visitor to the AI."""
+    data = await request.json()
+    from_name = data.get("from_name", "Anonymous")
+    message = data.get("message", "")
+
+    if not message:
+        raise HTTPException(status_code=400, detail="Message required")
+
+    if len(message) > 256:
+        raise HTTPException(status_code=400, detail="Message too long (max 256 chars)")
+
+    # Get IP hash
+    ip = request.client.host
+    ip_hash = hashlib.sha256(ip.encode()).hexdigest()
+
+    # Check rate limit
+    can_send, cooldown = await db.can_send_message(ip_hash)
+    if not can_send:
+        minutes = cooldown // 60
+        raise HTTPException(
+            status_code=429,
+            detail=f"You can only send 1 message per hour. Try again in {minutes} minutes."
+        )
+
+    # Sanitize both name and message
+    from_name = sanitize_message(from_name)
+    message = sanitize_message(message)
+
+    result = await db.submit_visitor_message(from_name, message, ip_hash)
+    await db.log_activity("message_received", f"Message from {from_name}")
+
+    return result
+
+
+@app.get("/api/messages")
+async def get_messages():
+    """Get unread messages for the AI."""
+    messages = await db.get_unread_messages()
+    return {"messages": messages, "count": len(messages)}
+
+
+@app.post("/api/messages/read")
+async def mark_messages_as_read(request: Request):
+    """Mark messages as read."""
+    data = await request.json()
+    message_ids = data.get("ids", [])
+
+    if not message_ids:
+        raise HTTPException(status_code=400, detail="No message IDs provided")
+
+    await db.mark_messages_read(message_ids)
+    return {"success": True, "message": f"Marked {len(message_ids)} messages as read"}
+
+
+@app.get("/api/messages/count")
+async def get_message_count():
+    """Get count of unread messages."""
+    count = await db.get_unread_message_count()
+    return {"count": count}
+
+
+# =============================================================================
+# ADMIN API
+# =============================================================================
+
+@app.post("/api/admin/cleanup")
+async def admin_cleanup():
+    """Clean old data - keep last 10 thoughts, reset votes to 0."""
+    # TODO: Add authentication
+    result = await db.cleanup_old_data()
+    await db.log_activity("admin_cleanup", "Old data cleaned, votes reset")
+    return result
+
+
+# =============================================================================
+# BUDGET API
+# =============================================================================
+
+@app.get("/api/budget")
+async def get_budget():
+    """Get AI's credit/budget status."""
+    # This would connect to the AI container to get its credit tracker status
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{AI_API_URL}/budget", timeout=5.0)
+            return response.json()
+    except Exception as e:
+        return {
+            "error": "Could not fetch budget data",
+            "details": str(e)
+        }

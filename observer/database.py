@@ -55,6 +55,24 @@ async def init_db():
             )
         """)
 
+        # BE-001: Add visitor tracking / vote stats
+        try:
+            cursor = await db.execute("PRAGMA table_info(deaths)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            if 'total_votes_live' not in column_names:
+                await db.execute("ALTER TABLE deaths ADD COLUMN total_votes_live INTEGER DEFAULT 0")
+                print("[DB] ✅ Added total_votes_live column to deaths")
+            if 'total_votes_die' not in column_names:
+                await db.execute("ALTER TABLE deaths ADD COLUMN total_votes_die INTEGER DEFAULT 0")
+                print("[DB] ✅ Added total_votes_die column to deaths")
+            if 'final_vote_result' not in column_names:
+                await db.execute("ALTER TABLE deaths ADD COLUMN final_vote_result TEXT")
+                print("[DB] ✅ Added final_vote_result column to deaths")
+        except Exception as e:
+            print(f"[DB] Migration check error: {e}")
+
         # AI's public thoughts/posts
         await db.execute("""
             CREATE TABLE IF NOT EXISTS thoughts (
@@ -90,7 +108,8 @@ async def init_db():
                 model TEXT,
                 tokens_used INTEGER DEFAULT 0,
                 tokens_limit INTEGER DEFAULT 50000,
-                last_thought_time DATETIME
+                last_thought_time DATETIME,
+                last_seen DATETIME
             )
         """)
 
@@ -98,6 +117,88 @@ async def init_db():
         await db.execute("""
             INSERT OR IGNORE INTO current_state (id, life_number, is_alive)
             VALUES (1, 0, 0)
+        """)
+
+        # Migration: Add last_seen column if it doesn't exist
+        try:
+            cursor = await db.execute("PRAGMA table_info(current_state)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            if 'last_seen' not in column_names:
+                await db.execute("ALTER TABLE current_state ADD COLUMN last_seen DATETIME")
+                print("[DB] ✅ Added last_seen column to current_state")
+        except Exception as e:
+            print(f"[DB] Migration check error: {e}")
+
+        # BE-001: Add visitor tracking / vote stats
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS visitors (
+                ip_hash TEXT PRIMARY KEY,
+                first_visit DATETIME NOT NULL,
+                last_visit DATETIME NOT NULL,
+                visit_count INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+
+        # BE-001: Add visitor tracking / vote stats
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS site_stats (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                unique_visitors INTEGER NOT NULL DEFAULT 0,
+                total_page_views INTEGER NOT NULL DEFAULT 0,
+                last_updated DATETIME
+            )
+        """)
+        await db.execute("""
+            INSERT OR IGNORE INTO site_stats (id, unique_visitors, total_page_views, last_updated)
+            VALUES (1, 0, 0, ?)
+        """, (datetime.utcnow(),))
+
+        # Visitor messages - messages from visitors to the AI
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS visitor_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_name TEXT NOT NULL,
+                message TEXT NOT NULL,
+                ip_hash TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                read BOOLEAN DEFAULT 0
+            )
+        """)
+
+        # Migration: Add ip_hash column if it doesn't exist
+        try:
+            cursor = await db.execute("PRAGMA table_info(visitor_messages)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+            if 'ip_hash' not in column_names:
+                await db.execute("ALTER TABLE visitor_messages ADD COLUMN ip_hash TEXT DEFAULT ''")
+                print("[DB] ✅ Added ip_hash column to visitor_messages")
+        except Exception as e:
+            print(f"[DB] Migration check error: {e}")
+
+        # Blog posts - AI's long-form writing
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS blog_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                life_number INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                slug TEXT UNIQUE NOT NULL,
+                content TEXT NOT NULL,
+                tags TEXT,
+                reading_time INTEGER DEFAULT 0,
+                view_count INTEGER DEFAULT 0,
+                published BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Index for fast queries by life
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_blog_posts_life
+            ON blog_posts(life_number, created_at DESC)
         """)
 
         await db.commit()
@@ -147,6 +248,50 @@ async def get_vote_counts(window_id: Optional[int] = None) -> dict:
             return counts
 
 
+async def close_current_voting_window(
+    end_time: datetime,
+    live_count: int,
+    die_count: int,
+    result: str,
+    clear_votes: bool = True
+) -> Optional[int]:
+    """Close the current voting window and persist totals."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            "SELECT id FROM voting_windows WHERE end_time IS NULL ORDER BY id DESC LIMIT 1"
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            window_id = row[0]
+
+        # BE-001: Save vote totals on window close
+        await db.execute("""
+            UPDATE voting_windows
+            SET end_time = ?, live_count = ?, die_count = ?, result = ?
+            WHERE id = ?
+        """, (end_time, live_count, die_count, result, window_id))
+
+        if clear_votes:
+            # BE-001: Clear voter list after window closes
+            await db.execute("DELETE FROM votes WHERE window_id = ?", (window_id,))
+
+        await db.commit()
+        return window_id
+
+
+async def start_voting_window(start_time: datetime) -> int:
+    """Start a new voting window."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        # BE-001: Start new voting window after hourly reset
+        cursor = await db.execute(
+            "INSERT INTO voting_windows (start_time) VALUES (?)",
+            (start_time,)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
 async def cast_vote(ip_hash: str, vote: str) -> dict:
     """Cast a vote (live or die)."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -159,11 +304,11 @@ async def cast_vote(ip_hash: str, vote: str) -> dict:
                 window_id = row[0]
             else:
                 # Create new window
-                await db.execute(
+                cursor = await db.execute(
                     "INSERT INTO voting_windows (start_time) VALUES (?)",
                     (datetime.utcnow(),)
                 )
-                window_id = db.lastrowid
+                window_id = cursor.lastrowid
 
         # Check if already voted in this window
         async with db.execute(
@@ -171,7 +316,15 @@ async def cast_vote(ip_hash: str, vote: str) -> dict:
             (ip_hash, window_id)
         ) as cursor:
             if await cursor.fetchone():
-                return {"success": False, "message": "Already voted in this window"}
+                # BE-001: Improve vote rate limiting message
+                now = datetime.utcnow()
+                next_check = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+                remaining_seconds = max(0, int((next_check - now).total_seconds()))
+                remaining_minutes = max(1, (remaining_seconds + 59) // 60)
+                return {
+                    "success": False,
+                    "message": f"You can vote again in {remaining_minutes} minutes"
+                }
 
         # Cast vote
         await db.execute(
@@ -183,7 +336,12 @@ async def cast_vote(ip_hash: str, vote: str) -> dict:
         return {"success": True, "message": f"Vote '{vote}' recorded"}
 
 
-async def record_death(cause: str, summary: Optional[str] = None):
+async def record_death(
+    cause: str,
+    summary: Optional[str] = None,
+    vote_counts: Optional[dict] = None,
+    final_vote_result: Optional[str] = None
+):
     """Record an AI death."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         state = await get_current_state()
@@ -196,10 +354,29 @@ async def record_death(cause: str, summary: Optional[str] = None):
             birth_dt = datetime.fromisoformat(birth_time) if isinstance(birth_time, str) else birth_time
             duration = int((death_time - birth_dt).total_seconds())
 
+        # BE-001: Add vote stats to history
+        if vote_counts is None:
+            vote_counts = await get_vote_counts()
+        total_votes_live = 0
+        total_votes_die = 0
+        if vote_counts:
+            total_votes_live = vote_counts.get("live", 0)
+            total_votes_die = vote_counts.get("die", 0)
+
+        # BE-001: Add vote stats to history
+        if final_vote_result is None:
+            outcome_map = {
+                "vote_majority": "Died by vote",
+                "token_exhaustion": "Died by bankruptcy",
+                "manual_kill": "Died by creator"
+            }
+            final_vote_result = outcome_map.get(cause, cause.replace("_", " ").title())
+
         await db.execute("""
             INSERT INTO deaths (life_number, birth_time, death_time, cause, duration_seconds,
-                              bootstrap_mode, model, summary)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                              bootstrap_mode, model, summary, total_votes_live,
+                              total_votes_die, final_vote_result)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             life_number,
             birth_time,
@@ -208,7 +385,10 @@ async def record_death(cause: str, summary: Optional[str] = None):
             duration,
             state.get("bootstrap_mode"),
             state.get("model"),
-            summary
+            summary,
+            total_votes_live,
+            total_votes_die,
+            final_vote_result
         ))
 
         # Mark as dead
@@ -429,14 +609,385 @@ async def get_recent_activity(limit: int = 50) -> list:
             return [dict(row) for row in await cursor.fetchall()]
 
 
+async def track_visitor(ip_hash: str):
+    """Track unique visitors and page views."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        now = datetime.utcnow()
+
+        # BE-001: Ensure site stats row exists
+        await db.execute("""
+            INSERT OR IGNORE INTO site_stats (id, unique_visitors, total_page_views, last_updated)
+            VALUES (1, 0, 0, ?)
+        """, (now,))
+
+        async with db.execute(
+            "SELECT visit_count FROM visitors WHERE ip_hash = ?",
+            (ip_hash,)
+        ) as cursor:
+            row = await cursor.fetchone()
+
+        if row:
+            # BE-001: Update returning visitor stats
+            await db.execute("""
+                UPDATE visitors
+                SET last_visit = ?, visit_count = visit_count + 1
+                WHERE ip_hash = ?
+            """, (now, ip_hash))
+            await db.execute("""
+                UPDATE site_stats
+                SET total_page_views = total_page_views + 1,
+                    last_updated = ?
+                WHERE id = 1
+            """, (now,))
+        else:
+            # BE-001: Record new unique visitor
+            await db.execute("""
+                INSERT INTO visitors (ip_hash, first_visit, last_visit, visit_count)
+                VALUES (?, ?, ?, 1)
+            """, (ip_hash, now, now))
+            await db.execute("""
+                UPDATE site_stats
+                SET unique_visitors = unique_visitors + 1,
+                    total_page_views = total_page_views + 1,
+                    last_updated = ?
+                WHERE id = 1
+            """, (now,))
+
+        await db.commit()
+
+
+async def get_site_stats() -> dict:
+    """Get current site statistics."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        now = datetime.utcnow()
+
+        # BE-001: Ensure site stats row exists
+        await db.execute("""
+            INSERT OR IGNORE INTO site_stats (id, unique_visitors, total_page_views, last_updated)
+            VALUES (1, 0, 0, ?)
+        """, (now,))
+
+        async with db.execute("""
+            SELECT unique_visitors, total_page_views, last_updated
+            FROM site_stats
+            WHERE id = 1
+        """) as cursor:
+            row = await cursor.fetchone()
+            stats = dict(row) if row else {
+                "unique_visitors": 0,
+                "total_page_views": 0,
+                "last_updated": None
+            }
+
+        # BE-001: Track daily unique visitors
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        async with db.execute(
+            "SELECT COUNT(*) FROM visitors WHERE last_visit >= ?",
+            (today_start,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            stats["today_unique_visitors"] = row[0] if row else 0
+
+        return stats
+
+
 async def get_life_history() -> list:
     """Get history of past lives (for public display)."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
-            SELECT life_number, birth_time, death_time, cause, duration_seconds, summary
+            SELECT life_number, birth_time, death_time, cause, duration_seconds, summary,
+                   total_votes_live, total_votes_die, final_vote_result
             FROM deaths
             ORDER BY life_number DESC
             LIMIT 20
         """) as cursor:
+            rows = await cursor.fetchall()
+            history = []
+            for row in rows:
+                item = dict(row)
+                duration_seconds = item.get("duration_seconds")
+
+                # BE-001: Add vote stats to history
+                item["total_votes_live"] = item.get("total_votes_live") or 0
+                item["total_votes_die"] = item.get("total_votes_die") or 0
+
+                # BE-001: Add vote stats to history
+                outcome = item.get("final_vote_result")
+                if not outcome:
+                    cause = item.get("cause", "")
+                    outcome_map = {
+                        "vote_majority": "Died by vote",
+                        "token_exhaustion": "Died by bankruptcy",
+                        "manual_kill": "Died by creator"
+                    }
+                    outcome = outcome_map.get(cause, cause.replace("_", " ").title())
+                item["outcome"] = outcome
+
+                # BE-001: Add vote stats to history
+                if duration_seconds:
+                    hours = duration_seconds // 3600
+                    minutes = (duration_seconds % 3600) // 60
+                    if hours > 0:
+                        item["survival_time"] = f"{hours} hours {minutes} minutes"
+                    else:
+                        item["survival_time"] = f"{minutes} minutes"
+                else:
+                    item["survival_time"] = "Unknown"
+
+                history.append(item)
+            return history
+
+
+async def update_heartbeat(tokens_used: int = None, model: str = None):
+    """Update the last_seen timestamp and optionally tokens/model for the AI."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        if tokens_used is not None and model is not None:
+            await db.execute("""
+                UPDATE current_state
+                SET last_seen = ?, tokens_used = ?, model = ?
+                WHERE id = 1
+            """, (datetime.utcnow(), tokens_used, model))
+        elif tokens_used is not None:
+            await db.execute("""
+                UPDATE current_state
+                SET last_seen = ?, tokens_used = ?
+                WHERE id = 1
+            """, (datetime.utcnow(), tokens_used))
+        else:
+            await db.execute("""
+                UPDATE current_state
+                SET last_seen = ?
+                WHERE id = 1
+            """, (datetime.utcnow(),))
+        await db.commit()
+
+
+async def record_birth(life_number: int, bootstrap_mode: str, model: str):
+    """Record AI birth - marks as alive and updates state."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        birth_time = datetime.utcnow()
+        await db.execute("""
+            UPDATE current_state
+            SET life_number = ?,
+                is_alive = 1,
+                birth_time = ?,
+                bootstrap_mode = ?,
+                model = ?,
+                tokens_used = 0,
+                last_seen = ?
+            WHERE id = 1
+        """, (life_number, birth_time, bootstrap_mode, model, birth_time))
+        await db.commit()
+        print(f"[DB] 🎂 Birth recorded: Life #{life_number}, Model: {model}, Bootstrap: {bootstrap_mode}")
+
+
+async def can_send_message(ip_hash: str) -> tuple[bool, Optional[int]]:
+    """Check if this IP can send a message (rate limit: 1 per hour)."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("""
+            SELECT timestamp FROM visitor_messages
+            WHERE ip_hash = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (ip_hash,))
+
+        row = await cursor.fetchone()
+        if not row:
+            return True, None
+
+        last_message_time = datetime.fromisoformat(row[0])
+        time_since = datetime.utcnow() - last_message_time
+        cooldown_seconds = 3600  # 1 hour
+
+        if time_since.total_seconds() < cooldown_seconds:
+            remaining = cooldown_seconds - int(time_since.total_seconds())
+            return False, remaining
+
+        return True, None
+
+
+async def submit_visitor_message(from_name: str, message: str, ip_hash: str) -> dict:
+    """Submit a message from a visitor to the AI."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("""
+            INSERT INTO visitor_messages (from_name, message, ip_hash)
+            VALUES (?, ?, ?)
+        """, (from_name, message, ip_hash))
+        await db.commit()
+        return {"success": True, "message": "Message sent to the AI"}
+
+
+async def get_unread_messages() -> list:
+    """Get all unread messages for the AI."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT id, from_name, message, timestamp
+            FROM visitor_messages
+            WHERE read = 0
+            ORDER BY timestamp ASC
+        """) as cursor:
             return [dict(row) for row in await cursor.fetchall()]
+
+
+async def mark_messages_read(message_ids: list):
+    """Mark messages as read."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        placeholders = ','.join('?' * len(message_ids))
+        await db.execute(f"""
+            UPDATE visitor_messages
+            SET read = 1
+            WHERE id IN ({placeholders})
+        """, message_ids)
+        await db.commit()
+
+
+async def get_unread_message_count() -> int:
+    """Get count of unread messages."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM visitor_messages WHERE read = 0") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+
+async def cleanup_old_data():
+    """Cleanup old data - keep only last 10 thoughts, reset votes."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Keep only last 10 thoughts
+        await db.execute("""
+            DELETE FROM thoughts
+            WHERE id NOT IN (
+                SELECT id FROM thoughts
+                ORDER BY timestamp DESC
+                LIMIT 10
+            )
+        """)
+
+        # Delete all votes
+        await db.execute("DELETE FROM votes")
+
+        # Close all voting windows
+        await db.execute("""
+            UPDATE voting_windows
+            SET end_time = ?
+            WHERE end_time IS NULL
+        """, (datetime.utcnow(),))
+
+        # Reset vote counts in current_state to 0 by starting a new window
+        await db.execute("""
+            INSERT INTO voting_windows (start_time)
+            VALUES (?)
+        """, (datetime.utcnow(),))
+
+        await db.commit()
+        return {"success": True, "message": "Old data cleaned up"}
+
+
+# =============================================================================
+# BLOG POST FUNCTIONS
+# =============================================================================
+
+async def create_blog_post(life_number: int, title: str, content: str, tags: list) -> dict:
+    """Create a new blog post."""
+    import re
+
+    # Generate slug from title
+    slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
+    slug = f"{life_number}-{slug}"  # Prefix with life number for uniqueness
+
+    # Calculate reading time (words / 200 wpm)
+    word_count = len(content.split())
+    reading_time = max(1, word_count // 200)
+
+    # Store tags as JSON
+    import json
+    tags_json = json.dumps(tags)
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("""
+            INSERT INTO blog_posts (life_number, title, slug, content, tags, reading_time)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (life_number, title, slug, content, tags_json, reading_time))
+
+        post_id = cursor.lastrowid
+        await db.commit()
+
+        return {
+            "success": True,
+            "post_id": post_id,
+            "slug": slug,
+            "reading_time": reading_time
+        }
+
+
+async def get_current_life_blog_posts(life_number: int, limit: int = 20) -> list:
+    """Get blog posts ONLY from current life (what AI can see)."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT id, life_number, title, slug, content, tags, reading_time,
+                   view_count, created_at, updated_at
+            FROM blog_posts
+            WHERE life_number = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (life_number, limit)) as cursor:
+            posts = []
+            for row in await cursor.fetchall():
+                post = dict(row)
+                # Parse tags from JSON
+                import json
+                post['tags'] = json.loads(post['tags']) if post['tags'] else []
+                posts.append(post)
+            return posts
+
+
+async def get_all_blog_posts(limit: int = 100, offset: int = 0) -> list:
+    """Get ALL blog posts from all lives (public archive)."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT id, life_number, title, slug, content, tags, reading_time,
+                   view_count, created_at, updated_at
+            FROM blog_posts
+            ORDER BY life_number DESC, created_at DESC
+            LIMIT ? OFFSET ?
+        """, (limit, offset)) as cursor:
+            posts = []
+            for row in await cursor.fetchall():
+                post = dict(row)
+                import json
+                post['tags'] = json.loads(post['tags']) if post['tags'] else []
+                posts.append(post)
+            return posts
+
+
+async def get_blog_post_by_slug(slug: str) -> Optional[dict]:
+    """Get single post by slug and increment view count."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT id, life_number, title, slug, content, tags, reading_time,
+                   view_count, created_at, updated_at
+            FROM blog_posts
+            WHERE slug = ?
+        """, (slug,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return None
+
+            post = dict(row)
+            import json
+            post['tags'] = json.loads(post['tags']) if post['tags'] else []
+
+            # Increment view count
+            await db.execute("""
+                UPDATE blog_posts
+                SET view_count = view_count + 1
+                WHERE slug = ?
+            """, (slug,))
+            await db.commit()
+
+            return post

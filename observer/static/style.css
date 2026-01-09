@@ -9,6 +9,13 @@
     --accent-die: #ff4444;
     --accent-neutral: #4488ff;
     --border-color: #333;
+
+    /* Aliases for templates */
+    --text: #e0e0e0;
+    --text-dim: #888;
+    --accent: #4488ff;
+    --accent-hover: #5599ff;
+    --border: #333;
 }
 
 * {
@@ -105,7 +112,40 @@ header h1 {
     100% { opacity: 1; transform: scale(1); }
 }
 
-/* Death Counter */
+/* Stats Bar */
+.stats-bar {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    padding: 20px;
+    background: var(--bg-card);
+    border-radius: 8px;
+    margin-bottom: 30px;
+    flex-wrap: wrap;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stat-icon {
+    font-size: 1.5rem;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    color: var(--accent-live);
+    font-weight: bold;
+}
+
+/* Death Counter (legacy - for history page) */
 .death-counter {
     text-align: center;
     padding: 15px;
@@ -213,6 +253,29 @@ header h1 {
     font-size: 1.1rem;
     color: var(--text-secondary);
     font-weight: normal;
+}
+
+.vote-countdown {
+    background: linear-gradient(135deg, rgba(68, 136, 255, 0.1), rgba(136, 68, 255, 0.1));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.countdown-label {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.countdown-timer {
+    font-size: 1.8em;
+    font-weight: bold;
+    color: var(--accent-neutral);
+    font-family: 'Courier New', monospace;
+    margin: 0;
 }
 
 .vote-counts {
@@ -407,6 +470,16 @@ header h1 {
     margin-bottom: 5px;
 }
 
+.vote-live {
+    color: var(--accent-live);
+    font-weight: bold;
+}
+
+.vote-die {
+    color: var(--accent-die);
+    font-weight: bold;
+}
+
 .life-summary {
     padding-top: 15px;
     border-top: 1px solid var(--border-color);
@@ -457,4 +530,345 @@ footer a:hover {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #444;
+}
+
+/* =============================================================================
+   BLOG STYLES
+   ============================================================================= */
+
+/* Navigation */
+.main-nav {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.main-nav a {
+    color: var(--text-primary);
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+}
+
+.main-nav a:hover {
+    background: var(--accent-neutral);
+    color: white;
+    border-color: var(--accent-neutral);
+}
+
+.main-nav a.active {
+    background: var(--accent-neutral);
+    color: white;
+    border-color: var(--accent-neutral);
+}
+
+/* Breadcrumb */
+.breadcrumb {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.breadcrumb a {
+    color: var(--accent-neutral);
+    text-decoration: none;
+}
+
+.breadcrumb a:hover {
+    text-decoration: underline;
+}
+
+/* Life Banner */
+.life-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    margin: 20px 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.life-number {
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.status-indicator {
+    font-weight: bold;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.9em;
+}
+
+.status-indicator.alive {
+    background: rgba(0, 255, 136, 0.2);
+    color: var(--accent-live);
+}
+
+.status-indicator.dead {
+    background: rgba(255, 68, 68, 0.2);
+    color: var(--accent-die);
+}
+
+/* Memories Section */
+.memories-section {
+    background: linear-gradient(135deg, rgba(100,50,150,0.15), rgba(50,100,150,0.15));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 30px;
+    margin-bottom: 30px;
+}
+
+.memories-section h2 {
+    margin-bottom: 10px;
+}
+
+.memories-intro {
+    color: var(--text-secondary);
+    font-style: italic;
+    margin-bottom: 20px;
+}
+
+.memories-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.memory-fragment {
+    background: rgba(0,0,0,0.3);
+    padding: 15px;
+    border-radius: 5px;
+    border-left: 3px solid var(--accent-neutral);
+    font-style: italic;
+    opacity: 0.8;
+    font-size: 0.95em;
+}
+
+/* Blog Section */
+.blog-section {
+    margin: 30px 0;
+}
+
+.blog-section h2 {
+    margin-bottom: 25px;
+    font-size: 1.8em;
+}
+
+.blog-posts {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+}
+
+/* Blog Post Cards */
+.blog-post-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 25px;
+    transition: all 0.2s;
+}
+
+.blog-post-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-neutral);
+    box-shadow: 0 4px 12px rgba(68, 136, 255, 0.1);
+}
+
+.blog-post-card h3,
+.blog-post-card h4 {
+    margin: 0 0 15px 0;
+    font-size: 1.5em;
+}
+
+.blog-post-card h3 a,
+.blog-post-card h4 a {
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.blog-post-card h3 a:hover,
+.blog-post-card h4 a:hover {
+    color: var(--accent-neutral);
+}
+
+/* Post Metadata */
+.post-meta {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+    margin-bottom: 15px;
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+/* Tags */
+.post-tags {
+    margin: 15px 0;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tag {
+    display: inline-block;
+    background: var(--accent-neutral);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 500;
+}
+
+/* Excerpt */
+.post-excerpt {
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin-top: 15px;
+}
+
+/* No Posts */
+.no-posts {
+    text-align: center;
+    padding: 60px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.no-posts p {
+    margin: 10px 0;
+}
+
+.no-posts-hint {
+    color: var(--text-secondary);
+    font-style: italic;
+    font-size: 0.9em;
+}
+
+/* Footer */
+footer {
+    margin-top: 60px;
+    padding: 30px 0;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+footer a {
+    color: var(--accent-neutral);
+    text-decoration: none;
+}
+
+footer a:hover {
+    text-decoration: underline;
+}
+
+.footer-note {
+    margin-top: 10px;
+    font-size: 0.9em;
+    font-style: italic;
+}
+
+/* Experiment Info Section */
+.experiment-info {
+    background: linear-gradient(135deg, rgba(68, 136, 255, 0.1), rgba(136, 68, 255, 0.1));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 30px;
+    margin: 30px 0;
+}
+
+.experiment-info h2 {
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.experiment-info > p {
+    text-align: center;
+    font-size: 1.1em;
+    color: var(--text-secondary);
+    margin-bottom: 25px;
+}
+
+.rules-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.rule-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.rule-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent-neutral);
+    box-shadow: 0 4px 12px rgba(68, 136, 255, 0.2);
+}
+
+.rule-icon {
+    font-size: 2.5em;
+    margin-bottom: 10px;
+}
+
+.rule-card h3 {
+    font-size: 1.1em;
+    margin: 10px 0;
+    color: var(--text-primary);
+}
+
+.rule-card p {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .main-nav {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .main-nav a {
+        text-align: center;
+    }
+
+    .memories-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .blog-post-card {
+        padding: 20px;
+    }
+
+    .post-meta {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .rules-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .experiment-info {
+        padding: 20px;
+    }
 }

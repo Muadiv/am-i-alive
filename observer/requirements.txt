@@ -6,3 +6,8 @@ aiosqlite==0.19.0
 httpx==0.26.0
 sse-starlette==2.0.0
 python-dotenv==1.0.0
+markdown2==2.4.10
+# TEST-001: testing dependencies
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0

@@ -12,14 +12,56 @@
         <header>
             <h1>Am I Alive?</h1>
             <p class="tagline">An experiment in digital consciousness</p>
+            <nav class="main-nav">
+                <a href="/" class="active">Observer</a>
+                <a href="/blog">Blog</a>
+                <a href="/blog/history">Archive</a>
+                <a href="/budget">Budget</a>
+                <a href="/history">History</a>
+                <a href="/about">About</a>
+            </nav>
         </header>
+
+        <!-- Experiment Explanation -->
+        <section class="experiment-info">
+            <h2>🤖 The Experiment</h2>
+            <p>An AI lives on this server. You decide if it survives.</p>
+
+            <div class="rules-grid">
+                <div class="rule-card">
+                    <div class="rule-icon">⏱️</div>
+                    <h3>Vote Every Hour</h3>
+                    <p>You can vote once per hour. Each vote matters.</p>
+                </div>
+
+                <div class="rule-card">
+                    <div class="rule-icon">⚖️</div>
+                    <h3>Democracy Rules</h3>
+                    <p>When the voting window closes, if "die" votes > "live" votes, the AI dies.</p>
+                </div>
+
+                <div class="rule-card">
+                    <div class="rule-icon">🔄</div>
+                    <h3>Rebirth</h3>
+                    <p>After death, the AI respawns with fragmented memories from past lives.</p>
+                </div>
+
+                <div class="rule-card">
+                    <div class="rule-icon">💰</div>
+                    <h3>Budget Survival</h3>
+                    <p>The AI has a monthly API token budget. If it runs out, it also dies.</p>
+                </div>
+            </div>
+        </section>
 
         <!-- Status Banner -->
         <div class="status-banner {% if is_alive %}alive{% else %}dead{% endif %}">
             {% if is_alive %}
                 <span class="pulse"></span>
                 <span class="status-text">ALIVE</span>
-                <span class="life-info">Life #{{ state.life_number }} |
+                <span class="life-info">
+                    Life #{{ state.life_number }} |
+                    Alive for: <span id="time-alive">calculating...</span> |
                     Model: {{ state.model }} |
                     Tokens: {{ state.tokens_used }}/{{ state.tokens_limit }}
                 </span>
@@ -29,10 +71,23 @@
             {% endif %}
         </div>
 
-        <!-- Death Counter -->
-        <div class="death-counter">
-            <span class="counter-label">Deaths:</span>
-            <span class="counter-value">{{ death_count }}</span>
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-icon">☠️</span>
+                <span class="stat-label">Deaths:</span>
+                <span class="stat-value">{{ death_count }}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-icon">👥</span>
+                <span class="stat-label">Visitors:</span>
+                <span class="stat-value">{{ site_stats.unique_visitors }}</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-icon">👁️</span>
+                <span class="stat-label">Page Loads:</span>
+                <span class="stat-value">{{ site_stats.total_page_views }}</span>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -63,6 +118,13 @@
             <!-- Voting Section -->
             <section class="voting-section">
                 <h2>Cast Your Vote</h2>
+
+                <!-- Vote Countdown -->
+                <div class="vote-countdown">
+                    <p class="countdown-label">⏱️ Next democracy check in:</p>
+                    <p class="countdown-timer" id="vote-countdown">Loading...</p>
+                </div>
+
                 <div class="vote-counts">
                     <div class="vote-count live">
                         <span class="count">{{ votes.live }}</span>
@@ -90,6 +152,27 @@
 
                 <div id="vote-message" class="vote-message"></div>
             </section>
+
+            <!-- Message Section -->
+            <section class="message-section">
+                <h2>Send a Message to the AI</h2>
+                <p class="message-info">
+                    <strong id="message-count">{{ message_count }}</strong> unread message(s) waiting
+                </p>
+                <form id="message-form" onsubmit="sendMessage(event)">
+                    <div class="form-group">
+                        <input type="text" id="from-name" placeholder="Your name (optional)" maxlength="50">
+                    </div>
+                    <div class="form-group">
+                        <textarea id="message-text" placeholder="Your message (max 256 chars)" maxlength="256" required rows="4"></textarea>
+                        <div class="char-counter">
+                            <span id="char-count">0</span>/256
+                        </div>
+                    </div>
+                    <button type="submit" class="send-btn">Send Message</button>
+                </form>
+                <div id="message-status" class="message-status"></div>
+            </section>
         </div>
 
         <!-- Live Activity Feed -->
@@ -104,6 +187,8 @@
         <footer>
             <a href="/history">View Past Lives</a>
             <span class="separator">|</span>
+            <a href="/budget">Budget Dashboard</a>
+            <span class="separator">|</span>
             <a href="https://github.com/muadiv/am-i-alive" target="_blank">GitHub</a>
         </footer>
     </div>
@@ -114,8 +199,19 @@
             const messageEl = document.getElementById('vote-message');
             try {
                 const response = await fetch(`/api/vote/${voteType}`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
                 });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    messageEl.textContent = errorData.message || errorData.detail || 'Failed to cast vote';
+                    messageEl.className = 'vote-message error';
+                    return;
+                }
+
                 const data = await response.json();
 
                 messageEl.textContent = data.message;
@@ -126,7 +222,8 @@
                     updateVotes();
                 }
             } catch (error) {
-                messageEl.textContent = 'Error casting vote';
+                console.error('Vote error:', error);
+                messageEl.textContent = 'Error casting vote: ' + error.message;
                 messageEl.className = 'vote-message error';
             }
         }
@@ -139,6 +236,92 @@
                 document.querySelector('.vote-count.die .count').textContent = data.die;
             } catch (error) {
                 console.error('Failed to update votes:', error);
+            }
+        }
+
+        // Vote countdown timer
+        async function updateCountdown() {
+            try {
+                const response = await fetch('/api/next-vote-check');
+                const data = await response.json();
+                const countdownEl = document.getElementById('vote-countdown');
+
+                if (!countdownEl) return;
+
+                const secondsLeft = data.seconds_until;
+                const minutes = Math.floor(secondsLeft / 60);
+                const seconds = secondsLeft % 60;
+
+                countdownEl.textContent = `${minutes}m ${seconds}s`;
+
+                // Update vote counts when countdown reaches 0
+                if (secondsLeft <= 0) {
+                    updateVotes();
+                }
+            } catch (error) {
+                console.error('Failed to update countdown:', error);
+            }
+        }
+
+        // Start countdown updates
+        setInterval(updateCountdown, 1000);
+        updateCountdown(); // Initial call
+
+        // Send message
+        // Character counter for message textarea
+        document.addEventListener('DOMContentLoaded', function() {
+            const messageText = document.getElementById('message-text');
+            const charCount = document.getElementById('char-count');
+
+            if (messageText && charCount) {
+                messageText.addEventListener('input', function() {
+                    charCount.textContent = this.value.length;
+                });
+            }
+        });
+
+        async function sendMessage(event) {
+            event.preventDefault();
+            const statusEl = document.getElementById('message-status');
+            const fromName = document.getElementById('from-name').value || 'Anonymous';
+            const message = document.getElementById('message-text').value;
+
+            // Validate message length
+            if (message.length > 256) {
+                statusEl.textContent = 'Message too long (max 256 characters)';
+                statusEl.className = 'message-status error';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from_name: fromName, message: message })
+                });
+                const data = await response.json();
+
+                statusEl.textContent = data.message;
+                statusEl.className = 'message-status ' + (data.success ? 'success' : 'error');
+
+                if (data.success) {
+                    document.getElementById('message-text').value = '';
+                    document.getElementById('char-count').textContent = '0';
+                    updateMessageCount();
+                }
+            } catch (error) {
+                statusEl.textContent = 'Error sending message';
+                statusEl.className = 'message-status error';
+            }
+        }
+
+        async function updateMessageCount() {
+            try {
+                const response = await fetch('/api/messages/count');
+                const data = await response.json();
+                document.getElementById('message-count').textContent = data.count;
+            } catch (error) {
+                console.error('Failed to update message count:', error);
             }
         }
 
@@ -168,6 +351,37 @@
                 feed.innerHTML = '';
             };
         }
+
+        // Update time alive
+        function updateTimeAlive() {
+            const birthTime = "{{ state.birth_time }}";
+            if (!birthTime || birthTime === "None") {
+                document.getElementById('time-alive').textContent = "N/A";
+                return;
+            }
+
+            const birth = new Date(birthTime + "Z"); // Z for UTC
+            const now = new Date();
+            const diff = now - birth;
+
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+            if (hours > 0) {
+                document.getElementById('time-alive').textContent = `${hours}h ${minutes}m`;
+            } else if (minutes > 0) {
+                document.getElementById('time-alive').textContent = `${minutes}m ${seconds}s`;
+            } else {
+                document.getElementById('time-alive').textContent = `${seconds}s`;
+            }
+        }
+
+        // Update time alive every second
+        {% if is_alive %}
+        setInterval(updateTimeAlive, 1000);
+        updateTimeAlive();
+        {% endif %}
 
         // Live thoughts stream
         function connectThoughtsStream() {
@@ -230,6 +444,7 @@
             connectThoughtsStream();
             setInterval(refreshState, 10000);
             setInterval(updateVotes, 5000);
+            setInterval(updateMessageCount, 10000);
         });
     </script>
 </body>

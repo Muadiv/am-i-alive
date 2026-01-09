@@ -11,6 +11,14 @@
         <header>
             <h1>Past Lives</h1>
             <p class="tagline">The history of existence</p>
+            <nav class="main-nav">
+                <a href="/">Observer</a>
+                <a href="/blog">Blog</a>
+                <a href="/blog/history">Archive</a>
+                <a href="/budget">Budget</a>
+                <a href="/history" class="active">History</a>
+                <a href="/about">About</a>
+            </nav>
         </header>
 
         <div class="death-counter large">
@@ -25,19 +33,15 @@
                     <div class="life-card">
                         <div class="life-header">
                             <span class="life-number">Life #{{ life.life_number }}</span>
-                            <span class="death-cause {{ life.cause }}">{{ life.cause }}</span>
+                            <span class="death-cause {{ life.cause }}">{{ life.outcome or life.cause }}</span>
                         </div>
                         <div class="life-details">
                             <p><strong>Born:</strong> {{ life.birth_time }}</p>
                             <p><strong>Died:</strong> {{ life.death_time }}</p>
-                            <p><strong>Duration:</strong>
-                                {% if life.duration_seconds %}
-                                    {% set hours = life.duration_seconds // 3600 %}
-                                    {% set minutes = (life.duration_seconds % 3600) // 60 %}
-                                    {{ hours }}h {{ minutes }}m
-                                {% else %}
-                                    Unknown
-                                {% endif %}
+                            <p><strong>Survived:</strong> {{ life.survival_time }}</p>
+                            <p><strong>Final Votes:</strong>
+                                <span class="vote-live">{{ life.total_votes_live }} live</span> /
+                                <span class="vote-die">{{ life.total_votes_die }} die</span>
                             </p>
                         </div>
                         {% if life.summary %}
