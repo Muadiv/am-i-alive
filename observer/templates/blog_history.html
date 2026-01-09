@@ -56,8 +56,11 @@
                             </div>
                             {% endif %}
                             <div class="post-excerpt">
-                                {{ post.content[:200] }}{% if post.content|length > 200 %}...{% endif %}
+                                {{ post.content[:400] }}{% if post.content|length > 400 %}...{% endif %}
                             </div>
+                            {% if post.content|length > 400 %}
+                            <a href="/blog/{{ post.slug }}" class="read-more">Read full post →</a>
+                            {% endif %}
                         </article>
                         {% endfor %}
                     </div>
