@@ -213,6 +213,14 @@ async def blog_history(request: Request):
     })
 
 
+@app.get("/chronicle", response_class=HTMLResponse)
+async def chronicle(request: Request):
+    """Public Chronicle page showing notable events timeline."""
+    return templates.TemplateResponse("chronicle.html", {
+        "request": request
+    })
+
+
 @app.get("/blog/{slug}", response_class=HTMLResponse)
 async def blog_post(request: Request, slug: str):
     """Individual blog post page."""
@@ -907,6 +915,80 @@ async def oracle_message(request: Request):
                 timeout=30.0
             )
             return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# CHRONICLE / NOTABLE EVENTS API
+# =============================================================================
+
+@app.get("/api/chronicle/posts")
+async def get_chronicle_posts():
+    """Get recent blog posts with notable status (for God mode)."""
+    try:
+        posts = await db.get_recent_blog_posts_with_notable_status(limit=20)
+        return posts
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chronicle/add")
+async def add_to_chronicle(request: Request):
+    """Add a blog post to the chronicle (God mode)."""
+    try:
+        data = await request.json()
+        post_id = data.get("post_id")
+        category = data.get("category", "General")
+        highlight = data.get("highlight", "")
+
+        if not post_id:
+            raise HTTPException(status_code=400, detail="post_id required")
+
+        # Get the blog post details
+        blog_post = await db.get_blog_post_by_id(post_id)
+        if not blog_post:
+            raise HTTPException(status_code=404, detail="Blog post not found")
+
+        # Add to notable events
+        event_id = await db.add_notable_event(
+            life_number=blog_post["life_number"],
+            event_type="blog_post",
+            event_source="blog_post",
+            event_id=post_id,
+            title=blog_post["title"],
+            description=blog_post["content"][:200],
+            highlight=highlight,
+            category=category
+        )
+
+        return {"success": True, "event_id": event_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/chronicle/remove/{event_id}")
+async def remove_from_chronicle(event_id: int):
+    """Remove a notable event from the chronicle (God mode)."""
+    try:
+        success = await db.remove_notable_event(event_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Notable event not found")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/chronicle/events")
+async def get_chronicle_events(life: int = None, limit: int = 50):
+    """Get notable events for the public chronicle page."""
+    try:
+        events = await db.get_notable_events(life_number=life, limit=limit)
+        return events
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

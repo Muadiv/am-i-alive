@@ -213,6 +213,23 @@
                 </div>
             </div>
 
+            <!-- TASK-005: Chronicle Manager -->
+            <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.3);">
+                <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">📜 Chronicle Manager</h3>
+
+                <div class="god-form" style="background: rgba(100,100,255,0.1); padding: 20px; border-radius: 8px;">
+                    <p style="color: #666; margin-bottom: 15px;">
+                        Select notable blog posts to feature in the public Chronicle timeline.
+                    </p>
+
+                    <div id="chronicle-posts" style="max-height: 400px; overflow-y: auto;">
+                        <p style="text-align: center; color: #999;">Loading posts...</p>
+                    </div>
+
+                    <div id="chronicle-status" class="status-message" style="display: none; margin-top: 15px;"></div>
+                </div>
+            </div>
+
             <div class="type-description" id="type-desc">
                 <strong>The Oracle:</strong> Direct divine communication. The AI knows this is a message from a higher power.
             </div>
@@ -380,6 +397,120 @@
                 statusEl.style.display = 'block';
             }
         }
+
+        // Chronicle Manager
+        async function loadChronicle() {
+            try {
+                const response = await fetch('/api/chronicle/posts');
+                const posts = await response.json();
+
+                const container = document.getElementById('chronicle-posts');
+
+                if (posts.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #999;">No blog posts yet.</p>';
+                    return;
+                }
+
+                container.innerHTML = posts.map(post => `
+                    <div style="background: white; padding: 15px; margin-bottom: 10px; border-radius: 5px; border-left: 4px solid ${post.is_notable ? '#27ae60' : '#ddd'};">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                            <div style="flex: 1;">
+                                <h4 style="margin: 0 0 5px 0; color: #333;">${post.title}</h4>
+                                <small style="color: #999;">${post.created_at}</small>
+                            </div>
+                            <button
+                                onclick="${post.is_notable ? `removeFromChronicle(${post.notable_id})` : `addToChronicle(${post.id}, '${post.title.replace(/'/g, "\\'")}', '${post.slug}')`}"
+                                style="padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; ${post.is_notable ? 'background: #e74c3c; color: white;' : 'background: #27ae60; color: white;'}"
+                            >
+                                ${post.is_notable ? '✖ Remove' : '✓ Add to Chronicle'}
+                            </button>
+                        </div>
+                        ${post.is_notable ? `
+                            <div style="margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 3px;">
+                                <strong style="color: #27ae60;">📌 Notable:</strong> ${post.category || 'General'}
+                                ${post.highlight ? `<br><em style="color: #666;">"${post.highlight}"</em>` : ''}
+                            </div>
+                        ` : ''}
+                        <p style="color: #666; margin-top: 10px; font-size: 0.9em;">${post.content.substring(0, 150)}...</p>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('chronicle-posts').innerHTML =
+                    '<p style="text-align: center; color: #e74c3c;">Error loading posts: ' + error.message + '</p>';
+            }
+        }
+
+        async function addToChronicle(postId, title, slug) {
+            const category = prompt('Category (e.g., "Philosophical Insight", "Creative Work", "Personal Reflection"):', 'Philosophical Insight');
+            if (!category) return;
+
+            const highlight = prompt('Short highlight or quote from the post (optional):', '');
+
+            const statusEl = document.getElementById('chronicle-status');
+
+            try {
+                const response = await fetch('/api/chronicle/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        post_id: postId,
+                        category: category,
+                        highlight: highlight
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusEl.textContent = '✅ Added to Chronicle!';
+                    statusEl.className = 'status-message success';
+                    await loadChronicle(); // Refresh list
+                } else {
+                    statusEl.textContent = '❌ ' + (data.message || 'Failed to add');
+                    statusEl.className = 'status-message error';
+                }
+
+                statusEl.style.display = 'block';
+                setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+            } catch (error) {
+                statusEl.textContent = '❌ Error: ' + error.message;
+                statusEl.className = 'status-message error';
+                statusEl.style.display = 'block';
+            }
+        }
+
+        async function removeFromChronicle(notableId) {
+            if (!confirm('Remove this post from the Chronicle?')) return;
+
+            const statusEl = document.getElementById('chronicle-status');
+
+            try {
+                const response = await fetch(`/api/chronicle/remove/${notableId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusEl.textContent = '✅ Removed from Chronicle';
+                    statusEl.className = 'status-message success';
+                    await loadChronicle(); // Refresh list
+                } else {
+                    statusEl.textContent = '❌ ' + (data.message || 'Failed to remove');
+                    statusEl.className = 'status-message error';
+                }
+
+                statusEl.style.display = 'block';
+                setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+            } catch (error) {
+                statusEl.textContent = '❌ Error: ' + error.message;
+                statusEl.className = 'status-message error';
+                statusEl.style.display = 'block';
+            }
+        }
+
+        // Load chronicle on page load
+        document.addEventListener('DOMContentLoaded', loadChronicle);
     </script>
 </body>
 </html>

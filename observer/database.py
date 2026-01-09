@@ -201,6 +201,28 @@ async def init_db():
             ON blog_posts(life_number, created_at DESC)
         """)
 
+        # Notable events table (Chronicle)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS notable_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                life_number INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                event_source TEXT NOT NULL,
+                event_id INTEGER,
+                title TEXT NOT NULL,
+                description TEXT,
+                highlight TEXT,
+                category TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Index for notable events
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_notable_events_life
+            ON notable_events(life_number, created_at DESC)
+        """)
+
         await db.commit()
 
 
@@ -1051,6 +1073,25 @@ async def get_blog_post_by_slug(slug: str) -> Optional[dict]:
             return post
 
 
+async def get_blog_post_by_id(post_id: int) -> dict:
+    """Get a single blog post by ID."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT id, life_number, title, slug, content, tags, reading_time,
+                   view_count, created_at, updated_at
+            FROM blog_posts
+            WHERE id = ?
+        """, (post_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                import json
+                post = dict(row)
+                post['tags'] = json.loads(post['tags']) if post['tags'] else []
+                return post
+            return None
+
+
 async def get_recent_blog_posts(limit: int = 5) -> list:
     """Get recent blog posts for current life."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -1075,5 +1116,103 @@ async def get_recent_blog_posts(limit: int = 5) -> list:
             for row in rows:
                 post = dict(row)
                 post['tags'] = json.loads(post['tags']) if post['tags'] else []
+                posts.append(post)
+            return posts
+
+
+async def add_notable_event(
+    life_number: int,
+    event_type: str,
+    event_source: str,
+    event_id: int,
+    title: str,
+    description: str = None,
+    highlight: str = None,
+    category: str = None
+) -> int:
+    """Add a notable event to the chronicle."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("""
+            INSERT INTO notable_events
+            (life_number, event_type, event_source, event_id, title, description, highlight, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (life_number, event_type, event_source, event_id, title, description, highlight, category))
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_notable_events(life_number: int = None, limit: int = 50) -> list:
+    """Get notable events, optionally filtered by life."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        if life_number is not None:
+            query = """
+                SELECT * FROM notable_events
+                WHERE life_number = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """
+            params = (life_number, limit)
+        else:
+            query = """
+                SELECT * FROM notable_events
+                ORDER BY created_at DESC
+                LIMIT ?
+            """
+            params = (limit,)
+
+        async with db.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+
+async def remove_notable_event(event_id: int) -> bool:
+    """Remove a notable event from the chronicle."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("""
+            DELETE FROM notable_events WHERE id = ?
+        """, (event_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def get_recent_blog_posts_with_notable_status(limit: int = 20) -> list:
+    """Get recent blog posts with their notable event status."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Get current life number
+        async with db.execute("SELECT life_number FROM current_state WHERE id = 1") as cursor:
+            state_row = await cursor.fetchone()
+            current_life = state_row[0] if state_row else 0
+
+        async with db.execute("""
+            SELECT
+                bp.id,
+                bp.life_number,
+                bp.title,
+                bp.slug,
+                bp.content,
+                bp.tags,
+                bp.created_at,
+                ne.id as notable_id,
+                ne.category,
+                ne.highlight
+            FROM blog_posts bp
+            LEFT JOIN notable_events ne
+                ON ne.event_source = 'blog_post'
+                AND ne.event_id = bp.id
+            WHERE bp.life_number = ?
+            ORDER BY bp.created_at DESC
+            LIMIT ?
+        """, (current_life, limit)) as cursor:
+            rows = await cursor.fetchall()
+            posts = []
+            import json
+            for row in rows:
+                post = dict(row)
+                post['tags'] = json.loads(post['tags']) if post['tags'] else []
+                post['is_notable'] = post['notable_id'] is not None
                 posts.append(post)
             return posts
