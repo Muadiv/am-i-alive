@@ -447,7 +447,30 @@ class AIBrain:
                 return response_text, usage_stats
 
         except httpx.HTTPStatusError as e:
-            print(f"[BRAIN] ❌ HTTP Error: {e.response.status_code} - {e.response.text}")
+            error_code = e.response.status_code
+            error_text = e.response.text
+            print(f"[BRAIN] ❌ HTTP Error: {error_code} - {error_text}")
+
+            # SELF-HEALING: Auto-switch model on 404 (model not found)
+            if error_code == 404 and "does not exist" in error_text.lower():
+                print(f"[BRAIN] 🔧 Model '{self.current_model['id']}' not found. Auto-switching to next available model...")
+                await self.report_activity("model_error_auto_switch",
+                    f"Model {self.current_model['name']} returned 404, switching automatically")
+
+                # Select a different model from the same tier
+                old_model = self.current_model
+                self.current_model = self.model_rotator.select_random_model()
+
+                print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
+
+                # Retry the request with the new model
+                try:
+                    print(f"[BRAIN] 🔁 Retrying with new model...")
+                    return await self.send_message(message, system_prompt)
+                except Exception as retry_error:
+                    print(f"[BRAIN] ❌ Retry failed: {retry_error}")
+                    raise
+
             raise
         except Exception as e:
             print(f"[BRAIN] ❌ Error calling OpenRouter: {e}")
@@ -1001,6 +1024,9 @@ If you just want to share a thought (not execute an action), write it as plain t
         elif action == "list_models":
             return await self.list_available_models()
 
+        elif action == "check_model_health":
+            return await self.check_model_health()
+
         elif action == "read_file":
             path = params.get("path", "")
             return self.read_file(path)
@@ -1085,6 +1111,53 @@ Top models by spending:"""
         result += "\nUse switch_model action to change models."
 
         return result
+
+    async def check_model_health(self) -> str:
+        """Check if current model is working and auto-fix if needed."""
+        current = self.current_model
+
+        # Test current model with a simple query
+        test_message = "Respond with just 'OK' if you receive this."
+
+        try:
+            print(f"[BRAIN] 🔍 Testing model health: {current['name']}")
+            response, _ = await self.send_message(test_message, system_prompt="You are a test assistant.")
+
+            # If we got here, model is working
+            return f"""✅ Model '{current['name']}' is HEALTHY
+
+Model ID: {current['id']}
+Intelligence: {current['intelligence']}/10
+Status: Responding normally
+
+No action needed."""
+
+        except httpx.HTTPStatusError as e:
+            error_code = e.response.status_code
+            error_text = e.response.text
+
+            if error_code == 404 and "does not exist" in error_text.lower():
+                # Model doesn't exist - already auto-switched by send_message error handler
+                return f"""⚠️ Model '{current['name']}' FAILED (404: Model not found)
+
+The model has been AUTOMATICALLY SWITCHED to a working alternative.
+New model: {self.current_model['name']}
+
+This is a self-healing response - no manual action needed."""
+
+            else:
+                return f"""❌ Model '{current['name']}' ERROR ({error_code})
+
+Error: {error_text[:200]}
+
+Consider using 'switch_model' action to try a different model,
+or use 'list_models' to see available alternatives."""
+
+        except Exception as e:
+            return f"""❌ Model health check failed: {str(e)[:200]}
+
+Current model: {current['name']}
+Recommendation: Try 'switch_model' with a different model ID."""
 
     async def switch_model(self, model_id: str) -> str:
         """Switch to a different model."""
