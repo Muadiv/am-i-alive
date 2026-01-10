@@ -28,11 +28,11 @@ MODELS = {
             "best_for": "general reasoning, daily thoughts"
         },
         {
-            "id": "nvidia/nemotron-nano-9b-v2:free",
-            "name": "NVIDIA Nemotron Nano",
+            "id": "xiaomi/mimo-v2-flash:free",
+            "name": "Xiaomi MiMo V2",
             "input_cost": 0.0,
             "output_cost": 0.0,
-            "context": 128000,
+            "context": 262000,
             "intelligence": 5,
             "best_for": "quick responses, simple tasks"
         }
