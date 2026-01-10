@@ -247,27 +247,6 @@ async def get_current_state() -> dict:
             return {"life_number": 0, "is_alive": False}
 
 
-async def update_ai_identity(name: str = None, icon: str = None) -> bool:
-    """Update AI name and icon."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        updates = []
-        params = []
-
-        if name is not None:
-            updates.append("ai_name = ?")
-            params.append(name)
-
-        if icon is not None:
-            updates.append("ai_icon = ?")
-            params.append(icon)
-
-        if not updates:
-            return False
-
-        query = f"UPDATE current_state SET {', '.join(updates)} WHERE id = 1"
-        await db.execute(query, params)
-        await db.commit()
-        return True
 
 
 async def get_death_count() -> int:
@@ -859,7 +838,7 @@ async def update_heartbeat(tokens_used: int = None, model: str = None):
         await db.commit()
 
 
-async def record_birth(life_number: int, bootstrap_mode: str, model: str):
+async def record_birth(life_number: int, bootstrap_mode: str, model: str, ai_name: str = None, ai_icon: str = None):
     """Record AI birth - marks as alive and updates state."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         birth_time = datetime.utcnow()
@@ -871,11 +850,14 @@ async def record_birth(life_number: int, bootstrap_mode: str, model: str):
                 bootstrap_mode = ?,
                 model = ?,
                 tokens_used = 0,
-                last_seen = ?
+                last_seen = ?,
+                ai_name = ?,
+                ai_icon = ?
             WHERE id = 1
-        """, (life_number, birth_time, bootstrap_mode, model, birth_time))
+        """, (life_number, birth_time, bootstrap_mode, model, birth_time, ai_name, ai_icon))
         await db.commit()
-        print(f"[DB] 🎂 Birth recorded: Life #{life_number}, Model: {model}, Bootstrap: {bootstrap_mode}")
+        identity_info = f" as '{ai_name}' {ai_icon}" if ai_name else ""
+        print(f"[DB] 🎂 Birth recorded: Life #{life_number}{identity_info}, Model: {model}, Bootstrap: {bootstrap_mode}")
 
 
 async def can_send_message(ip_hash: str) -> tuple[bool, Optional[int]]:

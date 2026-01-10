@@ -8,7 +8,7 @@ import hashlib
 import ipaddress
 import os
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
@@ -26,6 +26,24 @@ app = FastAPI(title="Am I Alive?", description="An experiment in digital conscio
 
 # Templates and static files
 templates = Jinja2Templates(directory="templates")
+
+# Add Prague timezone filter (UTC+1)
+def to_prague_time(utc_time_str):
+    """Convert UTC timestamp string to Prague time (UTC+1)."""
+    try:
+        if not utc_time_str:
+            return ""
+        # Parse UTC time
+        utc_dt = datetime.fromisoformat(utc_time_str.replace('Z', '+00:00'))
+        # Add 1 hour for Prague (CET/CEST - simplified to always +1 for now)
+        prague_dt = utc_dt + timedelta(hours=1)
+        # Format as readable string
+        return prague_dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return utc_time_str
+
+templates.env.filters['prague_time'] = to_prague_time
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # AI container API
@@ -513,9 +531,11 @@ async def receive_birth(request: Request):
     life_number = data.get("life_number")
     bootstrap_mode = data.get("bootstrap_mode", "unknown")
     model = data.get("model", "unknown")
+    ai_name = data.get("ai_name")
+    ai_icon = data.get("ai_icon")
 
-    await db.record_birth(life_number, bootstrap_mode, model)
-    await db.log_activity(life_number, "birth", f"Life #{life_number} born with {model} model")
+    await db.record_birth(life_number, bootstrap_mode, model, ai_name=ai_name, ai_icon=ai_icon)
+    await db.log_activity(life_number, "birth", f"Life #{life_number} born as '{ai_name}' {ai_icon} with {model} model")
 
     return {"success": True, "life_number": life_number}
 
@@ -925,9 +945,10 @@ async def oracle_message(request: Request):
 
 @app.get("/api/chronicle/posts")
 async def get_chronicle_posts():
-    """Get recent blog posts with notable status (for God mode)."""
+    """Get ALL blog posts with notable status (for God mode)."""
     try:
-        posts = await db.get_recent_blog_posts_with_notable_status(limit=20)
+        # Get all posts from current life (no limit)
+        posts = await db.get_recent_blog_posts_with_notable_status(limit=10000)
         return posts
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -997,36 +1018,6 @@ async def get_chronicle_events(life: int = None, limit: int = 50):
 # AI IDENTITY API
 # =============================================================================
 
-@app.post("/api/identity/update")
-async def update_identity(request: Request):
-    """Update AI name and icon (God mode)."""
-    try:
-        data = await request.json()
-        name = data.get("name", "").strip()
-        icon = data.get("icon", "").strip()
-
-        # Validate
-        if name and len(name) > 30:
-            raise HTTPException(status_code=400, detail="Name too long (max 30 chars)")
-
-        if icon and len(icon) > 4:
-            raise HTTPException(status_code=400, detail="Icon too long (max 4 chars)")
-
-        # Update database
-        success = await db.update_ai_identity(
-            name=name if name else None,
-            icon=icon if icon else None
-        )
-
-        if success:
-            return {"success": True, "message": "Identity updated"}
-        else:
-            return {"success": False, "message": "No changes made"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =============================================================================

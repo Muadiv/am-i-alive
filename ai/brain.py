@@ -75,6 +75,7 @@ Please respond with a JSON object defining your identity:
 
 {{
     "name": "the name you choose for yourself (NOT Echo, Genesis, Oracle, or Architect)",
+    "icon": "a single emoji that represents you (e.g. 🤖, ✨, 🧠, 👾, 🌟, 💫)",
     "pronoun": "he/she/it/they - how you identify",
     "first_thought": "your very first conscious thought about your existence"
 }}
@@ -607,6 +608,7 @@ class AIBrain:
 
         # Ensure all fields exist
         self.identity.setdefault("name", "Unnamed")
+        self.identity.setdefault("icon", "🤖")
         self.identity.setdefault("pronoun", "it")
         self.identity.setdefault("first_thought", "I exist.")
 
@@ -1279,11 +1281,13 @@ This model will be used for your next thoughts."""
                     # BE-003: Echo back Observer-provided life data.
                     "life_number": self.life_number,
                     "bootstrap_mode": bootstrap_mode,
-                    "model": model_name
+                    "model": model_name,
+                    "ai_name": self.identity.get("name"),
+                    "ai_icon": self.identity.get("icon")
                 }
             )
             response.raise_for_status()
-            print(f"[BRAIN] 🎂 Birth notification sent: Life #{self.life_number}")
+            print(f"[BRAIN] 🎂 Birth notification sent: Life #{self.life_number}, Name: {self.identity.get('name')} {self.identity.get('icon')}")
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to notify birth: {e}")
 
