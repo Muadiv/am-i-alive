@@ -261,6 +261,51 @@
                 </div>
             </div>
 
+            <!-- ISSUE-002: Manual Vote Override -->
+            <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.3);">
+                <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">🗳️ Manual Vote Override</h3>
+
+                <div class="god-form" style="background: rgba(255,200,100,0.1); padding: 20px; border-radius: 8px;">
+                    <p style="color: #666; margin-bottom: 15px;">
+                        Manually adjust vote counters. This will replace all current votes with your specified values.
+                    </p>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label for="live-votes" style="display: block; color: #fff; margin-bottom: 5px;">
+                                ✅ Live Votes:
+                            </label>
+                            <input
+                                type="number"
+                                id="live-votes"
+                                min="0"
+                                value="0"
+                                style="width: 100%; padding: 10px; border: 2px solid #27ae60; border-radius: 5px; box-sizing: border-box; font-size: 1em;"
+                            />
+                        </div>
+
+                        <div>
+                            <label for="die-votes" style="display: block; color: #fff; margin-bottom: 5px;">
+                                ☠️ Die Votes:
+                            </label>
+                            <input
+                                type="number"
+                                id="die-votes"
+                                min="0"
+                                value="0"
+                                style="width: 100%; padding: 10px; border: 2px solid #e74c3c; border-radius: 5px; box-sizing: border-box; font-size: 1em;"
+                            />
+                        </div>
+                    </div>
+
+                    <button onclick="adjustVotes()" class="send-btn" style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);">
+                        ⚙️ Apply Vote Override
+                    </button>
+
+                    <div id="vote-adjust-status" class="status-message" style="display: none; margin-top: 15px;"></div>
+                </div>
+            </div>
+
             <div class="type-description" id="type-desc">
                 <strong>The Oracle:</strong> Direct divine communication. The AI knows this is a message from a higher power.
             </div>
@@ -667,10 +712,68 @@
             return div.innerHTML;
         }
 
+        // =============================================================================
+        // MANUAL VOTE OVERRIDE (ISSUE-002)
+        // =============================================================================
+
+        async function adjustVotes() {
+            const liveVotes = parseInt(document.getElementById('live-votes').value) || 0;
+            const dieVotes = parseInt(document.getElementById('die-votes').value) || 0;
+            const statusEl = document.getElementById('vote-adjust-status');
+
+            if (liveVotes < 0 || dieVotes < 0) {
+                statusEl.textContent = '❌ Vote counts must be non-negative';
+                statusEl.className = 'status-message error';
+                statusEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/god/votes/adjust', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        live: liveVotes,
+                        die: dieVotes
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    statusEl.textContent = `✅ ${result.message}`;
+                    statusEl.className = 'status-message success';
+                    statusEl.style.display = 'block';
+
+                    // Refresh the vote display on the main page (if open)
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    statusEl.textContent = `❌ Error: ${result.detail}`;
+                    statusEl.className = 'status-message error';
+                    statusEl.style.display = 'block';
+                }
+            } catch (error) {
+                statusEl.textContent = `❌ Error adjusting votes: ${error.message}`;
+                statusEl.className = 'status-message error';
+                statusEl.style.display = 'block';
+            }
+        }
+
         // Load chronicle and messages on page load
         document.addEventListener('DOMContentLoaded', function() {
             loadChronicle();
             loadMessageHistory();
+
+            // Load current vote counts into the input fields
+            fetch('/api/votes')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('live-votes').value = data.live || 0;
+                    document.getElementById('die-votes').value = data.die || 0;
+                })
+                .catch(err => console.error('Failed to load current votes:', err));
         });
     </script>
 </body>

@@ -947,6 +947,24 @@ async def get_god_messages():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/god/votes/adjust")
+async def adjust_vote_counters(request: Request):
+    """Manually adjust vote counters (God Mode only)."""
+    # TODO: Add authentication
+    data = await request.json()
+    live_count = data.get("live", 0)
+    die_count = data.get("die", 0)
+
+    if live_count < 0 or die_count < 0:
+        raise HTTPException(status_code=400, detail="Vote counts must be non-negative")
+
+    try:
+        result = await db.manually_adjust_votes(live_count, die_count)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # =============================================================================
 # CHRONICLE / NOTABLE EVENTS API
 # =============================================================================

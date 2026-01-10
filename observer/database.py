@@ -1005,6 +1005,53 @@ async def get_all_messages(limit: int = 100) -> dict:
         }
 
 
+async def manually_adjust_votes(live_count: int, die_count: int) -> dict:
+    """Manually adjust vote counters (God Mode only)."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Get current window
+        async with db.execute(
+            "SELECT id FROM voting_windows WHERE end_time IS NULL ORDER BY id DESC LIMIT 1"
+        ) as cursor:
+            row = await cursor.fetchone()
+            window_id = row[0] if row else None
+
+        if window_id is None:
+            # Create a new window if none exists
+            cursor = await db.execute("""
+                INSERT INTO voting_windows (start_time)
+                VALUES (?)
+            """, (datetime.utcnow(),))
+            window_id = cursor.lastrowid
+
+        # Delete all existing votes for current window
+        await db.execute("DELETE FROM votes WHERE window_id = ?", (window_id,))
+
+        # Insert synthetic votes to match desired counts
+        # Add "live" votes
+        for i in range(live_count):
+            await db.execute("""
+                INSERT INTO votes (window_id, ip_hash, vote)
+                VALUES (?, ?, 'live')
+            """, (window_id, f"god_mode_live_{i}"))
+
+        # Add "die" votes
+        for i in range(die_count):
+            await db.execute("""
+                INSERT INTO votes (window_id, ip_hash, vote)
+                VALUES (?, ?, 'die')
+            """, (window_id, f"god_mode_die_{i}"))
+
+        await db.commit()
+
+        return {
+            "success": True,
+            "message": f"Vote counters adjusted: {live_count} live, {die_count} die",
+            "live": live_count,
+            "die": die_count,
+            "total": live_count + die_count
+        }
+
+
 async def cleanup_old_data():
     """Cleanup old data - keep only last 10 thoughts, reset votes."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
