@@ -139,7 +139,12 @@ async def test_time_remaining_calculation(test_db, monkeypatch, minute, second, 
     ]
 )
 async def test_minimum_votes_for_death(main_module, monkeypatch, votes, expect_death, expected_result):
-    """Voting windows should only trigger death when minimum votes and majority are met."""
+    """
+    Voting system should only trigger death when minimum votes and die > live.
+
+    NEW BEHAVIOR (2026-01-10): Votes accumulate during entire life, no hourly reset.
+    Death checked every minute: total >= MIN_VOTES_FOR_DEATH AND die > live
+    """
     sleep_calls = []
 
     async def fake_sleep(_seconds):
@@ -147,28 +152,23 @@ async def test_minimum_votes_for_death(main_module, monkeypatch, votes, expect_d
             raise asyncio.CancelledError()
         sleep_calls.append(_seconds)
 
-    class FixedDatetime(datetime):
-        @classmethod
-        def utcnow(cls):
-            return datetime(2026, 1, 9, 12, 0, 0)
-
     monkeypatch.setattr(main_module.asyncio, "sleep", fake_sleep)
-    monkeypatch.setattr(main_module, "datetime", FixedDatetime)
-    monkeypatch.setattr(main_module.db, "get_current_state", AsyncMock(return_value={"is_alive": True}))
+    monkeypatch.setattr(main_module.db, "get_current_state", AsyncMock(return_value={
+        "is_alive": True,
+        "life_number": 123
+    }))
     monkeypatch.setattr(main_module.db, "get_vote_counts", AsyncMock(return_value=votes))
 
-    close_mock = AsyncMock()
-    start_mock = AsyncMock()
     exec_mock = AsyncMock()
+    log_mock = AsyncMock()
     tasks = []
 
     def fake_create_task(coro):
         tasks.append(coro)
         return AsyncMock()
 
-    monkeypatch.setattr(main_module.db, "close_current_voting_window", close_mock)
-    monkeypatch.setattr(main_module.db, "start_voting_window", start_mock)
     monkeypatch.setattr(main_module, "execute_death", exec_mock)
+    monkeypatch.setattr(main_module.db, "log_activity", log_mock)
     monkeypatch.setattr(main_module.asyncio, "create_task", fake_create_task)
 
     with pytest.raises(asyncio.CancelledError):
@@ -178,14 +178,13 @@ async def test_minimum_votes_for_death(main_module, monkeypatch, votes, expect_d
         if hasattr(task, "close"):
             task.close()
 
-    assert close_mock.await_count == 1
-    result_arg = close_mock.await_args.args[3]
-    assert result_arg == expected_result
-
     if expect_death:
+        # Death should be triggered
         assert exec_mock.await_count == 1
-        assert len(tasks) == 1
-        assert start_mock.await_count == 0
+        assert len(tasks) == 1  # schedule_respawn task
+        assert log_mock.await_count == 1  # log death activity
     else:
+        # No death, just continue checking
         assert exec_mock.await_count == 0
-        assert start_mock.await_count == 1
+        assert len(tasks) == 0  # no respawn scheduled
+        # Note: log_activity is only called on death, not on normal checks

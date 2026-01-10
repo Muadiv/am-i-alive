@@ -289,7 +289,14 @@ async def close_current_voting_window(
     result: str,
     clear_votes: bool = True
 ) -> Optional[int]:
-    """Close the current voting window and persist totals."""
+    """
+    DEPRECATED: This function is no longer used in production code.
+
+    Votes now accumulate during the entire AI life and reset only on death/birth.
+    Kept for backward compatibility with old tests only.
+
+    Close the current voting window and persist totals.
+    """
     async with aiosqlite.connect(DATABASE_PATH) as db:
         async with db.execute(
             "SELECT id FROM voting_windows WHERE end_time IS NULL ORDER BY id DESC LIMIT 1"
@@ -315,7 +322,14 @@ async def close_current_voting_window(
 
 
 async def start_voting_window(start_time: datetime) -> int:
-    """Start a new voting window."""
+    """
+    DEPRECATED: This function is no longer used in production code.
+
+    Votes now accumulate during the entire AI life and reset only on death/birth.
+    Kept for backward compatibility with old tests only.
+
+    Start a new voting window.
+    """
     async with aiosqlite.connect(DATABASE_PATH) as db:
         # BE-001: Start new voting window after hourly reset
         cursor = await db.execute(
@@ -468,12 +482,14 @@ async def start_new_life() -> dict:
             WHERE id = 1
         """, (new_life_number, birth_time, bootstrap_mode, model, tokens_limit))
 
-        # Close previous voting window
+        # Close previous voting window and start new one
+        # NOTE: Using SQL directly instead of close_current_voting_window() and start_voting_window()
+        # because those functions are deprecated (votes now accumulate during entire life).
+        # We only reset votes when a new life begins.
         await db.execute("""
             UPDATE voting_windows SET end_time = ? WHERE end_time IS NULL
         """, (birth_time,))
 
-        # Start new voting window
         await db.execute("""
             INSERT INTO voting_windows (start_time) VALUES (?)
         """, (birth_time,))
