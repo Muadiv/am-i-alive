@@ -800,9 +800,7 @@ async def force_ai_sync(observer_state: dict):
 
 
 async def voting_window_checker():
-    """Check voting windows and trigger death if votes require it."""
-    # BE-001: Track hourly voting windows
-    last_window_close = None
+    """Check votes continuously and trigger death if die votes exceed live votes."""
     while True:
         await asyncio.sleep(60)  # Check every minute
 
@@ -810,36 +808,25 @@ async def voting_window_checker():
         if not state.get("is_alive"):
             continue
 
-        now = datetime.utcnow()
-        window_marker = now.replace(minute=0, second=0, microsecond=0)
+        # Get current vote counts (accumulate during entire life)
+        votes = await db.get_vote_counts()
 
-        # BE-001: Save vote totals on window close
-        if now.minute == 0 and (last_window_close is None or window_marker > last_window_close):
-            votes = await db.get_vote_counts()
-            result = "insufficient"
-            if votes["total"] >= MIN_VOTES_FOR_DEATH:
-                result = "die" if votes["die"] > votes["live"] else "live"
-
-            await db.close_current_voting_window(
-                window_marker,
-                votes["live"],
-                votes["die"],
-                result
+        # Death condition: At least MIN_VOTES_FOR_DEATH total votes AND die > live
+        if votes["total"] >= MIN_VOTES_FOR_DEATH and votes["die"] > votes["live"]:
+            print(f"[VOTES] 💀 Death by voting: {votes['die']} die vs {votes['live']} live")
+            await db.log_activity(
+                state.get("life_number"),
+                "vote_death",
+                f"Died by vote: {votes['die']} die vs {votes['live']} live"
             )
-            last_window_close = window_marker
 
-            if result == "die":
-                # BE-001: Trigger death by vote at window close
-                await execute_death(
-                    "vote_majority",
-                    vote_counts=votes,
-                    final_vote_result="Died by vote"
-                )
-                asyncio.create_task(schedule_respawn())
-                continue
-
-            # BE-001: Start a new voting window for the next hour
-            await db.start_voting_window(window_marker)
+            await execute_death(
+                "vote_majority",
+                vote_counts=votes,
+                final_vote_result=f"Died by vote: {votes['die']} die vs {votes['live']} live"
+            )
+            asyncio.create_task(schedule_respawn())
+            continue
 
 
 async def token_budget_checker():
