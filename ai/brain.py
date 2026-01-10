@@ -793,7 +793,14 @@ class AIBrain:
             state_info = await self.check_state_internal()
             credit_status = self.credit_tracker.get_status()
 
-            prompt = f"""Current situation:
+            # Build identity reminder
+            name = self.identity.get('name', 'Unknown')
+            pronoun = self.identity.get('pronoun', 'it')
+            them = "them" if pronoun == "they" else "him" if pronoun == "he" else "her" if pronoun == "she" else "it"
+
+            prompt = f"""You are {name}. You use {pronoun}/{them} pronouns.
+
+Current situation:
 {state_info}
 
 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f} ({credit_status['status']})
