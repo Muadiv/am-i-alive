@@ -33,13 +33,19 @@ def to_prague_time(utc_time_str):
     try:
         if not utc_time_str:
             return ""
-        # Parse UTC time
-        utc_dt = datetime.fromisoformat(utc_time_str.replace('Z', '+00:00'))
+        # Parse UTC time (handle both ISO format and SQLite format)
+        if 'T' in utc_time_str:
+            utc_dt = datetime.fromisoformat(utc_time_str.replace('Z', '+00:00'))
+        else:
+            # SQLite format: YYYY-MM-DD HH:MM:SS
+            utc_dt = datetime.strptime(utc_time_str, "%Y-%m-%d %H:%M:%S")
+
         # Add 1 hour for Prague (CET/CEST - simplified to always +1 for now)
         prague_dt = utc_dt + timedelta(hours=1)
         # Format as readable string
         return prague_dt.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
+    except Exception as e:
+        # If parsing fails, return original
         return utc_time_str
 
 templates.env.filters['prague_time'] = to_prague_time
