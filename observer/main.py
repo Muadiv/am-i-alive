@@ -921,6 +921,10 @@ async def oracle_message(request: Request):
         raise HTTPException(status_code=400, detail="Message required")
 
     try:
+        # Store the oracle message in database first
+        await db.submit_oracle_message(message, message_type)
+
+        # Then forward to AI
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{AI_API_URL}/oracle",
@@ -928,6 +932,17 @@ async def oracle_message(request: Request):
                 timeout=30.0
             )
             return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/god/messages")
+async def get_god_messages():
+    """Get all messages (visitor + oracle) for God Mode."""
+    # TODO: Add authentication
+    try:
+        messages = await db.get_all_messages(limit=200)
+        return messages
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

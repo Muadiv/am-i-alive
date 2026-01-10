@@ -188,6 +188,17 @@ async def init_db():
         except Exception as e:
             print(f"[DB] Migration check error: {e}")
 
+        # Oracle messages - messages from God Mode to the AI
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS oracle_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message TEXT NOT NULL,
+                message_type TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                delivered BOOLEAN DEFAULT 0
+            )
+        """)
+
         # Blog posts - AI's long-form writing
         await db.execute("""
             CREATE TABLE IF NOT EXISTS blog_posts (
@@ -948,6 +959,50 @@ async def get_unread_message_count() -> int:
         async with db.execute("SELECT COUNT(*) FROM visitor_messages WHERE read = 0") as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
+
+
+async def submit_oracle_message(message: str, message_type: str) -> dict:
+    """Submit a message from God Mode (Oracle) to the AI."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("""
+            INSERT INTO oracle_messages (message, message_type)
+            VALUES (?, ?)
+        """, (message, message_type))
+        await db.commit()
+        return {
+            "success": True,
+            "message": "Oracle message sent to the AI",
+            "id": cursor.lastrowid
+        }
+
+
+async def get_all_messages(limit: int = 100) -> dict:
+    """Get all messages (both visitor and oracle) for God Mode display."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Get visitor messages
+        async with db.execute("""
+            SELECT id, from_name, message, timestamp, read, 'visitor' as source
+            FROM visitor_messages
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (limit,)) as cursor:
+            visitor_messages = [dict(row) for row in await cursor.fetchall()]
+
+        # Get oracle messages
+        async with db.execute("""
+            SELECT id, message, message_type, timestamp, delivered, 'oracle' as source
+            FROM oracle_messages
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (limit,)) as cursor:
+            oracle_messages = [dict(row) for row in await cursor.fetchall()]
+
+        return {
+            "visitor_messages": visitor_messages,
+            "oracle_messages": oracle_messages
+        }
 
 
 async def cleanup_old_data():
