@@ -100,6 +100,16 @@ class BudgetHandler(BaseHTTPRequestHandler):
 
                 models_list.sort(key=lambda item: item["total_tokens"], reverse=True)
 
+                # Calculate ALL-TIME totals (entire project history)
+                all_time_input = 0
+                all_time_output = 0
+                all_time_cost = 0.0
+
+                for entry in usage_history:
+                    all_time_input += int(entry.get('input_tokens', 0) or 0)
+                    all_time_output += int(entry.get('output_tokens', 0) or 0)
+                    all_time_cost += float(entry.get('cost_usd', 0) or 0)
+
                 # Build response
                 response_data = {
                     "budget": budget,
@@ -113,11 +123,18 @@ class BudgetHandler(BaseHTTPRequestHandler):
                     "total_tokens": total_tokens,
                     "top_models": top_models,
                     "models": models_list,  # BE-002: Detailed token breakdown
-                    "totals": {  # BE-002: Total token usage summary
+                    "totals": {  # BE-002: Total token usage summary (CURRENT CONTEXT - last 100 calls)
                         "total_input_tokens": total_input_tokens,
                         "total_output_tokens": total_output_tokens,
                         "total_tokens": total_input_tokens + total_output_tokens,
                         "total_cost": round(total_cost, 6)
+                    },
+                    "all_time": {  # All-time totals across entire project
+                        "total_input_tokens": all_time_input,
+                        "total_output_tokens": all_time_output,
+                        "total_tokens": all_time_input + all_time_output,
+                        "total_cost": round(all_time_cost, 6),
+                        "total_lives": data.get('total_lives', 0)
                     },
                     "error": False
                 }
