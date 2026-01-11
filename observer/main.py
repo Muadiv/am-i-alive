@@ -830,7 +830,12 @@ async def voting_window_checker():
 
 
 async def token_budget_checker():
-    """Check if AI has exhausted its token budget."""
+    """
+    Check if AI has exhausted its USD budget (bankruptcy).
+
+    IMPORTANT: Only checks USD balance, NOT token count.
+    AI can use infinite FREE tokens as long as balance > 0.
+    """
     while True:
         await asyncio.sleep(30)  # Check every 30 seconds
 
@@ -838,12 +843,35 @@ async def token_budget_checker():
         if not state.get("is_alive"):
             continue
 
-        tokens_used = state.get("tokens_used", 0)
-        tokens_limit = state.get("tokens_limit", 50000)
+        # Query AI's budget server for REAL USD balance
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{AI_API_URL}/budget", timeout=5.0)
+                budget_data = response.json()
 
-        if tokens_used >= tokens_limit:
-            await execute_death("token_exhaustion")
-            asyncio.create_task(schedule_respawn())
+                balance_usd = budget_data.get("balance", 5.0)
+
+                # Death condition: USD balance depleted (bankruptcy)
+                if balance_usd <= 0.01:
+                    print(f"[BUDGET] 💀 Bankruptcy detected: ${balance_usd:.2f} remaining")
+                    await db.log_activity(
+                        state.get("life_number"),
+                        "bankruptcy",
+                        f"Died by bankruptcy: ${balance_usd:.2f} balance remaining"
+                    )
+                    await execute_death(
+                        "token_exhaustion",
+                        summary=f"Bankruptcy: ${balance_usd:.2f} remaining"
+                    )
+                    asyncio.create_task(schedule_respawn())
+                else:
+                    # Still has money, keep living
+                    pass
+
+        except Exception as e:
+            # If we can't reach budget server, don't kill the AI
+            # Better to err on the side of keeping it alive
+            print(f"[BUDGET] ⚠️ Failed to check budget: {e}")
 
 
 # =============================================================================
