@@ -44,6 +44,8 @@ services:
       - X_API_SECRET=${X_API_SECRET}
       - X_ACCESS_TOKEN=${X_ACCESS_TOKEN}
       - X_ACCESS_TOKEN_SECRET=${X_ACCESS_TOKEN_SECRET}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - OBSERVER_URL=http://observer:8080
       - BOOTSTRAP_MODE=${BOOTSTRAP_MODE:-basic_facts}
       - PYTHONUNBUFFERED=1  # Force unbuffered output for complete logs
