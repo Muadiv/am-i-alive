@@ -1,0 +1,50 @@
+# Gitleaks configuration for Am I Alive project
+# Detects secrets before they reach GitHub
+
+title = "Am I Alive - Secret Detection"
+
+[extend]
+# Use default gitleaks rules
+useDefault = true
+
+# Custom rules for this project
+[[rules]]
+id = "telegram-bot-token"
+description = "Telegram Bot Token"
+regex = '''(?i)\d{8,10}:[a-zA-Z0-9_-]{35}'''
+tags = ["telegram", "token"]
+
+[[rules]]
+id = "openrouter-api-key"
+description = "OpenRouter API Key"
+regex = '''sk-or-v1-[a-f0-9]{64}'''
+tags = ["openrouter", "api-key"]
+
+[[rules]]
+id = "gemini-api-key"
+description = "Google Gemini API Key"
+regex = '''AIza[a-zA-Z0-9_-]{35}'''
+tags = ["gemini", "google", "api-key"]
+
+[[rules]]
+id = "twitter-api-key"
+description = "Twitter/X API Key or Token"
+regex = '''(?i)(twitter|x_).*["\s:=]+[a-zA-Z0-9]{20,}'''
+tags = ["twitter", "x", "api-key"]
+
+# Allowlist - files that should never be scanned
+[allowlist]
+paths = [
+    '''\.env\.example$''',
+    '''\.env\.template$''',
+    '''README\.md$''',
+    '''CLAUDE\.md$'''
+]
+
+# Stop scanning certain patterns that are safe
+regexes = [
+    '''REPLACE_WITH_.*''',
+    '''YOUR_.*_HERE''',
+    '''example\.com''',
+    '''placeholder'''
+]
