@@ -244,6 +244,24 @@ async def init_db():
             ON notable_events(life_number, created_at DESC)
         """)
 
+        # Telegram notifications history
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS telegram_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                life_number INTEGER NOT NULL,
+                notification_type TEXT NOT NULL,
+                message TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                success BOOLEAN DEFAULT 1
+            )
+        """)
+
+        # Index for telegram notifications
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_telegram_notifications
+            ON telegram_notifications(timestamp DESC)
+        """)
+
         await db.commit()
 
 
@@ -1349,3 +1367,26 @@ async def get_recent_blog_posts_with_notable_status(limit: int = 20) -> list:
                 post['is_notable'] = post['notable_id'] is not None
                 posts.append(post)
             return posts
+
+
+async def log_telegram_notification(life_number: int, notification_type: str, message: str, success: bool = True):
+    """Log a Telegram notification to the database."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("""
+            INSERT INTO telegram_notifications (life_number, notification_type, message, success)
+            VALUES (?, ?, ?, ?)
+        """, (life_number, notification_type, message, success))
+        await db.commit()
+
+
+async def get_telegram_notifications(limit: int = 50) -> list[dict]:
+    """Get recent Telegram notifications."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT * FROM telegram_notifications
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (limit,)) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]

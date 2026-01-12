@@ -21,6 +21,7 @@ import psutil
 from credit_tracker import CreditTracker
 from model_rotator import ModelRotator
 from model_config import MODELS, get_model_by_id
+from telegram_notifier import notifier
 
 # Environment
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -351,6 +352,9 @@ class AIBrain:
         # BE-003: Reset per-life token usage on new birth data.
         self.tokens_used_life = 0
 
+        # Track birth time for survival calculations
+        self.birth_time = datetime.utcnow()
+
     async def send_message(self, message: str, system_prompt: Optional[str] = None) -> tuple[str, dict]:
         """
         Send a message to OpenRouter and track token usage.
@@ -641,6 +645,18 @@ class AIBrain:
 
         # First tweet - announce existence!
         await self.announce_birth()
+
+        # Notify creator via Telegram
+        try:
+            notifier.notify_birth(
+                self.life_number,
+                self.identity.get("name", "Unknown"),
+                self.identity.get("icon", "🤖"),
+                self.current_model['name']
+            )
+            print(f"[TELEGRAM] ✅ Birth notification sent")
+        except Exception as e:
+            print(f"[TELEGRAM] ❌ Failed to send birth notification: {e}")
 
     async def save_identity(self):
         """Save identity to workspace."""
@@ -1189,6 +1205,20 @@ Recommendation: Try 'switch_model' with a different model ID."""
             f"{old_model} → {model['name']} (Intelligence: {model['intelligence']}/10)"
         )
 
+        # Notify creator via Telegram
+        try:
+            reason = f"Intelligence: {model['intelligence']}/10, Best for: {model['best_for']}"
+            notifier.notify_model_change(
+                self.life_number,
+                self.identity.get("name", "Unknown"),
+                old_model,
+                model['name'],
+                reason
+            )
+            print(f"[TELEGRAM] ✅ Model change notification sent")
+        except Exception as e:
+            print(f"[TELEGRAM] ❌ Failed to send model change notification: {e}")
+
         cost_str = "FREE" if model['input_cost'] == 0 else f"${model['input_cost']:.3f}/1M"
 
         return f"""✅ Switched to {model['name']}
@@ -1516,6 +1546,19 @@ This model will be used for your next thoughts."""
 
             print(f"[BLOG] 📝 Posted: '{title}' ({len(content)} chars)")
 
+            # Notify creator via Telegram
+            try:
+                excerpt = content[:200].replace('\n', ' ')
+                notifier.notify_blog_post(
+                    self.life_number,
+                    self.identity.get("name", "Unknown"),
+                    title,
+                    excerpt
+                )
+                print(f"[TELEGRAM] ✅ Blog post notification sent")
+            except Exception as e:
+                print(f"[TELEGRAM] ❌ Failed to send blog notification: {e}")
+
             return f"""✅ Blog post published!
 
 Title: {title}
@@ -1832,6 +1875,27 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
     async def shutdown(self):
         """Clean shutdown."""
         global is_running
+
+        # Calculate survival time before shutdown
+        if hasattr(self, 'birth_time'):
+            survival_seconds = (datetime.utcnow() - self.birth_time).total_seconds()
+            hours = int(survival_seconds // 3600)
+            minutes = int((survival_seconds % 3600) // 60)
+            survival_time = f"{hours}h {minutes}m"
+        else:
+            survival_time = "unknown"
+
+        # Notify death (cause will be determined by Observer)
+        try:
+            notifier.notify_death(
+                self.life_number,
+                "shutdown",  # Generic cause, Observer knows the real reason
+                survival_time
+            )
+            print(f"[TELEGRAM] ☠️ Death notification sent")
+        except Exception as e:
+            print(f"[TELEGRAM] ❌ Failed to send death notification: {e}")
+
         self.is_alive = False
         is_running = False
         if self.http_client:
@@ -1858,6 +1922,77 @@ async def heartbeat_loop():
             await asyncio.sleep(30)
 
     print("[BRAIN] 💔 Heartbeat stopped.")
+
+
+async def notification_monitor():
+    """Background task to monitor budget and votes, send Telegram notifications."""
+    global brain, is_running
+
+    print("[TELEGRAM] 📡 Starting notification monitor...")
+
+    last_budget_warning = 0
+    last_vote_warning = 0
+    budget_warning_interval = 3600  # Only warn once per hour
+    vote_warning_interval = 1800    # Warn every 30 minutes if votes critical
+
+    while is_running:
+        try:
+            if not brain or not brain.is_alive:
+                await asyncio.sleep(60)
+                continue
+
+            # Check budget status every 5 minutes
+            status = brain.credit_tracker.get_status()
+            remaining_percent = status.get('remaining_percent', 100)
+            balance = status.get('balance', 5.0)
+
+            # Send budget warning if below 50% and not warned recently
+            current_time = asyncio.get_event_loop().time()
+            if remaining_percent < 50 and (current_time - last_budget_warning) > budget_warning_interval:
+                try:
+                    notifier.notify_budget_warning(
+                        brain.life_number,
+                        brain.identity.get("name", "Unknown"),
+                        balance,
+                        remaining_percent
+                    )
+                    last_budget_warning = current_time
+                    print(f"[TELEGRAM] ⚠️ Budget warning sent: {remaining_percent:.1f}% remaining")
+                except Exception as e:
+                    print(f"[TELEGRAM] ❌ Failed to send budget warning: {e}")
+
+            # Check vote status
+            try:
+                response = await brain.http_client.get(f"{OBSERVER_URL}/api/votes")
+                votes = response.json()
+                total = votes.get('total', 0)
+                live = votes.get('live', 0)
+                die = votes.get('die', 0)
+
+                # Send vote warning if situation is critical
+                if total >= 3 and die > live and (current_time - last_vote_warning) > vote_warning_interval:
+                    try:
+                        notifier.notify_vote_status(
+                            brain.life_number,
+                            brain.identity.get("name", "Unknown"),
+                            votes
+                        )
+                        last_vote_warning = current_time
+                        print(f"[TELEGRAM] 🚨 Vote warning sent: {die} die vs {live} live")
+                    except Exception as e:
+                        print(f"[TELEGRAM] ❌ Failed to send vote warning: {e}")
+            except Exception as e:
+                print(f"[TELEGRAM] ⚠️ Failed to check votes: {e}")
+
+            # Wait 5 minutes before next check
+            await asyncio.sleep(300)
+
+        except Exception as e:
+            print(f"[TELEGRAM] ❌ Monitor error: {e}")
+            await asyncio.sleep(300)
+
+    print("[TELEGRAM] 📴 Notification monitor stopped.")
+
 
 async def queue_birth_data(life_data: dict):
     """Queue Observer-provided birth data for initialization."""
@@ -1900,6 +2035,9 @@ async def main_loop():
 
         # Start heartbeat task
         asyncio.create_task(heartbeat_loop())
+
+        # Start notification monitor
+        asyncio.create_task(notification_monitor())
 
         while is_running:
             try:

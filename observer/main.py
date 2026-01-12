@@ -993,6 +993,33 @@ async def adjust_vote_counters(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/telegram/log")
+async def log_telegram_notification_endpoint(request: Request):
+    """Log a Telegram notification sent by the AI."""
+    try:
+        data = await request.json()
+        life_number = data.get("life_number", 0)
+        notification_type = data.get("type", "unknown")
+        message = data.get("message", "")
+        success = data.get("success", True)
+
+        await db.log_telegram_notification(life_number, notification_type, message, success)
+        return {"success": True}
+    except Exception as e:
+        print(f"[OBSERVER] Failed to log Telegram notification: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/telegram/history")
+async def get_telegram_history(limit: int = 50):
+    """Get recent Telegram notifications (God Mode)."""
+    try:
+        notifications = await db.get_telegram_notifications(limit)
+        return notifications
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # =============================================================================
 # CHRONICLE / NOTABLE EVENTS API
 # =============================================================================

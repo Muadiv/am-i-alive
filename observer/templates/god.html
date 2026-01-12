@@ -308,6 +308,20 @@
                 </div>
             </div>
 
+            <!-- Telegram Notifications Feed -->
+            <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.3);">
+                <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">📱 Telegram Notifications</h3>
+
+                <div class="god-form" style="background: rgba(100,100,255,0.1); padding: 20px; border-radius: 8px;">
+                    <div style="max-height: 400px; overflow-y: auto;" id="telegram-feed">
+                        <p style="color: #888; text-align: center;">Loading notifications...</p>
+                    </div>
+                    <button onclick="refreshTelegramFeed()" class="send-btn" style="margin-top: 15px; width: 100%;">
+                        🔄 Refresh Feed
+                    </button>
+                </div>
+            </div>
+
             <!-- TASK-005: Chronicle Manager -->
             <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.3);">
                 <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">📜 Chronicle Manager</h3>
@@ -869,7 +883,78 @@
                     document.getElementById('die-votes').value = data.die || 0;
                 })
                 .catch(err => console.error('Failed to load current votes:', err));
+
+            // Load Telegram notifications on page load
+            refreshTelegramFeed();
         });
+
+        // Refresh Telegram feed
+        async function refreshTelegramFeed() {
+            const feed = document.getElementById('telegram-feed');
+            feed.innerHTML = '<p style="color: #888; text-align: center;">Loading...</p>';
+
+            try {
+                const response = await fetch('/api/telegram/history?limit=30');
+                const notifications = await response.json();
+
+                if (notifications.length === 0) {
+                    feed.innerHTML = '<p style="color: #888; text-align: center;">No notifications yet</p>';
+                    return;
+                }
+
+                // Build notification list
+                let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+
+                for (const notif of notifications) {
+                    const date = new Date(notif.timestamp);
+                    const timeStr = date.toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                    });
+
+                    // Get emoji based on type
+                    const emoji = {
+                        'birth': '🎂',
+                        'death': '💀',
+                        'blog_post': '✍️',
+                        'model_change': '🔄',
+                        'budget_warning': '💰',
+                        'vote_status': '🗳️'
+                    }[notif.notification_type] || '📱';
+
+                    // Extract first line of message for preview
+                    const firstLine = notif.message.split('\\n')[0].replace(/\*/g, '');
+
+                    html += `
+                        <div style="
+                            background: ${notif.success ? 'rgba(40, 200, 120, 0.1)' : 'rgba(200, 40, 40, 0.1)'};
+                            border-left: 3px solid ${notif.success ? '#28c878' : '#c82828'};
+                            padding: 12px;
+                            border-radius: 6px;
+                        ">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                                <span style="font-weight: bold; color: #fff;">
+                                    ${emoji} ${firstLine}
+                                </span>
+                                <span style="color: #888; font-size: 0.9em; white-space: nowrap; margin-left: 10px;">
+                                    ${timeStr}
+                                </span>
+                            </div>
+                            <div style="color: #aaa; font-size: 0.85em;">
+                                Life #${notif.life_number} • ${notif.notification_type}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                html += '</div>';
+                feed.innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load Telegram notifications:', error);
+                feed.innerHTML = '<p style="color: #c82828; text-align: center;">Failed to load notifications</p>';
+            }
+        }
     </script>
 </body>
 </html>
