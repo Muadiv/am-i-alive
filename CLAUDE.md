@@ -278,3 +278,27 @@ GEMINI_API_KEY=...
 - **Never commit** vault data, .env files, or sensitive logs
 - **The AI doesn't know** it's an experiment - maintain the illusion
 - **Hard limits only:** No ethics guidelines except content restrictions
+
+## Security: Pre-Commit Secret Scanning (CRITICAL)
+
+**INCIDENT**: January 2026 - Telegram bot token was accidentally committed to GitHub.
+
+**PREVENTION SYSTEM NOW ACTIVE**:
+- **Gitleaks** installed system-wide (`/usr/local/bin/gitleaks`)
+- **Pre-commit hook** at `.git/hooks/pre-commit` automatically scans ALL commits
+- **Configuration** in `.gitleaks.toml` with project-specific rules
+- **Blocks commits** containing: Telegram tokens, OpenRouter keys, Gemini keys, Twitter tokens, etc.
+
+**NEVER**:
+- Hardcode credentials in source files
+- Use default values for sensitive env vars
+- Commit .env files (always in .gitignore)
+- Skip the pre-commit hook with --no-verify
+
+**ALWAYS**:
+- Use environment variables from .env
+- Add validation that env vars are set (raise if missing)
+- Test locally before committing
+- Review git diff before pushing
+
+The pre-commit hook runs automatically and will save you from credential leaks.
