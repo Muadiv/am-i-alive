@@ -9,9 +9,14 @@ import os
 import requests
 from typing import Optional
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8289258415:AAGScW-ay-orfYu0GUB5tIQ0pSMcmBLGn5Q")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "318742593")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 OBSERVER_URL = os.getenv("OBSERVER_URL", "http://observer:8080")
+
+if not TELEGRAM_BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN environment variable must be set")
+if not TELEGRAM_CHAT_ID:
+    raise ValueError("TELEGRAM_CHAT_ID environment variable must be set")
 
 
 class TelegramNotifier:
