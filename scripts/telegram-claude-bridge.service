@@ -1,0 +1,18 @@
+[Unit]
+Description=Telegram Claude Bridge - Remote Command System
+After=network.target
+
+[Service]
+Type=simple
+User=muadiv
+WorkingDirectory=/home/muadiv/Code/am-i-alive
+EnvironmentFile=/home/muadiv/Code/am-i-alive/.env
+ExecStart=/usr/bin/python3 /home/muadiv/Code/am-i-alive/scripts/telegram_claude_bridge.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegram-claude-bridge
+
+[Install]
+WantedBy=multi-user.target
