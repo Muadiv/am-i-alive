@@ -21,6 +21,7 @@ import tweepy
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OBSERVER_URL = os.getenv("OBSERVER_URL", "http://observer:8080")
 BOOTSTRAP_MODE = os.getenv("BOOTSTRAP_MODE", "basic_facts")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 # X/Twitter credentials
 X_API_KEY = os.getenv("X_API_KEY")
@@ -44,6 +45,13 @@ is_running = True
 life_info = None
 memories = []
 identity = None  # Will hold {"name": "...", "pronoun": "...", "self_description": "..."}
+
+
+def get_internal_headers() -> dict:
+    """Headers for Observer internal endpoints."""
+    if INTERNAL_API_KEY:
+        return {"X-Internal-Key": INTERNAL_API_KEY}
+    return {}
 
 
 def get_birth_prompt() -> str:
@@ -205,7 +213,7 @@ class AIBrain:
 
     async def initialize(self):
         """Initialize the brain with identity creation."""
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client = httpx.AsyncClient(timeout=30.0, headers=get_internal_headers())
 
         # Load memories first
         await self.load_memories()

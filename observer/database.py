@@ -387,21 +387,29 @@ async def cast_vote(ip_hash: str, vote: str) -> dict:
                 )
                 window_id = cursor.lastrowid
 
-        # Check if already voted in this window
+        # Check if already voted in the last hour (rate limit)
         async with db.execute(
-            "SELECT id FROM votes WHERE ip_hash = ? AND window_id = ?",
-            (ip_hash, window_id)
+            "SELECT timestamp FROM votes WHERE ip_hash = ? ORDER BY timestamp DESC LIMIT 1",
+            (ip_hash,)
         ) as cursor:
-            if await cursor.fetchone():
-                # BE-001: Improve vote rate limiting message
+            row = await cursor.fetchone()
+            if row and row[0]:
+                last_vote = row[0]
+                if isinstance(last_vote, str):
+                    try:
+                        last_vote = datetime.fromisoformat(last_vote)
+                    except ValueError:
+                        last_vote = datetime.strptime(last_vote, "%Y-%m-%d %H:%M:%S")
+
                 now = datetime.utcnow()
-                next_check = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-                remaining_seconds = max(0, int((next_check - now).total_seconds()))
-                remaining_minutes = max(1, (remaining_seconds + 59) // 60)
-                return {
-                    "success": False,
-                    "message": f"You can vote again in {remaining_minutes} minutes"
-                }
+                cooldown_seconds = int((now - last_vote).total_seconds())
+                if cooldown_seconds < 3600:
+                    remaining_seconds = max(0, 3600 - cooldown_seconds)
+                    remaining_minutes = max(1, (remaining_seconds + 59) // 60)
+                    return {
+                        "success": False,
+                        "message": f"You can vote again in {remaining_minutes} minutes"
+                    }
 
         # Cast vote
         await db.execute(
@@ -528,13 +536,21 @@ async def start_new_life() -> dict:
         # Generate memories for this life
         memories = await generate_memories(new_life_number)
 
+        # Capture previous death cause for trauma prompt
+        previous_death_cause = None
+        async with db.execute("SELECT cause FROM deaths ORDER BY id DESC LIMIT 1") as cursor:
+            row = await cursor.fetchone()
+            if row:
+                previous_death_cause = row[0]
+
         return {
             "life_number": new_life_number,
             "bootstrap_mode": bootstrap_mode,
             "model": model,
             "tokens_limit": tokens_limit,
             "birth_time": birth_time.isoformat(),
-            "memories": memories
+            "memories": memories,
+            "previous_death_cause": previous_death_cause
         }
 
 

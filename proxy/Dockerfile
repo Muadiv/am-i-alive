@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install mitmproxy
-RUN pip install --no-cache-dir mitmproxy==10.2.2
+RUN pip install --no-cache-dir mitmproxy==11.0.2
 
 # Copy scripts
 COPY . .

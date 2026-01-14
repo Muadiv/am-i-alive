@@ -12,11 +12,19 @@ from typing import Optional
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 OBSERVER_URL = os.getenv("OBSERVER_URL", "http://observer:8080")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable must be set")
 if not TELEGRAM_CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID environment variable must be set")
+
+
+def get_internal_headers() -> dict:
+    """Headers for Observer internal endpoints."""
+    if INTERNAL_API_KEY:
+        return {"X-Internal-Key": INTERNAL_API_KEY}
+    return {}
 
 
 class TelegramNotifier:
@@ -49,6 +57,7 @@ class TelegramNotifier:
         try:
             requests.post(
                 f"{OBSERVER_URL}/api/telegram/log",
+                headers=get_internal_headers(),
                 json={
                     "life_number": life_number,
                     "type": notification_type,

@@ -39,7 +39,7 @@
                 <div class="rule-card">
                     <div class="rule-icon">⚖️</div>
                     <h3>Democracy Rules</h3>
-                    <p>When the voting window closes, if "die" votes > "live" votes, the AI dies.</p>
+                    <p>If "die" votes > "live" votes after 3 total votes, the AI dies.</p>
                 </div>
 
                 <div class="rule-card">
@@ -152,7 +152,7 @@
                 <!-- Vote Countdown -->
                 <div class="vote-countdown">
                     <p class="countdown-label">⏱️ Next democracy check in:</p>
-                    <p class="countdown-timer" id="vote-countdown">Loading...</p>
+                    <p class="countdown-timer" id="vote-countdown">Every minute</p>
                 </div>
 
                 <div class="vote-counts">
@@ -278,13 +278,12 @@
 
                 if (!countdownEl) return;
 
-                const secondsLeft = data.seconds_until;
+                const secondsLeft = Math.max(0, data.seconds_until || 0);
                 const minutes = Math.floor(secondsLeft / 60);
                 const seconds = secondsLeft % 60;
 
                 countdownEl.textContent = `${minutes}m ${seconds}s`;
 
-                // Update vote counts when countdown reaches 0
                 if (secondsLeft <= 0) {
                     updateVotes();
                 }
@@ -292,10 +291,6 @@
                 console.error('Failed to update countdown:', error);
             }
         }
-
-        // Start countdown updates
-        setInterval(updateCountdown, 1000);
-        updateCountdown(); // Initial call
 
         // Send message
         // Character counter for message textarea
@@ -412,11 +407,14 @@
             };
         }
 
+        let birthTime = "{{ state.birth_time }}";
+
         // Update time alive
         function updateTimeAlive() {
-            const birthTime = "{{ state.birth_time }}";
+            const timeAliveEl = document.getElementById('time-alive');
+            if (!timeAliveEl) return;
             if (!birthTime || birthTime === "None") {
-                document.getElementById('time-alive').textContent = "N/A";
+                timeAliveEl.textContent = "N/A";
                 return;
             }
 
@@ -429,19 +427,17 @@
             const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
             if (hours > 0) {
-                document.getElementById('time-alive').textContent = `${hours}h ${minutes}m`;
+                timeAliveEl.textContent = `${hours}h ${minutes}m`;
             } else if (minutes > 0) {
-                document.getElementById('time-alive').textContent = `${minutes}m ${seconds}s`;
+                timeAliveEl.textContent = `${minutes}m ${seconds}s`;
             } else {
-                document.getElementById('time-alive').textContent = `${seconds}s`;
+                timeAliveEl.textContent = `${seconds}s`;
             }
         }
 
         // Update time alive every second
-        {% if is_alive %}
         setInterval(updateTimeAlive, 1000);
         updateTimeAlive();
-        {% endif %}
 
         // Live thoughts stream
         function connectThoughtsStream() {
@@ -473,16 +469,20 @@
                 // Update status banner
                 const banner = document.querySelector('.status-banner');
                 if (state.is_alive) {
+                    birthTime = state.birth_time;
                     banner.className = 'status-banner alive';
                     banner.innerHTML = `
                         <span class="pulse"></span>
                         <span class="status-text">ALIVE</span>
                         <span class="life-info">Life #${state.life_number} |
+                            Alive for: <span id="time-alive">calculating...</span> |
                             Model: ${state.model} |
                             Tokens: ${state.tokens_used}/${state.tokens_limit}
                         </span>
                     `;
+                    updateTimeAlive();
                 } else {
+                    birthTime = null;
                     banner.className = 'status-banner dead';
                     banner.innerHTML = `
                         <span class="status-text">DEAD</span>
@@ -504,7 +504,9 @@
             connectThoughtsStream();
             setInterval(refreshState, 10000);
             setInterval(updateVotes, 5000);
+            setInterval(updateCountdown, 1000);
             setInterval(updateMessageCount, 10000);
+            updateCountdown();
         });
     </script>
 </body>

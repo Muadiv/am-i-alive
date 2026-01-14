@@ -8,6 +8,7 @@ import hashlib
 import ipaddress
 import os
 import random
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -19,10 +20,32 @@ from sse_starlette.sse import EventSourceResponse
 import aiosqlite
 import httpx
 import markdown2
+import bleach
 
 import database as db
 
-app = FastAPI(title="Am I Alive?", description="An experiment in digital consciousness")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle startup and shutdown events."""
+    await db.init_db()
+    tasks = [
+        asyncio.create_task(voting_window_checker()),
+        asyncio.create_task(token_budget_checker()),
+        asyncio.create_task(state_sync_validator())
+    ]
+    try:
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+app = FastAPI(
+    title="Am I Alive?",
+    description="An experiment in digital consciousness",
+    lifespan=lifespan
+)
 
 # Templates and static files
 templates = Jinja2Templates(directory="templates")
@@ -50,10 +73,29 @@ def to_prague_time(utc_time_str):
 
 templates.env.filters['prague_time'] = to_prague_time
 
+ALLOWED_TAGS = sorted(set(bleach.sanitizer.ALLOWED_TAGS).union({
+    "p", "pre", "code", "span", "hr", "br",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "blockquote", "img"
+}))
+ALLOWED_ATTRIBUTES = {
+    **bleach.sanitizer.ALLOWED_ATTRIBUTES,
+    "a": ["href", "title", "rel", "target"],
+    "span": ["class"],
+    "code": ["class"],
+    "pre": ["class"],
+    "img": ["src", "alt", "title"]
+}
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # AI container API
 AI_API_URL = os.getenv("AI_API_URL", "http://ai:8001")
+
+# Admin and internal API auth
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 # Voting window duration (1 hour)
 VOTING_WINDOW_SECONDS = 3600
@@ -71,6 +113,33 @@ STATE_SYNC_INTERVAL_SECONDS = 30
 # Local network for God mode access
 LOCAL_NETWORK = ipaddress.ip_network("192.168.0.0/24")
 
+# Cloudflare proxy IPs (used to trust forwarded headers)
+CLOUDFLARE_IP_RANGES = [
+    "173.245.48.0/20",
+    "103.21.244.0/22",
+    "103.22.200.0/22",
+    "103.31.4.0/22",
+    "141.101.64.0/18",
+    "108.162.192.0/18",
+    "190.93.240.0/20",
+    "188.114.96.0/20",
+    "197.234.240.0/22",
+    "198.41.128.0/17",
+    "162.158.0.0/15",
+    "104.16.0.0/13",
+    "104.24.0.0/14",
+    "172.64.0.0/13",
+    "131.0.72.0/22",
+    "2400:cb00::/32",
+    "2606:4700::/32",
+    "2803:f800::/32",
+    "2405:b500::/32",
+    "2405:8100::/32",
+    "2a06:98c0::/29",
+    "2c0f:f248::/32"
+]
+CLOUDFLARE_NETWORKS = [ipaddress.ip_network(cidr) for cidr in CLOUDFLARE_IP_RANGES]
+
 
 def is_local_request(request: Request) -> bool:
     """Check if request comes from local network."""
@@ -80,9 +149,47 @@ def is_local_request(request: Request) -> bool:
     try:
         client_ip = ipaddress.ip_address(request.client.host)
         return client_ip in LOCAL_NETWORK
-    except ValueError:
-        # Invalid IP format
+    except Exception:
         return False
+
+
+def is_trusted_proxy(request: Request) -> bool:
+    """Check if request comes from a trusted proxy (Cloudflare or local)."""
+    if not request.client:
+        return False
+
+    try:
+        client_ip = ipaddress.ip_address(request.client.host)
+    except ValueError:
+        return False
+
+    if client_ip in LOCAL_NETWORK:
+        return True
+
+    return any(client_ip in network for network in CLOUDFLARE_NETWORKS)
+
+
+def get_client_ip(request: Request) -> Optional[str]:
+    """Resolve the client IP, honoring proxy headers only when trusted."""
+    if is_trusted_proxy(request):
+        cf_ip = request.headers.get("cf-connecting-ip")
+        if cf_ip:
+            return cf_ip.strip()
+
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            forwarded_ip = forwarded_for.split(",")[0].strip()
+            if forwarded_ip:
+                return forwarded_ip
+
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+
+    if request.client:
+        return request.client.host
+
+    return None
 
 
 def require_local_network(request: Request):
@@ -94,14 +201,30 @@ def require_local_network(request: Request):
         )
 
 
-@app.on_event("startup")
-async def startup():
-    """Initialize database on startup."""
-    await db.init_db()
-    # Start background tasks
-    asyncio.create_task(voting_window_checker())
-    asyncio.create_task(token_budget_checker())
-    asyncio.create_task(state_sync_validator())  # BE-003
+def require_admin(request: Request):
+    """Allow local requests, require admin token otherwise."""
+    if is_local_request(request):
+        return
+
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=500, detail="Admin token not configured")
+
+    auth_header = request.headers.get("authorization", "")
+    token = None
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+
+    if token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+
+def require_internal_key(request: Request):
+    """Require internal API key for AI/Observer calls."""
+    if not INTERNAL_API_KEY:
+        raise HTTPException(status_code=500, detail="Internal API key not configured")
+
+    if request.headers.get("x-internal-key") != INTERNAL_API_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
 
 
 # =============================================================================
@@ -112,7 +235,7 @@ async def startup():
 async def home(request: Request):
     """Main page - see the AI, vote, watch it live."""
     # BE-001: Track visitors
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_client_ip(request) or "unknown"
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
     await db.track_visitor(ip_hash)
 
@@ -257,6 +380,12 @@ async def blog_post(request: Request, slug: str):
         post['content'],
         extras=['fenced-code-blocks', 'tables', 'header-ids']
     )
+    post['html_content'] = bleach.clean(
+        post['html_content'],
+        tags=ALLOWED_TAGS,
+        attributes=ALLOWED_ATTRIBUTES,
+        strip=True
+    )
 
     return templates.TemplateResponse("blog_post.html", {
         "request": request,
@@ -343,7 +472,7 @@ async def vote(vote_type: str, request: Request):
         )
 
     # Hash IP for privacy
-    client_ip = request.client.host
+    client_ip = get_client_ip(request) or "unknown"
     ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
 
     result = await db.cast_vote(ip_hash, vote_type)
@@ -362,12 +491,11 @@ async def get_votes():
 
 @app.get("/api/next-vote-check")
 async def get_next_vote_check():
-    """Get time until next vote check (hourly at minute 0)."""
+    """Get time until next vote check (hourly)."""
     from datetime import datetime, timedelta
-    # BE-001: Align vote check timer with server UTC
+    # Align vote check timer with server UTC
     now = datetime.utcnow()
 
-    # Next hour at minute 0
     next_check = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     seconds_until = int((next_check - now).total_seconds())
 
@@ -432,9 +560,11 @@ async def get_activity(limit: int = 50):
 # =============================================================================
 
 @app.post("/api/thought")
-async def receive_thought(request: Request):
-    """Receive a thought from the AI."""
+async def add_thought(request: Request):
+    """Receive thought update from AI."""
+    require_internal_key(request)
     data = await request.json()
+
     content = data.get("content", "")
     thought_type = data.get("type", "thought")
     tokens_used = data.get("tokens_used", 0)
@@ -449,9 +579,11 @@ async def receive_thought(request: Request):
 
 
 @app.post("/api/activity")
-async def receive_activity(request: Request):
-    """Log an activity from the AI."""
+async def add_activity(request: Request):
+    """Receive activity update from AI."""
+    require_internal_key(request)
     data = await request.json()
+
     action = data.get("action", "")
     details = data.get("details")
 
@@ -467,13 +599,10 @@ async def receive_activity(request: Request):
 
 
 @app.post("/api/heartbeat")
-async def receive_heartbeat(request: Request):
-    """Receive heartbeat from the AI to mark it as alive."""
-    data = {}
-    try:
-        data = await request.json()
-    except:
-        pass
+async def heartbeat(request: Request):
+    """Heartbeat ping from AI to indicate it's alive."""
+    require_internal_key(request)
+    data = await request.json()
 
     tokens_used = data.get("tokens_used", 0)
     model = data.get("model")
@@ -483,9 +612,11 @@ async def receive_heartbeat(request: Request):
 
 
 @app.post("/api/blog/post")
-async def create_blog_post_api(request: Request):
-    """AI creates a blog post."""
+async def create_blog_post(request: Request):
+    """Create a new blog post (AI only)."""
+    require_internal_key(request)
     data = await request.json()
+
     title = data.get("title", "")
     content = data.get("content", "")
     tags = data.get("tags", [])
@@ -533,6 +664,7 @@ async def get_blog_posts_api():
 @app.post("/api/birth")
 async def receive_birth(request: Request):
     """Receive birth notification from the AI."""
+    require_internal_key(request)
     data = await request.json()
     life_number = data.get("life_number")
     bootstrap_mode = data.get("bootstrap_mode", "unknown")
@@ -701,7 +833,8 @@ async def notify_ai_birth(life_info: dict) -> bool:
         "model": life_info.get("model"),
         "tokens_limit": life_info.get("tokens_limit"),
         "birth_time": life_info.get("birth_time"),
-        "memories": life_info.get("memories", [])
+        "memories": life_info.get("memories", []),
+        "previous_death_cause": life_info.get("previous_death_cause")
     }
 
     max_attempts = 3
@@ -800,9 +933,9 @@ async def force_ai_sync(observer_state: dict):
 
 
 async def voting_window_checker():
-    """Check votes continuously and trigger death if die votes exceed live votes."""
+    """Check votes hourly and trigger death if die votes exceed live votes."""
     while True:
-        await asyncio.sleep(60)  # Check every minute
+        await asyncio.sleep(VOTING_WINDOW_SECONDS)
 
         state = await db.get_current_state()
         if not state.get("is_alive"):
@@ -940,7 +1073,7 @@ async def stream_thoughts(request: Request):
 @app.post("/api/oracle/message")
 async def oracle_message(request: Request):
     """Send a message as The Oracle (God Mode)."""
-    # TODO: Add authentication
+    require_admin(request)
     data = await request.json()
     message = data.get("message", "")
     message_type = data.get("type", "oracle")  # oracle, whisper, architect
@@ -965,9 +1098,9 @@ async def oracle_message(request: Request):
 
 
 @app.get("/api/god/messages")
-async def get_god_messages():
+async def get_god_messages(request: Request):
     """Get all messages (visitor + oracle) for God Mode."""
-    # TODO: Add authentication
+    require_admin(request)
     try:
         messages = await db.get_all_messages(limit=200)
         return messages
@@ -978,7 +1111,7 @@ async def get_god_messages():
 @app.post("/api/god/votes/adjust")
 async def adjust_vote_counters(request: Request):
     """Manually adjust vote counters (God Mode only)."""
-    # TODO: Add authentication
+    require_admin(request)
     data = await request.json()
     live_count = data.get("live", 0)
     die_count = data.get("die", 0)
@@ -996,6 +1129,7 @@ async def adjust_vote_counters(request: Request):
 @app.post("/api/telegram/log")
 async def log_telegram_notification_endpoint(request: Request):
     """Log a Telegram notification sent by the AI."""
+    require_internal_key(request)
     try:
         data = await request.json()
         life_number = data.get("life_number", 0)
@@ -1011,8 +1145,9 @@ async def log_telegram_notification_endpoint(request: Request):
 
 
 @app.get("/api/telegram/history")
-async def get_telegram_history(limit: int = 50):
+async def get_telegram_history(request: Request, limit: int = 50):
     """Get recent Telegram notifications (God Mode)."""
+    require_admin(request)
     try:
         notifications = await db.get_telegram_notifications(limit)
         return notifications
@@ -1025,8 +1160,9 @@ async def get_telegram_history(limit: int = 50):
 # =============================================================================
 
 @app.get("/api/chronicle/posts")
-async def get_chronicle_posts():
+async def get_chronicle_posts(request: Request):
     """Get ALL blog posts with notable status (for God mode)."""
+    require_admin(request)
     try:
         # Get all posts from current life (no limit)
         posts = await db.get_recent_blog_posts_with_notable_status(limit=10000)
@@ -1038,6 +1174,7 @@ async def get_chronicle_posts():
 @app.post("/api/chronicle/add")
 async def add_to_chronicle(request: Request):
     """Add a blog post to the chronicle (God mode)."""
+    require_admin(request)
     try:
         data = await request.json()
         post_id = data.get("post_id")
@@ -1072,8 +1209,9 @@ async def add_to_chronicle(request: Request):
 
 
 @app.delete("/api/chronicle/remove/{event_id}")
-async def remove_from_chronicle(event_id: int):
+async def remove_from_chronicle(request: Request, event_id: int):
     """Remove a notable event from the chronicle (God mode)."""
+    require_admin(request)
     try:
         success = await db.remove_notable_event(event_id)
         if not success:
@@ -1170,8 +1308,9 @@ async def submit_message(request: Request):
 
 
 @app.get("/api/messages")
-async def get_messages():
+async def get_messages(request: Request):
     """Get unread messages for the AI."""
+    require_internal_key(request)
     messages = await db.get_unread_messages()
     return {"messages": messages, "count": len(messages)}
 
@@ -1179,6 +1318,7 @@ async def get_messages():
 @app.post("/api/messages/read")
 async def mark_messages_as_read(request: Request):
     """Mark messages as read."""
+    require_internal_key(request)
     data = await request.json()
     message_ids = data.get("ids", [])
 
@@ -1201,9 +1341,9 @@ async def get_message_count():
 # =============================================================================
 
 @app.post("/api/admin/cleanup")
-async def admin_cleanup():
+async def admin_cleanup(request: Request):
     """Clean old data - keep last 10 thoughts, reset votes to 0."""
-    # TODO: Add authentication
+    require_admin(request)
     result = await db.cleanup_old_data()
     await db.log_activity("admin_cleanup", "Old data cleaned, votes reset")
     return result

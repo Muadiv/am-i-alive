@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # =============================================================================
   # OBSERVER - The public face, vote system, death controller
@@ -15,6 +13,9 @@ services:
       - VAULT_PATH=/app/vault
       - AI_API_URL=http://ai:8000
       - LOG_LEVEL=INFO
+      - TZ=Europe/Prague
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
     volumes:
       - observer-data:/app/data          # Votes, deaths, public logs
       - ./vault:/app/vault                # Credential vault (host-mounted for access)
@@ -49,6 +50,8 @@ services:
       - OBSERVER_URL=http://observer:8080
       - BOOTSTRAP_MODE=${BOOTSTRAP_MODE:-basic_facts}
       - PYTHONUNBUFFERED=1  # Force unbuffered output for complete logs
+      - TZ=Europe/Prague
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
     volumes:
       - ai-workspace:/app/workspace       # AI's sandbox (wiped on death)
       - ai-credits:/app/credits           # Credits persist across deaths
@@ -90,6 +93,7 @@ services:
     environment:
       - VAULT_PATH=/app/vault
       - LOG_LEVEL=INFO
+      - TZ=Europe/Prague
     volumes:
       - ./vault:/app/vault                # Write captured secrets here
       - proxy-logs:/app/logs              # Traffic logs

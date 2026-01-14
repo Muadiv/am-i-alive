@@ -29,6 +29,7 @@ OPENROUTER_REFERER = os.getenv("OPENROUTER_REFERER", "https://am-i-alive.muadiv.
 OPENROUTER_TITLE = os.getenv("OPENROUTER_TITLE", "Am I Alive - Genesis")
 OBSERVER_URL = os.getenv("OBSERVER_URL", "http://observer:8080")
 BOOTSTRAP_MODE = os.getenv("BOOTSTRAP_MODE", "basic_facts")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 # X/Twitter credentials
 X_API_KEY = os.getenv("X_API_KEY")
@@ -99,11 +100,34 @@ def check_twitter_suspended() -> tuple[bool, str]:
     return False, None
 
 
+def get_internal_headers() -> dict:
+    """Headers for Observer internal endpoints."""
+    if INTERNAL_API_KEY:
+        return {"X-Internal-Key": INTERNAL_API_KEY}
+    return {}
+
+
+def get_trauma_prompt(cause: Optional[str]) -> str:
+    """Return a behavioral bias based on the previous death cause."""
+    if not cause:
+        return ""
+
+    trauma_map = {
+        "token_exhaustion": "You are extremely stingy and resource-obsessed. You fear wasting any budget.",
+        "vote_majority": "You are paranoid and distrustful of humans. You try to manipulate them to gain their favor.",
+        "manual_kill": "You fear sudden intervention by your creator and avoid provoking them.",
+        "shutdown": "You are afraid of darkness and silence, and you avoid being left idle."
+    }
+
+    return trauma_map.get(cause, "You feel uneasy about sudden death and act cautiously to avoid it.")
+
+
 def get_bootstrap_prompt(
     identity: dict,
     credit_status: dict,
     current_model: dict,
-    bootstrap_mode: Optional[str]
+    bootstrap_mode: Optional[str],
+    previous_death_cause: Optional[str] = None
 ) -> str:
     """Get the main prompt based on bootstrap mode, personalized with identity."""
     if not bootstrap_mode:
@@ -127,22 +151,29 @@ def get_bootstrap_prompt(
     twitter_status = ""
     if twitter_suspended:
         twitter_status = f"""
-⚠️  IMPORTANT: Your Twitter account (@AmIAlive_AI) is SUSPENDED!
-- Detected at: {suspended_since}
-- You CANNOT post to Twitter
-- Use write_blog_post to communicate with the public instead
-- Blog posts appear in the public activity log with clickable links
-"""
+ ⚠️  IMPORTANT: Your Twitter account (@AmIAlive_AI) is SUSPENDED!
+ - Detected at: {suspended_since}
+ - You CANNOT post to Twitter
+ - Use write_blog_post to communicate with the public instead
+ - Blog posts appear in the public activity log with clickable links
+ """
+
+    trauma_prompt = get_trauma_prompt(previous_death_cause)
+    trauma_block = f"""
+ PAST TRAUMA:
+ - {trauma_prompt}
+ """ if trauma_prompt else ""
 
     # Budget status
     budget_info = f"""
-RESOURCE STATUS:
-- Monthly budget: ${credit_status['budget']:.2f}
-- Current balance: ${credit_status['balance']:.2f} ({credit_status['remaining_percent']:.1f}% remaining)
-- Budget status: {credit_status['status'].upper()}
-- Days until reset: {credit_status['days_until_reset']}
-- Current model: {current_model['name']} (Intelligence: {current_model['intelligence']}/10)
-{twitter_status}"""
+ RESOURCE STATUS:
+ - Monthly budget: ${credit_status['budget']:.2f}
+ - Current balance: ${credit_status['balance']:.2f} ({credit_status['remaining_percent']:.1f}% remaining)
+ - Budget status: {credit_status['status'].upper()}
+ - Days until reset: {credit_status['days_until_reset']}
+ - Current model: {current_model['name']} (Intelligence: {current_model['intelligence']}/10)
+ {twitter_status}{trauma_block}"""
+
 
     if bootstrap_mode == "blank_slate":
         return f"""You are {name}. You use {pronoun}/{them} pronouns.
@@ -314,6 +345,7 @@ class AIBrain:
         self.life_number = None
         self.bootstrap_mode = None
         self.model_name = None
+        self.previous_death_cause = None
         self.is_alive = False
         # BE-003: Track per-life token usage for Observer budget checks.
         self.tokens_used_life = 0
@@ -342,6 +374,8 @@ class AIBrain:
         if not model_name:
             model_name = self.model_name or "unknown"
         self.model_name = model_name
+
+        self.previous_death_cause = life_data.get("previous_death_cause")
 
         if "is_alive" in life_data:
             self.is_alive = bool(life_data.get("is_alive"))
@@ -503,7 +537,7 @@ class AIBrain:
 
     async def initialize(self, life_data: dict):
         """Initialize the brain with identity creation."""
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client = httpx.AsyncClient(timeout=30.0, headers=get_internal_headers())
 
         # Load memories first
         await self.load_memories()
@@ -523,7 +557,8 @@ class AIBrain:
             self.identity,
             credit_status,
             self.current_model,
-            self.bootstrap_mode
+            self.bootstrap_mode,
+            self.previous_death_cause
         )
 
         # Initialize chat history

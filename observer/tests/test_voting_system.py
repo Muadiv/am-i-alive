@@ -1,6 +1,6 @@
 # TEST-001: Voting system tests for BE-001
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 
 import aiosqlite
@@ -26,11 +26,18 @@ async def test_cast_vote_success(test_db):
 
 @pytest.mark.asyncio
 async def test_cast_vote_duplicate_same_window(test_db, monkeypatch):
-    """Duplicate votes in the same window should return time remaining."""
+    """Duplicate votes within an hour should return time remaining."""
     ip_hash = "ip_dup"
     await test_db.cast_vote(ip_hash, "live")
 
     fixed_now = datetime(2026, 1, 9, 12, 30, 0)
+
+    async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
+        await conn.execute(
+            "UPDATE votes SET timestamp = ? WHERE ip_hash = ?",
+            ((fixed_now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
+        )
+        await conn.commit()
 
     class FixedDatetime(datetime):
         @classmethod
@@ -116,6 +123,14 @@ async def test_time_remaining_calculation(test_db, monkeypatch, minute, second, 
     await test_db.cast_vote(ip_hash, "live")
 
     fixed_now = datetime(2026, 1, 9, 12, minute, second)
+    last_vote = fixed_now - timedelta(minutes=minute, seconds=second)
+
+    async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
+        await conn.execute(
+            "UPDATE votes SET timestamp = ? WHERE ip_hash = ?",
+            (last_vote.strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
+        )
+        await conn.commit()
 
     class FixedDatetime(datetime):
         @classmethod
@@ -143,7 +158,7 @@ async def test_minimum_votes_for_death(main_module, monkeypatch, votes, expect_d
     Voting system should only trigger death when minimum votes and die > live.
 
     NEW BEHAVIOR (2026-01-10): Votes accumulate during entire life, no hourly reset.
-    Death checked every minute: total >= MIN_VOTES_FOR_DEATH AND die > live
+    Death checked every hour: total >= MIN_VOTES_FOR_DEATH AND die > live
     """
     sleep_calls = []
 
