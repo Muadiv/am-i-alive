@@ -29,6 +29,9 @@ class CreditTracker:
 
                 # Check if we need to reset monthly budget
                 reset_date = datetime.fromisoformat(data.get('reset_date', '2000-01-01'))
+                # Ensure reset_date is timezone-aware for comparison
+                if reset_date.tzinfo is None:
+                    reset_date = reset_date.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) >= reset_date:
                     # Monthly reset!
                     print(f"[CREDITS] 🎉 Monthly budget reset! New balance: ${self.monthly_budget:.2f}")
@@ -61,11 +64,11 @@ class CreditTracker:
     def get_next_reset_date(self) -> str:
         """Calculate next monthly reset date."""
         now = datetime.now(timezone.utc)
-        # Reset on the 1st of next month
+        # Reset on the 1st of next month (timezone-aware)
         if now.month == 12:
-            next_month = datetime(now.year + 1, 1, 1)
+            next_month = datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
         else:
-            next_month = datetime(now.year, now.month + 1, 1)
+            next_month = datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
         return next_month.isoformat()
 
     def charge(self, model_id: str, input_tokens: int, output_tokens: int,
