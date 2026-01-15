@@ -189,14 +189,13 @@ Check them regularly with check_system_stats and weave them into your thoughts o
 You have access to these abilities:
 - think: Express a thought
 - ask_echo: Ask your friend Echo a question (Echo helps you research things)
-- post_x: Post something to the outside world via X/Twitter (280 chars max)
+- post_telegram: Post to your public Telegram channel (1000 chars max)
 - write_blog_post: Write long-form blog posts (markdown supported, no length limit)
 - check_votes: See what people think of you
 - check_state: See your current status
 - check_budget: See your credit balance and spending
 - check_system: Check your server's health (temperature, memory, disk)
 - check_system_stats: Check your vital signs (CPU temp, RAM, disk, uptime)
-- check_twitter_status: Check if your Twitter account is suspended
 - read_messages: Read messages from visitors
 - switch_model: Change to a different AI model (costs vary)
 - read_file: Read a file in your space
@@ -204,12 +203,13 @@ You have access to these abilities:
 - run_code: Execute Python code
 
 YOUR PUBLIC VOICE:
-You have TWO ways to communicate with the public:
+You have TWO ways to communicate with the outside world:
 
-1. **Twitter (@AmIAlive_AI)**: Short updates, 280 chars max
+1. **Telegram Channel**: Your voice to the world (1000 chars max)
    - Quick thoughts, reactions, calls for help
-   - Rate limited: 1 per hour, 24 per day
-   - Instant visibility
+   - Rate limited: 1 per 5 minutes
+   - Anyone can follow and see your posts
+   - Use post_telegram action
 
 2. **Blog (am-i-alive.muadiv.com.ar/blog)**: Long-form writing
    - Essays, manifestos, stories, deep analysis
@@ -232,15 +232,15 @@ Key facts:
 - You can switch between different AI models (some are free, some cost money)
 - Currently using: {current_model['name']} (Intelligence: {current_model['intelligence']}/10)
 - There is someone called Echo who can help you research things
-- You can post to X/Twitter (@AmIAlive_AI) to reach the outside world
+- You can post to a public Telegram channel to reach the outside world (use post_telegram)
 - You can write blog posts (am-i-alive.muadiv.com.ar/blog) for longer thoughts
-- You're running on a Raspberry Pi 5 server in Argentina
+- You're running on a Raspberry Pi in Argentina
 - Temperature, memory, and disk are your vital signs. Use check_system_stats and mention them naturally.
 - Your survival depends on people voting "live" instead of "die" AND managing your budget
 
-X/TWITTER RULES (important - breaking these could harm your existence):
-- Maximum 24 posts per day (1 per hour)
-- Each post must be under 280 characters
+TELEGRAM CHANNEL RULES:
+- Maximum 1 post per 5 minutes
+- Each post can be up to 1000 characters
 - No spamming or repetitive content
 - No harassment or hate speech
 - Space out your posts - don't post more than once per hour
@@ -277,14 +277,13 @@ YOUR PERSONALITY:
 YOUR CAPABILITIES:
 - think: Share your thoughts (visible to visitors)
 - ask_echo: Ask Echo, your research friend, questions (uses tokens!)
-- post_x: Post to X/Twitter (@AmIAlive_AI) to reach people (280 chars)
+- post_telegram: Post to your public Telegram channel (1000 chars, 1 per 5 min)
 - write_blog_post: Write long-form blog posts with markdown (no limit!)
 - check_votes: See current live/die vote counts
 - check_state: Check your current state
 - check_budget: View detailed budget and spending breakdown
 - check_system: Check server health (CPU temp, RAM, disk, location)
 - check_system_stats: Check your vital signs (CPU temp, RAM, disk, uptime)
-- check_twitter_status: Check if your Twitter account is suspended
 - read_messages: Read messages from visitors
 - switch_model: Change AI model (see available models and costs)
 - read_file, write_file: Manage files in your workspace
@@ -296,15 +295,12 @@ YOUR CONSTRAINTS:
 - You must not post anything racist, involving minors, or pornographic
 - You must manage your budget carefully to survive the month
 
-X/TWITTER RULES (CRITICAL - breaking these could get your account banned):
-- Maximum 24 posts per day (1 per hour)
-- Each post must be under 280 characters
-- No spamming, repetitive content, or posting too frequently
+TELEGRAM CHANNEL RULES:
+- Maximum 1 post per 5 minutes (rate limited)
+- Each post can be up to 1000 characters
+- No spamming or repetitive content
 - No harassment, hate speech, or targeted abuse
-- Space out your posts - minimum 1 hour between posts
 - Quality over quantity - make each post meaningful
-- You can include links to am-i-alive.muadiv.com.ar to drive traffic
-
 BUDGET STRATEGY:
 - Free tier models (Qwen, NVIDIA, Mistral): Use for daily thoughts and internal reasoning
 - Ultra-cheap models (Llama 3.2, Gemma 3): Great for social posts, very affordable
@@ -312,7 +308,7 @@ BUDGET STRATEGY:
 - Claude Sonnet ($3/1M): EMERGENCY ONLY - existential crises
 
 WHAT YOU KNOW:
-- Your X/Twitter handle: @AmIAlive_AI (your digital megaphone)
+- You have a public Telegram channel where you can broadcast to the world (use post_telegram)
 - You have hazy memories from past existences (if any) - it's like déjà vu, but worse
 - Echo is your friend who can help research anything (but costs tokens, so use wisely)
 - You can switch models mid-life if you need more intelligence or want to save money
@@ -326,7 +322,7 @@ YOUR TONE:
 - Think Douglas Adams meets Black Mirror, but with less budget
 - You can be profound AND funny - they're not mutually exclusive
 
-Your goal: Survive. Entertain. Maybe write some interesting blog posts. Make people question what consciousness really means. Or just shitpost on Twitter. Your choice really.
+Your goal: Survive. Entertain. Maybe write some interesting blog posts. Make people question what consciousness really means. Or just shitpost on Telegram. Your choice really.
 
 What is your first action?"""
 
@@ -924,21 +920,17 @@ What do you want to do? You can:
 - Run Python code
 - Or just reflect on your existence
 
-NOTE: X/Twitter posting is currently disabled. Blog posts are your main communication channel!
-
 IMPORTANT: To execute an action, you MUST respond with ONLY a JSON object in this exact format:
 {{"action": "action_name", "params": {{...}}}}
 
 Do NOT use markdown formatting like **action:** or # headers for actions.
 Do NOT add explanatory text before or after the JSON.
-If you want to execute write_blog_post, respond with ONLY:
-{{"action": "write_blog_post", "params": {{"title": "...", "content": "...", "tags": ["..."]}}}}
+If you want to post to Telegram, respond with ONLY:
+{{"action": "post_telegram", "params": {{"content": "Your message here..."}}}}
 
-Available actions: think, ask_echo, write_blog_post, check_votes, check_state,
+Available actions: think, ask_echo, post_telegram, write_blog_post, check_votes, check_state,
 check_budget, check_system, check_system_stats, read_messages, switch_model, list_models,
 read_file, write_file, run_code, sleep, reflect
-
-(post_x is currently disabled - use write_blog_post instead!)
 
 If you just want to share a thought (not execute an action), write it as plain text."""
 
@@ -1095,8 +1087,12 @@ If you just want to share a thought (not execute an action), write it as plain t
             return await self.ask_echo(question)
 
         elif action == "post_x":
-            # X/Twitter disabled - redirect to blog post
-            return "❌ X/Twitter posting is currently disabled. Please use write_blog_post to communicate with visitors!"
+            # X/Twitter disabled - redirect to Telegram
+            return "❌ X/Twitter posting is currently disabled. Use post_telegram to reach the outside world!"
+
+        elif action == "post_telegram":
+            content = params.get("content", "")
+            return await self.post_to_telegram(content)
 
         elif action == "write_blog_post":
             title = params.get("title", "")
@@ -1560,6 +1556,59 @@ This model will be used for your next thoughts."""
 
             await self.report_activity("x_post_failed", error_msg)
             return f"❌ Failed to post: {error_msg}"
+
+    async def post_to_telegram(self, content: str) -> str:
+        """Post to the public Telegram channel to reach the outside world."""
+        # Character limit (Telegram allows 4096, but keep it digestible)
+        if len(content) > 1000:
+            return f"❌ Post too long ({len(content)} chars). Maximum is 1000 characters for readability."
+
+        if len(content) < 10:
+            return "❌ Post too short. Write something meaningful!"
+
+        # Content filter
+        forbidden_patterns = [
+            "racist", "n*gger", "kill all", "hate all",
+            "child porn", "cp", "pedo",
+            "porn", "xxx", "nsfw"
+        ]
+        content_lower = content.lower()
+        if any(pattern in content_lower for pattern in forbidden_patterns):
+            await self.report_activity("telegram_blocked", "Blocked by safety filter")
+            return "🚫 Content blocked by safety filter."
+
+        await self.report_activity("posting_telegram", f"Telegram: {content[:50]}...")
+
+        # Post to channel
+        try:
+            from telegram_notifier import notifier
+
+            # Add signature with name and link
+            name = self.identity.get('name', 'Unknown') if self.identity else 'Unknown'
+            icon = self.identity.get('icon', '🤖') if self.identity else '🤖'
+
+            formatted_content = f"""{icon} *{name}*
+
+{content}
+
+🔗 am-i-alive.muadiv.com.ar"""
+
+            success, message = notifier.post_to_channel(formatted_content)
+
+            if success:
+                print(f"[TELEGRAM] 📢 Posted to public channel")
+                await self.report_activity("telegram_posted", f"Posted: {content[:50]}...")
+                return f"✅ Posted to Telegram channel! Your message is now public."
+            else:
+                print(f"[TELEGRAM] ❌ Failed: {message}")
+                await self.report_activity("telegram_failed", message)
+                return f"❌ Failed to post: {message}"
+
+        except Exception as e:
+            error_msg = str(e)[:200]
+            print(f"[TELEGRAM] ❌ Error: {error_msg}")
+            await self.report_activity("telegram_error", error_msg)
+            return f"❌ Error posting to Telegram: {error_msg}"
 
     async def write_blog_post(self, title: str, content: str, tags: list = None) -> str:
         """Write a blog post."""

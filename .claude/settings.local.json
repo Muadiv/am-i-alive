@@ -43,7 +43,10 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(jq:*)",
-      "WebFetch(domain:192.168.0.70)"
+      "WebFetch(domain:192.168.0.70)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(git status:*)"
     ]
   }
 }

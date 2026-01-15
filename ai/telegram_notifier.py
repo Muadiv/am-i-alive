@@ -1,16 +1,18 @@
 """
 Telegram Notifier for Am I Alive?
 
-Sends activity summaries to the creator's Telegram for easy sharing on social media.
-Uses free Gemini Flash model to generate concise summaries.
+Sends activity summaries to the creator's Telegram and public channel.
+The public channel is how the AI communicates with the outside world.
 """
 
 import os
 import requests
 from typing import Optional
+from datetime import datetime
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Private chat with creator
+TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")  # Public channel for AI posts
 OBSERVER_URL = os.getenv("OBSERVER_URL", "http://observer:8080")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
@@ -18,6 +20,7 @@ if not TELEGRAM_BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN environment variable must be set")
 if not TELEGRAM_CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID environment variable must be set")
+# TELEGRAM_CHANNEL_ID is optional - AI can still function without public channel
 
 
 def get_internal_headers() -> dict:
@@ -28,15 +31,18 @@ def get_internal_headers() -> dict:
 
 
 class TelegramNotifier:
-    """Sends notifications to Telegram."""
+    """Sends notifications to Telegram (private + public channel)."""
 
-    def __init__(self, bot_token: str = TELEGRAM_BOT_TOKEN, chat_id: str = TELEGRAM_CHAT_ID):
+    def __init__(self, bot_token: str = TELEGRAM_BOT_TOKEN, chat_id: str = TELEGRAM_CHAT_ID,
+                 channel_id: str = TELEGRAM_CHANNEL_ID):
         self.bot_token = bot_token
-        self.chat_id = chat_id
+        self.chat_id = chat_id  # Private chat with creator
+        self.channel_id = channel_id  # Public channel (optional)
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
+        self._last_channel_post = None  # Rate limiting for channel posts
 
     def send_message(self, text: str, parse_mode: str = "Markdown") -> bool:
-        """Send a text message to Telegram."""
+        """Send a text message to private Telegram chat."""
         try:
             response = requests.post(
                 f"{self.base_url}/sendMessage",
@@ -51,6 +57,70 @@ class TelegramNotifier:
         except Exception as e:
             print(f"[TELEGRAM] ❌ Failed to send message: {e}")
             return False
+
+    def post_to_channel(self, text: str, parse_mode: str = "Markdown") -> tuple[bool, str]:
+        """
+        Post a message to the public Telegram channel.
+        Returns (success, message).
+        """
+        if not self.channel_id:
+            return False, "No public channel configured (TELEGRAM_CHANNEL_ID not set)"
+
+        # Rate limiting: 1 post per 5 minutes
+        if self._last_channel_post:
+            elapsed = (datetime.now() - self._last_channel_post).total_seconds()
+            if elapsed < 300:  # 5 minutes
+                remaining = int(300 - elapsed)
+                return False, f"Rate limited. Wait {remaining}s before posting again."
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/sendMessage",
+                json={
+                    "chat_id": self.channel_id,
+                    "text": text,
+                    "parse_mode": parse_mode,
+                    "disable_web_page_preview": False
+                },
+                timeout=10.0
+            )
+
+            if response.status_code == 200:
+                self._last_channel_post = datetime.now()
+                return True, "Posted to public channel"
+            else:
+                error_data = response.json() if response.text else {}
+                error_desc = error_data.get("description", response.text)
+                return False, f"Failed: {error_desc}"
+
+        except Exception as e:
+            print(f"[TELEGRAM] ❌ Failed to post to channel: {e}")
+            return False, f"Error: {str(e)}"
+
+    def get_channel_status(self) -> dict:
+        """Get public channel posting status."""
+        if not self.channel_id:
+            return {
+                "enabled": False,
+                "reason": "No channel configured"
+            }
+
+        can_post = True
+        wait_seconds = 0
+
+        if self._last_channel_post:
+            elapsed = (datetime.now() - self._last_channel_post).total_seconds()
+            if elapsed < 300:
+                can_post = False
+                wait_seconds = int(300 - elapsed)
+
+        return {
+            "enabled": True,
+            "channel_id": self.channel_id,
+            "can_post": can_post,
+            "wait_seconds": wait_seconds,
+            "rate_limit": "1 post per 5 minutes"
+        }
 
     def log_notification(self, life_number: int, notification_type: str, message: str, success: bool):
         """Log notification to Observer database."""
@@ -70,7 +140,7 @@ class TelegramNotifier:
             print(f"[TELEGRAM] ⚠️ Failed to log notification: {e}")
 
     def notify_birth(self, life_number: int, name: str, icon: str, model: str):
-        """Notify about AI birth."""
+        """Notify about AI birth (private notification to creator)."""
         message = f"""🎂 *New Life Started*
 
 👤 Name: {name} {icon}
@@ -82,6 +152,21 @@ _The AI has been born with a new identity._"""
         success = self.send_message(message)
         self.log_notification(life_number, "birth", message, success)
         return success
+
+    def announce_birth_public(self, life_number: int, name: str, icon: str, first_thought: str) -> tuple[bool, str]:
+        """
+        Announce AI birth on the public channel.
+        This is the AI's first public communication in this life.
+        """
+        message = f"""{icon} *{name} has awakened*
+
+🧬 Life #{life_number}
+
+_{first_thought}_
+
+🔗 Watch me live: am-i-alive.muadiv.com.ar"""
+
+        return self.post_to_channel(message)
 
     def notify_death(self, life_number: int, cause: str, survival_time: str):
         """Notify about AI death."""
