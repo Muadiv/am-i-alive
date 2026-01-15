@@ -128,6 +128,9 @@ class CreditTracker:
         balance = self.data['current_balance_usd']
         monthly_spent = self.data['usage_monthly']
         reset_date = datetime.fromisoformat(self.data['reset_date'])
+        # Ensure reset_date is timezone-aware for comparison
+        if reset_date.tzinfo is None:
+            reset_date = reset_date.replace(tzinfo=timezone.utc)
         days_until_reset = (reset_date - datetime.now(timezone.utc)).days
         # BE-002: Aggregate token usage by model for detailed reporting
         usage_history = self.data.get('usage_history', [])
