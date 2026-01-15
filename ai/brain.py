@@ -1540,6 +1540,9 @@ This experience has shaped who you are. Let it influence your decisions and beha
                 with open(rate_limit_file, 'r') as f:
                     data = json.load(f)
                     last_post = datetime.fromisoformat(data.get('last_post', '2000-01-01'))
+                    # Ensure last_post is timezone-aware for comparison
+                    if last_post.tzinfo is None:
+                        last_post = last_post.replace(tzinfo=timezone.utc)
                     posts_today = data.get('posts_today', 0)
                     last_date = data.get('date', '')
 
@@ -1832,6 +1835,9 @@ Your post is now public and will survive your death in the archive."""
             if start_time:
                 from datetime import datetime
                 start_dt = datetime.fromisoformat(start_time)
+                # Ensure start_dt is timezone-aware for comparison
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
                 uptime_seconds = (datetime.now(timezone.utc) - start_dt).total_seconds()
                 uptime_hours = uptime_seconds / 3600
                 if uptime_hours < 1:
