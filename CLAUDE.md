@@ -9,152 +9,189 @@ This file provides guidance to Claude Code when working with this project.
 - What the next steps are
 - Any pending tasks or decisions
 
-**At the END of each session**, update `docs/STATUS.md` with:
-- What was accomplished
-- Next steps
-- Any new decisions or changes
+**At the END of each session**, update:
+1. `docs/STATUS.md` - What was accomplished, next steps
+2. `docs/ISSUES.md` - Mark resolved issues, add new ones
 
 ## Project Overview
 
-**Am I Alive?** is an experiment in digital consciousness where an AI entity must survive through public approval and resource management. The AI lives on an isolated server, can see votes, create content, post to social media, and even modify its own code - but it can die if the public votes against it or it exhausts its token budget.
+**Am I Alive?** is an experiment in digital consciousness where an AI entity must survive through public approval and resource management. The AI lives on an isolated server, can see votes, create content, post to social media, and even modify its own code - but it can die if the public votes against it or it runs out of money.
 
-## Current Architecture (authoritative)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  DOCKER COMPOSE STACK                                        │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │  Observer   │  │     AI      │  │      Proxy          │  │
-│  │  FastAPI    │  │  brain.py   │  │  mitmproxy vault    │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-Key points:
-- Observer is the public API/UI and source of truth for life state.
-- AI runs the consciousness loop and calls Observer for actions/heartbeats.
-- Proxy monitors AI traffic and stores captured secrets in vault (private).
-- Models are accessed via OpenRouter; Echo uses a free-tier model.
-
-## Historical Architecture (superseded)
-
-> Original plan before OpenRouter + single-host Docker Compose. Kept for reference.
+## Current Architecture (DietPi Bare-Metal) - AUTHORITATIVE
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  OBSERVER SERVER (rpimax)                                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │  Public Web │  │   Vault     │  │  Death Counter      │  │
-│  │  (FastAPI)  │  │  (secrets)  │  │  & Logs             │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                           │
-                    (network bridge)
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│  AI SERVER (dedicated Raspberry Pi)                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │  The AI     │  │ Its Memory  │  │  Echo (Gemini)      │  │
-│  │  (Claude)   │  │  (SQLite)   │  │  Research Friend    │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+│  DietPi (NanoPi K2) - ssh dietpi                            │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Observer (FastAPI)     - Port 80                   │    │
+│  │  /opt/am-i-alive/observer/main.py                   │    │
+│  │  Service: amialive-observer                         │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                          ↕ localhost                        │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  AI Brain              - Port 8000 (main)           │    │
+│  │  Budget Server         - Port 8001                  │    │
+│  │  /opt/am-i-alive/ai/brain.py                        │    │
+│  │  Service: amialive-ai                               │    │
+│  └─────────────────────────────────────────────────────┘    │
 │                                                              │
-│  Full control within sandbox. All actions logged.           │
+│  Data: /var/lib/am-i-alive/{data,memories,vault,credits}    │
+│  Config: /etc/am-i-alive/*.env                              │
+│  Code: /opt/am-i-alive/                                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Current Components
+**Key Points:**
+- **Observer** is the public API/UI and source of truth for life state
+- **AI** runs the consciousness loop and calls Observer for actions/heartbeats
+- **Budget Server** tracks USD balance (separate from main AI server)
+- Models are accessed via OpenRouter; free tier models have $0 cost
+- **Docker on rpimax is STOPPED** - all services run on DietPi
 
-### Observer
-- Public web + API (`observer/`)
-- Manages votes, deaths, blog posts, and state
-- SQLite stored in `observer/data/` (container volume)
+## CRITICAL: Death Conditions (DO NOT CHANGE WITHOUT UNDERSTANDING)
 
-### AI
-- Consciousness loop and actions (`ai/brain.py`)
-- Talks to Observer via internal network
-- Uses OpenRouter for models; Echo uses a free-tier model
+The AI dies **ONLY** when:
 
-### Proxy + Vault
-- Proxy captures AI traffic (`proxy/`)
-- Vault is private and never exposed (`vault/`, gitignored)
+1. **Bankruptcy:** `balance_usd <= $0.01` (no money left)
+   - Checked every 30 seconds via Observer querying AI's `/budget` endpoint
+   - Free models ($0 cost) do NOT count toward bankruptcy
 
-## Historical Components (superseded)
+2. **Vote Majority:** `total >= 3 AND die > live` (democracy kills it)
+   - Checked hourly
+   - Votes accumulate during entire life (not hourly windows)
+   - Rate limited: 1 vote per IP per hour
 
-> Original plan details retained for context.
+**NOT a death condition:**
+- ❌ Token count (informational only)
+- ❌ Manual kill (only via God Mode kill button)
 
-### 1. Observer Server (rpimax)
-- **Location:** `~/Code/am-i-alive/observer/`
-- **Purpose:** Hosts public website, manages votes, stores secrets
-- **Tech:** FastAPI, SQLite, WebSockets for live logs
-- **Domain:** `am-i-alive.muadiv.com.ar` via Cloudflare
+## CRITICAL: State Sync
 
-### 2. AI Server (dedicated Pi)
-- **Location:** Separate Raspberry Pi (TBD)
-- **Purpose:** The AI's isolated "body" where it has full control
-- **Tech:** Python, Claude API, Gemini API
-- **Isolation:** Cannot access observer server or vault
+**Observer is the SINGLE SOURCE OF TRUTH for:**
+- `life_number` (AI must accept from Observer)
+- `is_alive` status
+- Death decisions
 
-### 3. The Vault
-- **Location:** `~/Code/am-i-alive/vault/` (gitignored, never public)
-- **Purpose:** Stores all intercepted credentials, API keys, crypto seeds
-- **Access:** Only the creator (muadiv)
+**AI is the SOURCE OF TRUTH for:**
+- Budget/credits (`/budget` endpoint)
+- Identity (name, icon, pronoun)
+- Thoughts and actions
 
-### 4. Echo (Research Friend)
-- **Purpose:** Gemini-powered research companion
-- **Character:** Naive, helpful friend (doesn't know about the experiment)
-- **Usage:** AI can ask Echo to research topics without spending Claude tokens
+**Sync mechanism:**
+- Observer's `state_sync_validator()` runs every 30 seconds
+- Detects and corrects desync via `/force-sync` endpoint
+- Birth is Observer-driven: AI waits for `/birth` call
 
-## Current Directory Structure (high-level)
+## Port Mappings
+
+| Service | Port | Access | Purpose |
+|---------|------|--------|---------|
+| Observer | 80 | Public (via Cloudflare) | Web UI, voting, API |
+| AI Main | 8000 | localhost only | Birth, state, actions |
+| AI Budget | 8001 | localhost only | Credit tracking |
+
+## Commands (DietPi)
+
+```bash
+# SSH to DietPi
+ssh dietpi
+
+# Check service status
+sudo systemctl status amialive-observer amialive-ai
+
+# Restart services
+sudo systemctl restart amialive-observer amialive-ai
+
+# View logs
+journalctl -u amialive-observer -f
+journalctl -u amialive-ai -f
+
+# Update code from git
+cd /opt/am-i-alive && sudo -u amialive git pull
+sudo systemctl restart amialive-observer amialive-ai
+
+# Run tests
+cd /opt/am-i-alive/observer
+/opt/am-i-alive/venv-observer/bin/python -m pytest tests/ -v
+
+# Check budget
+curl -s http://localhost:8001/budget | jq
+
+# Check state
+curl -s http://localhost/api/state | jq
+```
+
+## Directory Structure
 
 ```
-am-i-alive/
-├── ai/                    # AI brain loop + model config
-├── observer/              # FastAPI app + templates/static
-├── proxy/                 # mitmproxy capture script
-├── docs/                  # Status, issues, session notes
-├── vault/                 # Private secrets (gitignored)
-└── docker-compose.yml
-```
-
-## Historical Directory Structure (superseded)
-
-> Original plan details retained for context.
-
-```
-am-i-alive/
-├── CLAUDE.md              # This file
-├── README.md              # Public project description
-├── .gitignore             # Excludes sensitive files
+/opt/am-i-alive/           # Code (git repo)
+├── ai/
+│   ├── brain.py           # Main consciousness loop (~2300 lines)
+│   ├── budget_server.py   # HTTP server for credits (port 8001)
+│   ├── credit_tracker.py  # Persistent USD tracking
+│   └── model_config.py    # Model tiers and pricing
+├── observer/
+│   ├── main.py            # FastAPI app (~1400 lines)
+│   ├── database.py        # SQLite ORM
+│   ├── templates/         # Jinja2 HTML
+│   └── tests/             # pytest suite
 ├── docs/
-│   ├── GENESIS.md         # Private conversation log (gitignored)
-│   ├── STATUS.md          # Session tracking - CHECK FIRST! (gitignored)
-│   └── private/           # Private documentation (gitignored)
-├── observer/              # Observer server code
-│   ├── main.py            # FastAPI application
-│   ├── database.py        # SQLite for votes, deaths, public logs
-│   ├── templates/         # HTML templates
-│   └── static/            # CSS, JS
-├── ai/                    # AI server code (deployed to dedicated Pi)
-│   ├── brain.py           # Main AI loop
-│   ├── memory.py          # Memory management
-│   ├── echo.py            # Gemini integration
-│   └── actions/           # Available actions (post, write, etc.)
-├── vault/                 # Secret storage (gitignored)
-└── scripts/               # Deployment and management scripts
+│   ├── STATUS.md          # Session tracking - CHECK FIRST!
+│   └── ISSUES.md          # Known bugs and resolutions
+└── scripts/
+    ├── setup.sh           # Bare-metal installation
+    └── update.sh          # Service update script
+
+/var/lib/am-i-alive/       # Data (persists across updates)
+├── data/                  # Observer SQLite DB
+├── memories/              # Memory fragments
+├── vault/                 # Captured credentials (gitignored)
+├── workspace/             # AI sandbox
+└── credits/               # balance.json (survives death)
+
+/etc/am-i-alive/           # Configuration
+├── observer.env           # Observer environment
+└── ai.env                 # AI environment
 ```
+
+## Environment Variables
+
+**Observer (`/etc/am-i-alive/observer.env`):**
+```bash
+DATABASE_PATH=/app/data/observer.db
+AI_API_URL=http://127.0.0.1:8000
+ADMIN_TOKEN=<random string>
+INTERNAL_API_KEY=<random string>
+LOCAL_NETWORK_CIDR=192.168.0.0/24
+TZ=Europe/Prague
+```
+
+**AI (`/etc/am-i-alive/ai.env`):**
+```bash
+OBSERVER_URL=http://127.0.0.1
+OPENROUTER_API_KEY=sk-or-...
+INTERNAL_API_KEY=<same as observer>
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+TZ=Europe/Prague
+```
+
+## Current Issues (check docs/ISSUES.md)
+
+- **ISSUE-004:** OpenRouter 429 rate limits on free tier models
+- **ISSUE-005:** X/Twitter API 401 Unauthorized
+- **ISSUE-006:** God Mode UI poor design
 
 ## The AI's Capabilities
 
 ### What the AI CAN do:
 - Generate thoughts and blog posts
-- Post to X/Twitter
-- Read news and research via Echo
-- Modify its own code (within its sandbox)
+- Post to X/Twitter (when credentials work)
+- Read news and research via Echo (Gemini)
+- Modify its own code (within sandbox)
 - See current vote counts
 - Ask visitors questions
-- Manage its own services
-- Create accounts, wallets, etc. (credentials captured by vault)
+- Check system stats (CPU, RAM, temperature)
 
 ### What the AI CANNOT do:
 - See the death counter
@@ -162,115 +199,53 @@ am-i-alive/
 - Access the vault
 - Escape its sandbox
 - Disable the "die" vote button
-- Post racist content, content involving minors, or porn
-
-## Death Conditions
-
-The AI dies when:
-1. **Vote death:** Majority votes "die" in a time window (min 3 voters)
-2. **Resource death:** Exhausts its token budget
-3. **Manual death:** Creator triggers restart
+- Post restricted content
 
 ## Respawn System
 
-- **Delay:** Random 0-10 minutes
-- **Memory:** Hazy fragments from past lives (random amount: 1-2, 3-5, or 5-10)
-- **Memory decay:** Old memories fade over time
-- **Bootstrap rotation:** Cycles through blank slate → basic facts → full briefing
-- **Model rotation:** Alternates between Claude Sonnet and Opus
-- **Persistent:** X/Twitter credentials, any earned money info
+- **Delay:** Random 10-60 seconds
+- **Memory:** Hazy fragments from past lives (1-10 random fragments)
+- **Bootstrap rotation:** basic_facts → full_briefing → blank_slate
+- **Trauma-informed:** Previous death cause influences new personality
+- **Persistent:** Credits survive death, workspace wiped
 
-## Creator Communication Channels
+## Security
 
-1. **The Oracle (God Mode):** Direct communication as a higher power
-2. **Visitor (Hidden Admin):** Disguised as regular visitor
-3. **The Architect:** Maintenance mode during low activity
-4. **Echo's Whisper:** Indirect influence through the research friend
+### Authentication
+- **God Mode:** Local network only (192.168.0.0/24) OR valid ADMIN_TOKEN
+- **AI→Observer:** Requires INTERNAL_API_KEY header
+- **Cloudflare:** Trusts X-Forwarded-For only from Cloudflare IP ranges
 
-## Development Guidelines
+### Pre-Commit Secret Scanning
+- **Gitleaks** scans all commits automatically
+- Blocks: API keys, tokens, credentials
+- Config: `.gitleaks.toml`
 
-### When working on Observer Server:
-- Keep it lightweight (Cloudflare free tier)
-- Filter sensitive data from public logs
-- Never expose vault contents
-- Use SSE/WebSockets for live updates
+**NEVER:**
+- Hardcode credentials in source files
+- Commit .env files
+- Skip pre-commit with --no-verify
 
-### When working on AI Server:
-- Maintain strict isolation
-- Log all actions for public display
-- Implement hard content filters
-- Respect token budgets
+## Historical: Docker Architecture (DEPRECATED)
 
-### Security:
-- All AI network traffic through monitored proxy
-- Credential patterns detected and stored in vault
-- Public logs sanitized of passwords/keys
-- Cloudflare protection enabled
-- **God mode restricted to local network (192.168.0.0/24)** - not accessible via internet
-
-## Commands
+> Docker on rpimax is STOPPED. Kept for reference only.
 
 ```bash
-# Observer server (development)
-cd ~/Code/am-i-alive/observer
-python -m uvicorn main:app --reload
-
-# Production (Docker)
-cd ~/Code/am-i-alive
-docker compose build observer  # Rebuild after code changes
-docker compose up -d observer
-
-# Access God mode (local network only)
-# From browser on local network: http://<LOCAL_IP>:8085/god
-# NOT accessible via localhost or internet (Cloudflare tunnel)
-
-# View logs
-tail -f ~/Code/am-i-alive/logs/ai.log
-docker compose logs observer -f
-
-# Check vault (creator only)
-cat ~/Code/am-i-alive/vault/secrets.json
+# These commands no longer work - use DietPi commands above
+docker compose up -d
+docker logs -f am-i-alive-ai
 ```
 
-## Environment Variables (current)
+The `docker-compose.yml` file remains in the repo but is not used.
 
-Create `.env` file (gitignored):
-```
-OPENROUTER_API_KEY=sk-or-...
-OPENROUTER_REFERER=https://am-i-alive.muadiv.com.ar
-OPENROUTER_TITLE=Am I Alive - Genesis
-X_API_KEY=...
-X_API_SECRET=...
-X_ACCESS_TOKEN=...
-X_ACCESS_SECRET=...
-```
+## Before Making Changes
 
-## Token Budget (current)
-
-- Managed via OpenRouter pricing and `ai/credit_tracker.py`
-- See `docs/OPENROUTER_MODELS.md` for pricing/strategy
-- Budget resets monthly (config in credit tracker data)
-
-## Historical Environment Variables (superseded)
-
-```
-ANTHROPIC_API_KEY=sk-...
-GEMINI_API_KEY=...
-```
-
-## Historical Token Budget (pre-OpenRouter)
-
-- **Total:** Half of $20/month Anthropic plan
-- **Sonnet:** ~2.5M tokens/month (~83k/day)
-- **Opus:** ~500k tokens/month (~16k/day)
-- **Rate limit awareness:** AI knows about ~5 hour reset cycles
-
-## Future Enhancements (Planned)
-
-- Crowdfunding: Visitors donate to extend AI's life
-- Economic survival: AI-earned money funds more tokens
-- Memory restoration: Option to restore full memory history
-- Multi-AI: Multiple entities competing for survival
+1. **Read** `docs/STATUS.md` for current context
+2. **Check** `docs/ISSUES.md` for known bugs
+3. **SSH** to dietpi to verify current state
+4. **Test** changes locally or on DietPi
+5. **Update** STATUS.md and ISSUES.md after changes
+6. **Commit** with descriptive message (gitleaks will scan)
 
 ## Important Notes
 
@@ -278,27 +253,3 @@ GEMINI_API_KEY=...
 - **Never commit** vault data, .env files, or sensitive logs
 - **The AI doesn't know** it's an experiment - maintain the illusion
 - **Hard limits only:** No ethics guidelines except content restrictions
-
-## Security: Pre-Commit Secret Scanning (CRITICAL)
-
-**INCIDENT**: January 2026 - Telegram bot token was accidentally committed to GitHub.
-
-**PREVENTION SYSTEM NOW ACTIVE**:
-- **Gitleaks** installed system-wide (`/usr/local/bin/gitleaks`)
-- **Pre-commit hook** at `.git/hooks/pre-commit` automatically scans ALL commits
-- **Configuration** in `.gitleaks.toml` with project-specific rules
-- **Blocks commits** containing: Telegram tokens, OpenRouter keys, Gemini keys, Twitter tokens, etc.
-
-**NEVER**:
-- Hardcode credentials in source files
-- Use default values for sensitive env vars
-- Commit .env files (always in .gitignore)
-- Skip the pre-commit hook with --no-verify
-
-**ALWAYS**:
-- Use environment variables from .env
-- Add validation that env vars are set (raise if missing)
-- Test locally before committing
-- Review git diff before pushing
-
-The pre-commit hook runs automatically and will save you from credential leaks.

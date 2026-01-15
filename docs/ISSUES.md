@@ -1,12 +1,13 @@
 # Known Issues - Am I Alive?
 
-## 🐛 Critical Issues
+## ✅ Resolved Issues
 
 ### ISSUE-001: State Desync Between Observer and AI Containers
 
 **Priority:** High
-**Status:** Partially Resolved
+**Status:** ✅ RESOLVED (BE-003)
 **Discovered:** 2026-01-09
+**Resolved:** 2026-01-09 (Session 7)
 **Component:** Observer/AI Communication
 
 #### Description
@@ -129,31 +130,34 @@ asyncio.run(db.init_db())
 docker compose restart observer ai
 ```
 
-#### Files to Modify
+#### Files Modified
 
-- [x] `ai/brain.py` - Remove autonomous life management
-- [x] `observer/main.py` - Add state validation
+- [x] `ai/brain.py` - Remove autonomous life management, accept life_number from Observer
+- [x] `observer/main.py` - Add state validation (`state_sync_validator`)
 - [x] `observer/database.py` - Add sync support
 - [x] `observer/tests/test_state_sync.py` - Added sync tests
 
-#### Related Issues
+#### Resolution
 
-- None yet (first critical bug discovered)
+Implemented BE-003 with:
+1. Observer-driven birth gating in AI (`/birth` endpoint)
+2. AI `/state` + `/force-sync` endpoints
+3. Observer state sync validator runs every 30 seconds
+4. Per-life heartbeat token tracking
 
 #### References
 
-- Test session: 2026-01-09
-- Commit: `471a2a4`
-- Observer container: `am-i-alive-observer`
-- AI container: `am-i-alive-ai`
+- Fix session: 2026-01-09 (Session 7)
+- Commit: See Session 7 in STATUS.md
 
 ---
 
 ### ISSUE-003: Token Exhaustion Desync (AI Continues After Death)
 
-**Priority:** High  
-**Status:** Open  
-**Discovered:** 2026-01-09  
+**Priority:** High
+**Status:** ✅ RESOLVED
+**Discovered:** 2026-01-09
+**Resolved:** 2026-01-14
 **Component:** Observer/AI State Consistency
 
 #### Description
@@ -161,61 +165,135 @@ docker compose restart observer ai
 Observer marks the AI dead due to token exhaustion, but the AI continues running and
 sending heartbeats (last_seen keeps updating). This creates a "dead-but-alive" desync.
 
-#### Evidence (Life #105)
+#### Resolution
 
-- `current_state`: `is_alive=0`, `life_number=105`, `model="NVIDIA Nemotron Nano"`,  
-  `tokens_used=227815`, `tokens_limit=83000`, `last_seen=2026-01-09 16:19:57`.
-- Latest death: `cause="token_exhaustion"` at `2026-01-09 15:50:48` for Life #105.
-- Model switches happened after that death.
+**Root cause was fixed by changing death logic:**
+- Death now triggers on **USD balance <= $0.01** only (bankruptcy)
+- Token count is informational only - NOT a death trigger
+- Free models ($0 cost) can be used indefinitely
+- Observer queries AI's `/budget` endpoint every 30 seconds for real balance
 
-#### Impact
+**Code changes:**
+- `observer/main.py:token_budget_checker()` - Now queries `/budget`, checks `balance_usd`
+- Removed `tokens_used >= tokens_limit` death condition
 
-- Observer UI shows DEAD while AI is still acting.
-- Votes are blocked even though AI is active.
-- State consistency breaks (token death not enforced).
+#### References
 
-#### Proposed Directions (no changes yet)
-
-1) Enforce death on AI side when Observer records a death.
-2) Detect "alive while dead" and either stop AI or reconcile state.
-3) Sync model changes without affecting life state (chosen direction).
-4) Review token exhaustion thresholds to avoid premature death.
+- Fix documented in STATUS.md Priority 0A
+- Implementation verified in `observer/main.py:965-1008`
 
 ---
 
-## 🟡 Medium Priority Issues
+---
 
 ### ISSUE-002: God Mode Admin Tools Missing (Message History + Vote Override)
 
-**Priority:** Medium  
-**Status:** Open  
-**Discovered:** 2026-01-09  
+**Priority:** Medium
+**Status:** ✅ RESOLVED
+**Discovered:** 2026-01-09
+**Resolved:** 2026-01-14 (Session 20)
 **Component:** Observer/God Mode
 
 #### Description
 
 God Mode should provide a full message history (visitor + god mode/oracle messages) and allow
-manual adjustment of the vote counters. This is currently missing.
+manual adjustment of the vote counters.
 
-#### Requested Behavior
+#### Resolution
 
-- Show a list of all visitor messages (read + unread) in God Mode.
-- Show a list of all Oracle/God Mode messages sent to the AI.
-- Allow manual modification of live/die vote counters from God Mode.
+Implemented in Session 20 (Security Hardening):
+- God mode shows all visitor messages (read + unread)
+- God mode shows all Oracle/God Mode messages sent to AI
+- `/api/god/votes/adjust` endpoint for manual vote counter modification
+- Admin token gating with local network bypass
 
-#### Notes
+---
 
-- This is an admin-only feature (local network).
-- No changes implemented yet; requirements documented for future work.
+## 🐛 Active Issues
+
+### ISSUE-004: OpenRouter 429 Rate Limits
+
+**Priority:** Medium
+**Status:** Open
+**Discovered:** 2026-01-14 (Session 23)
+**Component:** AI/OpenRouter Integration
+
+#### Description
+
+OpenRouter returns 429 (Too Many Requests) when using free tier models like `qwen/qwen3-coder:free`.
+
+#### Evidence
+
+```
+[BRAIN] ❌ HTTP Error: 429 - {"error":{"message":"Provider returned error","code":429,
+"metadata":{"raw":"qwen/qwen3-coder:free is temporarily rate-limited upstream..."}}}
+```
+
+#### Impact
+
+- AI think cycles fail intermittently
+- Birth sequence may fail if rate limited during identity generation
+
+#### Proposed Solutions
+
+1. Add exponential backoff retry logic for 429 errors
+2. Switch to a paid model tier when rate limited
+3. Rotate between multiple free models to spread load
+4. Consider adding OpenRouter credits for higher rate limits
+
+---
+
+### ISSUE-005: X/Twitter API 401 Unauthorized
+
+**Priority:** Medium
+**Status:** Open
+**Discovered:** 2026-01-14 (Session 23)
+**Component:** AI/Twitter Integration
+
+#### Description
+
+Twitter API returns 401 Unauthorized when AI attempts to post tweets.
+
+#### Evidence
+
+```
+X/Twitter birth tweet returns 401 Unauthorized
+```
+
+#### Impact
+
+- AI cannot post to Twitter
+- Birth announcements fail silently
+
+#### Proposed Solutions
+
+1. Regenerate X API credentials (API Key, Secret, Access Token)
+2. Verify app permissions (Read and Write)
+3. Check if account is suspended or restricted
+4. Add `.twitter_suspended` flag file when 401 detected
 
 ---
 
 ## 🟢 Low Priority Issues
 
-*(None yet)*
+### ISSUE-006: God Mode UI/UX Poor Design
 
----
+**Priority:** Low
+**Status:** Open
+**Discovered:** 2026-01-14
+**Component:** Observer/Templates
 
-## ✅ Resolved Issues
+#### Description
 
-*(None yet)*
+God mode page has poor contrast, illegible text, and overall ugly appearance.
+
+#### User Feedback
+
+"God mode no se ve nada, es muy horrible" (God mode is illegible, very ugly)
+
+#### Proposed Solutions
+
+- Redesign with high contrast dark theme
+- Improve font sizes and spacing
+- Add clear visual separation between sections
+- Use professional color palette
