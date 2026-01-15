@@ -1,7 +1,7 @@
 # TEST-001: Voting system tests for BE-001
 import asyncio
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import aiosqlite
 import pytest
@@ -25,27 +25,22 @@ async def test_cast_vote_success(test_db):
 
 
 @pytest.mark.asyncio
-async def test_cast_vote_duplicate_same_window(test_db, monkeypatch):
+async def test_cast_vote_duplicate_same_window(test_db):
     """Duplicate votes within an hour should return time remaining."""
     ip_hash = "ip_dup"
     await test_db.cast_vote(ip_hash, "live")
 
-    fixed_now = datetime(2026, 1, 9, 12, 30, 0)
+    # Set the vote to 10 minutes ago
+    ten_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=10)
 
     async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
         await conn.execute(
             "UPDATE votes SET timestamp = ? WHERE ip_hash = ?",
-            ((fixed_now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
+            (ten_minutes_ago.strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
         )
         await conn.commit()
 
-    class FixedDatetime(datetime):
-        @classmethod
-        def utcnow(cls):
-            return fixed_now
-
-    monkeypatch.setattr(test_db, "datetime", FixedDatetime)
-
+    # Try to vote again - should fail with cooldown message
     result = await test_db.cast_vote(ip_hash, "die")
     assert result["success"] is False
     assert "You can vote again in" in result["message"]
@@ -77,10 +72,10 @@ async def test_vote_window_closes_and_resets(test_db):
 
 
 @pytest.mark.asyncio
-async def test_vote_counts_saved_to_history(test_db, monkeypatch):
+async def test_vote_counts_saved_to_history(test_db):
     """Death records should persist vote totals and survival time."""
-    birth_time = datetime(2026, 1, 9, 10, 0, 0)
-    fixed_now = datetime(2026, 1, 9, 12, 30, 0)
+    # Set up birth time as 2.5 hours ago
+    birth_time = datetime.now(timezone.utc) - timedelta(hours=2, minutes=30)
 
     async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
         await conn.execute(
@@ -88,13 +83,6 @@ async def test_vote_counts_saved_to_history(test_db, monkeypatch):
             (birth_time.isoformat(),)
         )
         await conn.commit()
-
-    class FixedDatetime(datetime):
-        @classmethod
-        def utcnow(cls):
-            return fixed_now
-
-    monkeypatch.setattr(test_db, "datetime", FixedDatetime)
 
     await test_db.record_death(
         "vote_majority",
@@ -114,34 +102,28 @@ async def test_vote_counts_saved_to_history(test_db, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "minute, second, expected_minutes",
-    [(30, 0, 30), (59, 30, 1)]
+    "minutes_ago, expected_remaining",
+    [(30, 30), (59, 1)]
 )
-async def test_time_remaining_calculation(test_db, monkeypatch, minute, second, expected_minutes):
+async def test_time_remaining_calculation(test_db, minutes_ago, expected_remaining):
     """Ensure time remaining rounds up and never returns 0 minutes."""
-    ip_hash = f"ip_time_{minute}"
+    ip_hash = f"ip_time_{minutes_ago}"
     await test_db.cast_vote(ip_hash, "live")
 
-    fixed_now = datetime(2026, 1, 9, 12, minute, second)
-    last_vote = fixed_now - timedelta(minutes=minute, seconds=second)
+    # Set the vote to X minutes ago
+    vote_time = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
 
     async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
         await conn.execute(
             "UPDATE votes SET timestamp = ? WHERE ip_hash = ?",
-            (last_vote.strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
+            (vote_time.strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
         )
         await conn.commit()
 
-    class FixedDatetime(datetime):
-        @classmethod
-        def utcnow(cls):
-            return fixed_now
-
-    monkeypatch.setattr(test_db, "datetime", FixedDatetime)
     result = await test_db.cast_vote(ip_hash, "die")
 
     assert result["success"] is False
-    assert f"{expected_minutes} minutes" in result["message"]
+    assert f"{expected_remaining} minutes" in result["message"]
 
 
 @pytest.mark.asyncio

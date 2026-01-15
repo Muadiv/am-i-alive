@@ -2,8 +2,12 @@
 import importlib
 import os
 from datetime import datetime
+from pathlib import Path
 
 import pytest
+
+# Get the observer directory for correct path resolution
+OBSERVER_DIR = Path(__file__).parent.parent
 
 
 @pytest.fixture
@@ -25,10 +29,16 @@ async def test_db(tmp_path, monkeypatch):
 @pytest.fixture
 async def main_module(test_db, monkeypatch):
     """Reload main module after test database setup."""
-    import main as main_module
-    main_module = importlib.reload(main_module)
-    monkeypatch.setattr(main_module, "db", test_db)
-    return main_module
+    # Change to observer directory so static files can be found
+    original_dir = os.getcwd()
+    os.chdir(OBSERVER_DIR)
+    try:
+        import main as main_module
+        main_module = importlib.reload(main_module)
+        monkeypatch.setattr(main_module, "db", test_db)
+        return main_module
+    finally:
+        os.chdir(original_dir)
 
 
 @pytest.fixture

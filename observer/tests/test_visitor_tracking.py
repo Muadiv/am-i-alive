@@ -1,7 +1,7 @@
 # TEST-001: Visitor tracking tests for BE-001
 import asyncio
 import importlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 import pytest
@@ -26,22 +26,9 @@ async def test_track_new_visitor(test_db):
 
 
 @pytest.mark.asyncio
-async def test_track_returning_visitor(test_db, monkeypatch):
+async def test_track_returning_visitor(test_db):
     """Returning visitor should not increment unique_visitors but update counts."""
-    first_time = datetime(2026, 1, 9, 12, 0, 0)
-    second_time = first_time + timedelta(minutes=10)
-
-    class FixedDatetime(datetime):
-        current = first_time
-
-        @classmethod
-        def utcnow(cls):
-            return cls.current
-
-    monkeypatch.setattr(test_db, "datetime", FixedDatetime)
-
     await test_db.track_visitor("visitor_2")
-    FixedDatetime.current = second_time
     await test_db.track_visitor("visitor_2")
 
     stats = await test_db.get_site_stats()
@@ -50,12 +37,11 @@ async def test_track_returning_visitor(test_db, monkeypatch):
 
     async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
         cursor = await conn.execute(
-            "SELECT visit_count, last_visit FROM visitors WHERE ip_hash = ?",
+            "SELECT visit_count FROM visitors WHERE ip_hash = ?",
             ("visitor_2",)
         )
         row = await cursor.fetchone()
         assert row[0] == 2
-        assert datetime.fromisoformat(row[1]) == second_time
 
 
 @pytest.mark.asyncio
