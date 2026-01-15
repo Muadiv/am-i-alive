@@ -264,9 +264,122 @@ X/Twitter birth tweet returns 401 Unauthorized
 3. Check if account is suspended or restricted
 4. Add `.twitter_suspended` flag file when 401 detected
 
+#### Workaround
+
+Using Telegram public channel (@AmIAlive_AI) as alternative communication method. Twitter integration deprioritized.
+
 ---
 
 ## 🟢 Low Priority Issues
+
+### ISSUE-007: Deprecation Warnings (datetime.utcnow)
+
+**Priority:** Low
+**Status:** Open
+**Discovered:** 2026-01-15 (Session 25)
+**Component:** Multiple files
+
+#### Description
+
+Python 3.12+ deprecates `datetime.utcnow()`. Should use `datetime.now(timezone.utc)` instead.
+
+#### Affected Files
+
+- `observer/database.py` - Multiple occurrences
+- `ai/brain.py` - Multiple occurrences
+- `ai/credit_tracker.py` - Reset date check
+- `observer/tests/test_voting_system.py` - Test fixtures
+
+#### Impact
+
+- 191 deprecation warnings in test output
+- No functional impact currently
+- Will break in future Python versions
+
+---
+
+### ISSUE-008: Dead Code - brain_gemini_backup.py
+
+**Priority:** Low
+**Status:** Open
+**Discovered:** 2026-01-15 (Session 25)
+**Component:** AI
+
+#### Description
+
+File `ai/brain_gemini_backup.py` (896 lines) is never imported or used. It's a duplicate of `brain.py` from before OpenRouter migration.
+
+#### Impact
+
+- Clutters codebase
+- Could confuse future contributors
+- No runtime impact
+
+#### Proposed Solution
+
+Either delete the file or move to `ai/archive/` with clear naming like `brain_gemini_backup_2026_01.py`.
+
+---
+
+### ISSUE-009: Missing Startup Validation
+
+**Priority:** Low
+**Status:** Open
+**Discovered:** 2026-01-15 (Session 25)
+**Component:** Observer/AI
+
+#### Description
+
+Neither Observer nor AI validate that required environment variables are set at startup. The application starts but fails later when the missing value is needed.
+
+#### Affected Variables
+
+- `OPENROUTER_API_KEY` - AI fails on first think cycle
+- `INTERNAL_API_KEY` - Some API calls fail silently
+- `TELEGRAM_BOT_TOKEN` - Notifications fail
+
+#### Proposed Solution
+
+Add startup validation in both `observer/main.py` and `ai/brain.py`:
+
+```python
+# At top of main()
+required_vars = ["OPENROUTER_API_KEY", "TELEGRAM_BOT_TOKEN"]
+missing = [v for v in required_vars if not os.getenv(v)]
+if missing:
+    raise RuntimeError(f"Missing required env vars: {missing}")
+```
+
+---
+
+### ISSUE-010: Database Connection Per Query
+
+**Priority:** Low
+**Status:** Deferred
+**Discovered:** 2026-01-15 (Session 25)
+**Component:** Observer/Database
+
+#### Description
+
+`observer/database.py` creates a new SQLite connection for each query instead of using connection pooling or a persistent connection.
+
+#### Impact
+
+- Performance overhead on high traffic
+- Not critical for current usage levels
+- SQLite handles this reasonably well for low-traffic scenarios
+
+#### Decision
+
+Deferred - The current implementation works fine for expected traffic levels. Implementing connection pooling would require significant refactoring of 50+ database functions. Will revisit if performance becomes an issue.
+
+#### Proposed Solution (If Needed Later)
+
+1. Create a connection manager class that maintains a connection pool
+2. Refactor all `async with aiosqlite.connect()` calls to use the pool
+3. Add proper connection cleanup on shutdown
+
+---
 
 ### ISSUE-006: God Mode UI/UX Poor Design
 

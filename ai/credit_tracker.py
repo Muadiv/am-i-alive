@@ -7,7 +7,7 @@ The credit balance SURVIVES DEATH - it's part of the meta-game.
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 
 CREDITS_FILE = "/app/credits/balance.json"
@@ -29,7 +29,7 @@ class CreditTracker:
 
                 # Check if we need to reset monthly budget
                 reset_date = datetime.fromisoformat(data.get('reset_date', '2000-01-01'))
-                if datetime.utcnow() >= reset_date:
+                if datetime.now(timezone.utc) >= reset_date:
                     # Monthly reset!
                     print(f"[CREDITS] 🎉 Monthly budget reset! New balance: ${self.monthly_budget:.2f}")
                     data['current_balance_usd'] = self.monthly_budget
@@ -60,7 +60,7 @@ class CreditTracker:
 
     def get_next_reset_date(self) -> str:
         """Calculate next monthly reset date."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         # Reset on the 1st of next month
         if now.month == 12:
             next_month = datetime(now.year + 1, 1, 1)
@@ -91,7 +91,7 @@ class CreditTracker:
 
         # Add to history
         self.data['usage_history'].append({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "model": model_id,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -125,7 +125,7 @@ class CreditTracker:
         balance = self.data['current_balance_usd']
         monthly_spent = self.data['usage_monthly']
         reset_date = datetime.fromisoformat(self.data['reset_date'])
-        days_until_reset = (reset_date - datetime.utcnow()).days
+        days_until_reset = (reset_date - datetime.now(timezone.utc)).days
         # BE-002: Aggregate token usage by model for detailed reporting
         usage_history = self.data.get('usage_history', [])
         models = {}

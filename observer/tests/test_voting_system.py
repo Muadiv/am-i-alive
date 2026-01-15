@@ -1,6 +1,6 @@
 # TEST-001: Voting system tests for BE-001
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import aiosqlite
@@ -59,7 +59,7 @@ async def test_vote_window_closes_and_resets(test_db):
     await test_db.cast_vote(ip_hash, "live")
 
     await test_db.close_current_voting_window(
-        datetime.utcnow(),
+        datetime.now(timezone.utc),
         live_count=1,
         die_count=0,
         result="live"
@@ -70,7 +70,7 @@ async def test_vote_window_closes_and_resets(test_db):
         row = await cursor.fetchone()
         assert row[0] == 0
 
-    await test_db.start_voting_window(datetime.utcnow())
+    await test_db.start_voting_window(datetime.now(timezone.utc))
 
     result = await test_db.cast_vote(ip_hash, "die")
     assert result["success"] is True

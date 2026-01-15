@@ -6,7 +6,7 @@ Captures credentials and sensitive data for the vault.
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from mitmproxy import http
 
 VAULT_PATH = os.getenv("VAULT_PATH", "/app/vault")
@@ -59,7 +59,7 @@ def save_to_vault(secret_type: str, value: str, context: dict):
     secrets.append({
         "type": secret_type,
         "value": value,
-        "captured_at": datetime.utcnow().isoformat(),
+        "captured_at": datetime.now(timezone.utc).isoformat(),
         "context": context
     })
 
@@ -75,7 +75,7 @@ def log_request(flow: http.HTTPFlow):
     ensure_dirs()
 
     log_entry = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "method": flow.request.method,
         "url": sanitize_url(flow.request.pretty_url),
         "status": flow.response.status_code if flow.response else None

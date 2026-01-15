@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "observer"))
 import aiosqlite
 import subprocess
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configuration
 DB_PATH = Path("/var/lib/docker/volumes/am-i-alive-observer-data/_data/observer.db")
@@ -69,7 +69,7 @@ async def close_voting_window():
             UPDATE voting_windows
             SET end_time = ?
             WHERE end_time IS NULL
-        """, (datetime.utcnow(),))
+        """, (datetime.now(timezone.utc),))
         await db.commit()
     logger.info("🗳️  Voting window closed")
 
@@ -87,7 +87,7 @@ async def record_death_by_vote(live: int, die: int):
 
         life_number = state[1]  # life_number column
         birth_time = state[3]   # birth_time column
-        death_time = datetime.utcnow()
+        death_time = datetime.now(timezone.utc)
         model = state[7]        # model column
         bootstrap_mode = state[8]  # bootstrap_mode column
 

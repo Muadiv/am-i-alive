@@ -5,7 +5,7 @@ Manages votes, deaths, logs, and memories.
 
 import aiosqlite
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import json
 import random
@@ -163,7 +163,7 @@ async def init_db():
         await db.execute("""
             INSERT OR IGNORE INTO site_stats (id, unique_visitors, total_page_views, last_updated)
             VALUES (1, 0, 0, ?)
-        """, (datetime.utcnow(),))
+        """, (datetime.now(timezone.utc),))
 
         # Visitor messages - messages from visitors to the AI
         await db.execute("""
@@ -286,6 +286,14 @@ async def get_death_count() -> int:
             return row[0] if row else 0
 
 
+async def get_previous_death_cause() -> Optional[str]:
+    """Get the cause of the most recent death for trauma prompt."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute("SELECT cause FROM deaths ORDER BY id DESC LIMIT 1") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+
 async def get_vote_counts(window_id: Optional[int] = None) -> dict:
     """Get current vote counts."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -383,7 +391,7 @@ async def cast_vote(ip_hash: str, vote: str) -> dict:
                 # Create new window
                 cursor = await db.execute(
                     "INSERT INTO voting_windows (start_time) VALUES (?)",
-                    (datetime.utcnow(),)
+                    (datetime.now(timezone.utc),)
                 )
                 window_id = cursor.lastrowid
 
@@ -401,7 +409,7 @@ async def cast_vote(ip_hash: str, vote: str) -> dict:
                     except ValueError:
                         last_vote = datetime.strptime(last_vote, "%Y-%m-%d %H:%M:%S")
 
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 cooldown_seconds = int((now - last_vote).total_seconds())
                 if cooldown_seconds < 3600:
                     remaining_seconds = max(0, 3600 - cooldown_seconds)
@@ -434,8 +442,8 @@ async def record_death(
         birth_time = state.get("birth_time")
         # TASK-004: Ensure birth_time is always set for death records.
         if birth_time is None:
-            birth_time = datetime.utcnow()
-        death_time = datetime.utcnow()
+            birth_time = datetime.now(timezone.utc)
+        death_time = datetime.now(timezone.utc)
 
         duration = None
         if birth_time:
@@ -504,7 +512,7 @@ async def start_new_life() -> dict:
         # Calculate token limit based on model
         tokens_limit = 83000 if model == "sonnet" else 16000  # Daily limits
 
-        birth_time = datetime.utcnow()
+        birth_time = datetime.now(timezone.utc)
 
         await db.execute("""
             UPDATE current_state SET
@@ -622,7 +630,7 @@ async def generate_memories(life_number: int) -> list:
             json.dump({
                 "fragments": fragments,
                 "emotion": random.choice(emotions),
-                "generated_at": datetime.utcnow().isoformat()
+                "generated_at": datetime.now(timezone.utc).isoformat()
             }, f)
 
         # Clean up old memory files (keep last 5 lives worth)
@@ -662,7 +670,7 @@ async def record_thought(content: str, thought_type: str = "thought", tokens_use
             UPDATE current_state
             SET tokens_used = tokens_used + ?, last_thought_time = ?
             WHERE id = 1
-        """, (tokens_used, datetime.utcnow()))
+        """, (tokens_used, datetime.now(timezone.utc)))
 
         await db.commit()
 
@@ -747,7 +755,7 @@ async def get_recent_activity(limit: int = 50) -> list:
 async def track_visitor(ip_hash: str):
     """Track unique visitors and page views."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # BE-001: Ensure site stats row exists
         await db.execute("""
@@ -795,7 +803,7 @@ async def get_site_stats() -> dict:
     """Get current site statistics."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # BE-001: Ensure site stats row exists
         await db.execute("""
@@ -883,26 +891,26 @@ async def update_heartbeat(tokens_used: int = None, model: str = None):
                 UPDATE current_state
                 SET last_seen = ?, tokens_used = ?, model = ?
                 WHERE id = 1
-            """, (datetime.utcnow(), tokens_used, model))
+            """, (datetime.now(timezone.utc), tokens_used, model))
         elif tokens_used is not None:
             await db.execute("""
                 UPDATE current_state
                 SET last_seen = ?, tokens_used = ?
                 WHERE id = 1
-            """, (datetime.utcnow(), tokens_used))
+            """, (datetime.now(timezone.utc), tokens_used))
         else:
             await db.execute("""
                 UPDATE current_state
                 SET last_seen = ?
                 WHERE id = 1
-            """, (datetime.utcnow(),))
+            """, (datetime.now(timezone.utc),))
         await db.commit()
 
 
 async def record_birth(life_number: int, bootstrap_mode: str, model: str, ai_name: str = None, ai_icon: str = None):
     """Record AI birth - marks as alive and updates state."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        birth_time = datetime.utcnow()
+        birth_time = datetime.now(timezone.utc)
         await db.execute("""
             UPDATE current_state
             SET life_number = ?,
@@ -936,7 +944,7 @@ async def can_send_message(ip_hash: str) -> tuple[bool, Optional[int]]:
             return True, None
 
         last_message_time = datetime.fromisoformat(row[0])
-        time_since = datetime.utcnow() - last_message_time
+        time_since = datetime.now(timezone.utc) - last_message_time
         cooldown_seconds = 3600  # 1 hour
 
         if time_since.total_seconds() < cooldown_seconds:
@@ -1054,7 +1062,7 @@ async def manually_adjust_votes(live_count: int, die_count: int) -> dict:
             cursor = await db.execute("""
                 INSERT INTO voting_windows (start_time)
                 VALUES (?)
-            """, (datetime.utcnow(),))
+            """, (datetime.now(timezone.utc),))
             window_id = cursor.lastrowid
 
         # Delete all existing votes for current window
@@ -1107,13 +1115,13 @@ async def cleanup_old_data():
             UPDATE voting_windows
             SET end_time = ?
             WHERE end_time IS NULL
-        """, (datetime.utcnow(),))
+        """, (datetime.now(timezone.utc),))
 
         # Reset vote counts in current_state to 0 by starting a new window
         await db.execute("""
             INSERT INTO voting_windows (start_time)
             VALUES (?)
-        """, (datetime.utcnow(),))
+        """, (datetime.now(timezone.utc),))
 
         await db.commit()
         return {"success": True, "message": "Old data cleaned up"}

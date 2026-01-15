@@ -9,7 +9,7 @@ import ipaddress
 import os
 import random
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
@@ -96,6 +96,28 @@ AI_API_URL = os.getenv("AI_API_URL", "http://ai:8001")
 # Admin and internal API auth
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+
+
+def validate_environment():
+    """Validate that required environment variables are set."""
+    warnings = []
+
+    if not AI_API_URL:
+        warnings.append("AI_API_URL not set - using default, may fail to reach AI")
+
+    if not ADMIN_TOKEN:
+        warnings.append("ADMIN_TOKEN not set - God mode will only work from local network")
+
+    if not INTERNAL_API_KEY:
+        warnings.append("INTERNAL_API_KEY not set - AI calls may not be authenticated")
+
+    if warnings:
+        for w in warnings:
+            print(f"[STARTUP] ⚠️ {w}")
+
+
+# Run validation at module load
+validate_environment()
 
 # Voting window duration (1 hour)
 VOTING_WINDOW_SECONDS = 3600
@@ -405,7 +427,7 @@ async def god_mode(request: Request):
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 @app.get("/api/system/stats")
 async def get_system_stats():
@@ -438,7 +460,7 @@ async def get_system_stats():
     if birth_time:
         try:
             birth_dt = datetime.fromisoformat(birth_time) if isinstance(birth_time, str) else birth_time
-            uptime_seconds = max(0, int((datetime.utcnow() - birth_dt).total_seconds()))
+            uptime_seconds = max(0, int((datetime.now(timezone.utc) - birth_dt).total_seconds()))
         except Exception:
             uptime_seconds = 0
 
@@ -494,7 +516,7 @@ async def get_next_vote_check():
     """Get time until next vote check (hourly)."""
     from datetime import datetime, timedelta
     # Align vote check timer with server UTC
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     next_check = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     seconds_until = int((next_check - now).total_seconds())
@@ -608,7 +630,7 @@ async def heartbeat(request: Request):
     model = data.get("model")
 
     await db.update_heartbeat(tokens_used=tokens_used, model=model)
-    return {"success": True, "timestamp": datetime.utcnow().isoformat()}
+    return {"success": True, "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/api/blog/post")
@@ -759,7 +781,7 @@ async def force_alive(request: Request):
                 life_number = ?,
                 last_seen = ?
             WHERE id = 1
-        """, (ai_state.get("life_number"), datetime.utcnow()))
+        """, (ai_state.get("life_number"), datetime.now(timezone.utc)))
         await conn.commit()
 
     await db.log_activity("force_alive", f"God mode forced Life #{ai_state.get('life_number')} alive (DB sync fix)")
@@ -909,6 +931,13 @@ async def force_ai_sync(observer_state: dict):
     # BE-003: Emergency sync mechanism.
     print("[SYNC] 🔄 Forcing AI to sync with Observer state...")
 
+    # Get previous death cause for trauma prompt
+    previous_death_cause = None
+    try:
+        previous_death_cause = await db.get_previous_death_cause()
+    except Exception as e:
+        print(f"[SYNC] ⚠️ Could not get previous death cause: {e}")
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -917,7 +946,8 @@ async def force_ai_sync(observer_state: dict):
                     "life_number": observer_state.get("life_number"),
                     "bootstrap_mode": observer_state.get("bootstrap_mode"),
                     "model": observer_state.get("model"),
-                    "is_alive": observer_state.get("is_alive", False)
+                    "is_alive": observer_state.get("is_alive", False),
+                    "previous_death_cause": previous_death_cause
                 },
                 timeout=10.0
             )

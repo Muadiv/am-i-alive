@@ -5,7 +5,7 @@ Runs in a separate thread to not block the main AI loop.
 
 import json
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 CREDITS_FILE = "/app/credits/balance.json"
@@ -48,7 +48,7 @@ class BudgetHandler(BaseHTTPRequestHandler):
                 # Calculate days until reset
                 try:
                     reset_date = datetime.fromisoformat(data.get('reset_date', '2000-01-01'))
-                    days_until_reset = max(0, (reset_date - datetime.utcnow()).days)
+                    days_until_reset = max(0, (reset_date - datetime.now(timezone.utc)).days)
                 except:
                     days_until_reset = 0
 
