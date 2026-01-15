@@ -214,32 +214,24 @@ Implemented in Session 20 (Security Hardening):
 ### ISSUE-004: OpenRouter 429 Rate Limits
 
 **Priority:** Medium
-**Status:** Open
+**Status:** ✅ RESOLVED
 **Discovered:** 2026-01-14 (Session 23)
+**Resolved:** 2026-01-15 (Session 24)
 **Component:** AI/OpenRouter Integration
 
 #### Description
 
 OpenRouter returns 429 (Too Many Requests) when using free tier models like `qwen/qwen3-coder:free`.
 
-#### Evidence
+#### Resolution
 
-```
-[BRAIN] ❌ HTTP Error: 429 - {"error":{"message":"Provider returned error","code":429,
-"metadata":{"raw":"qwen/qwen3-coder:free is temporarily rate-limited upstream..."}}}
-```
+Implemented automatic 429 handling in `ai/brain.py`:
+1. **Exponential backoff:** Wait 5s, 10s, 20s between retries
+2. **Model rotation:** Auto-switch to different free model when rate limited
+3. **Max retries:** 3 attempts before giving up
+4. **Activity logging:** Rate limit events logged to observer
 
-#### Impact
-
-- AI think cycles fail intermittently
-- Birth sequence may fail if rate limited during identity generation
-
-#### Proposed Solutions
-
-1. Add exponential backoff retry logic for 429 errors
-2. Switch to a paid model tier when rate limited
-3. Rotate between multiple free models to spread load
-4. Consider adding OpenRouter credits for higher rate limits
+**Code location:** `ai/brain.py:513-559`
 
 ---
 
