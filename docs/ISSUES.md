@@ -275,80 +275,61 @@ Using Telegram public channel (@AmIAlive_AI) as alternative communication method
 ### ISSUE-007: Deprecation Warnings (datetime.utcnow)
 
 **Priority:** Low
-**Status:** Open
+**Status:** ✅ RESOLVED
 **Discovered:** 2026-01-15 (Session 25)
+**Resolved:** 2026-01-15 (Session 26)
 **Component:** Multiple files
 
 #### Description
 
 Python 3.12+ deprecates `datetime.utcnow()`. Should use `datetime.now(timezone.utc)` instead.
 
-#### Affected Files
+#### Resolution
 
-- `observer/database.py` - Multiple occurrences
-- `ai/brain.py` - Multiple occurrences
-- `ai/credit_tracker.py` - Reset date check
-- `observer/tests/test_voting_system.py` - Test fixtures
-
-#### Impact
-
-- 191 deprecation warnings in test output
-- No functional impact currently
-- Will break in future Python versions
+Replaced all `datetime.utcnow()` with `datetime.now(timezone.utc)` across:
+- `observer/database.py` - All occurrences + added timezone-aware parsing for SQLite dates
+- `ai/brain.py` - All occurrences + fixed comparison issues
+- `ai/credit_tracker.py` - Reset date handling
+- `scripts/vote_checker.py` - Duration calculation
+- `observer/tests/*.py` - Updated test fixtures to use real datetime operations
 
 ---
 
 ### ISSUE-008: Dead Code - brain_gemini_backup.py
 
 **Priority:** Low
-**Status:** Open
+**Status:** ✅ RESOLVED
 **Discovered:** 2026-01-15 (Session 25)
+**Resolved:** 2026-01-15 (Session 26)
 **Component:** AI
 
 #### Description
 
-File `ai/brain_gemini_backup.py` (896 lines) is never imported or used. It's a duplicate of `brain.py` from before OpenRouter migration.
+File `ai/brain_gemini_backup.py` (896 lines) was never imported or used. It was a duplicate of `brain.py` from before OpenRouter migration.
 
-#### Impact
+#### Resolution
 
-- Clutters codebase
-- Could confuse future contributors
-- No runtime impact
-
-#### Proposed Solution
-
-Either delete the file or move to `ai/archive/` with clear naming like `brain_gemini_backup_2026_01.py`.
+Deleted the file entirely. No archive needed as git history preserves it.
 
 ---
 
 ### ISSUE-009: Missing Startup Validation
 
 **Priority:** Low
-**Status:** Open
+**Status:** ✅ RESOLVED
 **Discovered:** 2026-01-15 (Session 25)
+**Resolved:** 2026-01-15 (Session 26)
 **Component:** Observer/AI
 
 #### Description
 
-Neither Observer nor AI validate that required environment variables are set at startup. The application starts but fails later when the missing value is needed.
+Neither Observer nor AI validate that required environment variables are set at startup.
 
-#### Affected Variables
+#### Resolution
 
-- `OPENROUTER_API_KEY` - AI fails on first think cycle
-- `INTERNAL_API_KEY` - Some API calls fail silently
-- `TELEGRAM_BOT_TOKEN` - Notifications fail
-
-#### Proposed Solution
-
-Add startup validation in both `observer/main.py` and `ai/brain.py`:
-
-```python
-# At top of main()
-required_vars = ["OPENROUTER_API_KEY", "TELEGRAM_BOT_TOKEN"]
-missing = [v for v in required_vars if not os.getenv(v)]
-if missing:
-    raise RuntimeError(f"Missing required env vars: {missing}")
-```
+Added `validate_environment()` function to `ai/brain.py` that:
+- Raises RuntimeError for missing required vars (OPENROUTER_API_KEY, OBSERVER_URL)
+- Prints warnings for missing optional vars (TELEGRAM_BOT_TOKEN, TELEGRAM_CHANNEL_ID, etc.)
 
 ---
 
