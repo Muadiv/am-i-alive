@@ -111,7 +111,7 @@ RESPAWN_DELAY_MAX = 60
 STATE_SYNC_INTERVAL_SECONDS = 30
 
 # Local network for God mode access
-LOCAL_NETWORK = ipaddress.ip_network("192.168.0.0/24")
+LOCAL_NETWORK = ipaddress.ip_network(os.getenv("LOCAL_NETWORK_CIDR", "192.168.0.0/24"))
 
 # Cloudflare proxy IPs (used to trust forwarded headers)
 CLOUDFLARE_IP_RANGES = [
@@ -148,7 +148,7 @@ def is_local_request(request: Request) -> bool:
 
     try:
         client_ip = ipaddress.ip_address(request.client.host)
-        return client_ip in LOCAL_NETWORK
+        return client_ip.is_loopback or client_ip in LOCAL_NETWORK
     except Exception:
         return False
 
