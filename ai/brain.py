@@ -510,6 +510,54 @@ class AIBrain:
                     print(f"[BRAIN] ❌ Retry failed: {retry_error}")
                     raise
 
+            # SELF-HEALING: Handle 429 rate limit with backoff and model rotation
+            if error_code == 429:
+                print(f"[BRAIN] ⏱️ Rate limited on '{self.current_model['id']}'. Switching model and retrying...")
+
+                # Track retry attempts (stored as instance variable)
+                if not hasattr(self, '_rate_limit_retries'):
+                    self._rate_limit_retries = 0
+
+                self._rate_limit_retries += 1
+                max_retries = 3
+
+                if self._rate_limit_retries > max_retries:
+                    print(f"[BRAIN] ❌ Max retries ({max_retries}) exceeded. Giving up on this request.")
+                    self._rate_limit_retries = 0
+                    raise
+
+                # Exponential backoff: 5s, 10s, 20s
+                backoff_seconds = 5 * (2 ** (self._rate_limit_retries - 1))
+                print(f"[BRAIN] 💤 Waiting {backoff_seconds}s before retry (attempt {self._rate_limit_retries}/{max_retries})...")
+                await asyncio.sleep(backoff_seconds)
+
+                # Switch to a different model
+                old_model = self.current_model
+                self.current_model = self.model_rotator.select_random_model(tier="free")
+
+                # Avoid switching to same model
+                if self.current_model['id'] == old_model['id']:
+                    # Get all free models and pick a different one
+                    from model_config import MODELS
+                    free_models = [m for m in MODELS["free"] if m['id'] != old_model['id']]
+                    if free_models:
+                        self.current_model = random.choice(free_models)
+                        self.model_rotator.record_usage(self.current_model['id'])
+
+                print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
+
+                await self.report_activity("rate_limit_retry",
+                    f"Rate limited on {old_model['name']}, switched to {self.current_model['name']}")
+
+                # Retry with new model
+                try:
+                    result = await self.send_message(message, system_prompt)
+                    self._rate_limit_retries = 0  # Reset on success
+                    return result
+                except Exception as retry_error:
+                    print(f"[BRAIN] ❌ Retry failed: {retry_error}")
+                    raise
+
             raise
         except Exception as e:
             print(f"[BRAIN] ❌ Error calling OpenRouter: {e}")
