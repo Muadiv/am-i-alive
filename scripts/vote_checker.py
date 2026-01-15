@@ -95,6 +95,9 @@ async def record_death_by_vote(live: int, die: int):
         duration = None
         if birth_time:
             birth_dt = datetime.fromisoformat(birth_time)
+            # Ensure birth_dt is timezone-aware for comparison
+            if birth_dt.tzinfo is None:
+                birth_dt = birth_dt.replace(tzinfo=timezone.utc)
             duration = int((death_time - birth_dt).total_seconds())
 
         # Get recent thoughts for memory fragments

@@ -409,6 +409,10 @@ async def cast_vote(ip_hash: str, vote: str) -> dict:
                     except ValueError:
                         last_vote = datetime.strptime(last_vote, "%Y-%m-%d %H:%M:%S")
 
+                # Ensure last_vote is timezone-aware for comparison
+                if last_vote.tzinfo is None:
+                    last_vote = last_vote.replace(tzinfo=timezone.utc)
+
                 now = datetime.now(timezone.utc)
                 cooldown_seconds = int((now - last_vote).total_seconds())
                 if cooldown_seconds < 3600:
@@ -448,6 +452,9 @@ async def record_death(
         duration = None
         if birth_time:
             birth_dt = datetime.fromisoformat(birth_time) if isinstance(birth_time, str) else birth_time
+            # Ensure birth_dt is timezone-aware for comparison
+            if birth_dt.tzinfo is None:
+                birth_dt = birth_dt.replace(tzinfo=timezone.utc)
             duration = int((death_time - birth_dt).total_seconds())
 
         # BE-001: Add vote stats to history
