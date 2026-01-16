@@ -9,16 +9,79 @@ This document provides guidelines and procedures for AI agents (Claude, GPT, Gem
 ## Table of Contents
 
 1. [Before You Start](#before-you-start)
-2. [Project Architecture](#project-architecture)
-3. [Current Deployment: DietPi Bare-Metal](#current-deployment-dietpi-bare-metal)
-4. [Mandatory Pre-Push Checklist](#mandatory-pre-push-checklist)
-5. [Testing Requirements](#testing-requirements)
-6. [Documentation Requirements](#documentation-requirements)
-7. [Common Pitfalls to Avoid](#common-pitfalls-to-avoid)
-8. [Code Style & Patterns](#code-style--patterns)
-9. [Security Guidelines](#security-guidelines)
-10. [Known Issues & Workarounds](#known-issues--workarounds)
-11. [Emergency Procedures](#emergency-procedures)
+2. [Documentation Policy](#documentation-policy)
+3. [Project Architecture](#project-architecture)
+4. [Current Deployment: DietPi Bare-Metal](#current-deployment-dietpi-bare-metal)
+5. [Mandatory Pre-Push Checklist](#mandatory-pre-push-checklist)
+6. [Testing Requirements](#testing-requirements)
+7. [Documentation Requirements](#documentation-requirements)
+8. [Common Pitfalls to Avoid](#common-pitfalls-to-avoid)
+9. [Code Style & Patterns](#code-style--patterns)
+10. [Security Guidelines](#security-guidelines)
+11. [Known Issues & Workarounds](#known-issues--workarounds)
+12. [Emergency Procedures](#emergency-procedures)
+
+---
+
+## Documentation Policy
+
+> **CRITICAL: Keep documentation minimal. Do NOT create new files unless explicitly requested.**
+
+### The Golden Rules
+
+1. **DO NOT create documentation files** unless the user explicitly asks for them
+2. **DO NOT create README files** for subdirectories
+3. **DO NOT create markdown summaries** of your work
+4. **DO NOT create planning documents** (PLAN.md, TODO.md, NEXT_STEPS.md, etc.)
+5. **DO NOT create session summaries** - update STATUS.md instead
+
+### Existing Documentation Structure
+
+This project has **7 documentation files**. That's it. Don't add more.
+
+| File | Purpose | When to Update |
+|------|---------|----------------|
+| `CLAUDE.md` | AI context for Claude Code | Architecture changes only |
+| `AGENTS.md` | Guidelines for AI agents (this file) | Process changes only |
+| `README.md` | Public project introduction | Major feature additions |
+| `docs/STATUS.md` | Current state + recent sessions | Every session (briefly) |
+| `docs/ISSUES.md` | Active bugs and tracking | New bugs or resolutions |
+| `docs/REVIEW.md` | Code review findings | After security reviews |
+| `docs/OPENROUTER_MODELS.md` | Model pricing reference | Rarely (prices change) |
+
+### What Goes Where
+
+- **Session work?** → Update `docs/STATUS.md` (keep it SHORT - 5-10 lines per session)
+- **Found a bug?** → Add to `docs/ISSUES.md` with ISSUE-XXX format
+- **Changed architecture?** → Update `CLAUDE.md`
+- **Changed AI agent workflow?** → Update `AGENTS.md`
+- **Everything else?** → Don't create a file. Put it in code comments if needed.
+
+### Anti-Patterns (DO NOT DO THESE)
+
+```
+# BAD - Creating unnecessary files
+docs/SESSION_28_SUMMARY.md      # NO! Update STATUS.md instead
+docs/IMPLEMENTATION_PLAN.md     # NO! Just do the work
+docs/REFACTORING_NOTES.md       # NO! Use git commit messages
+observer/README.md              # NO! Not needed
+ai/ARCHITECTURE.md              # NO! Already in CLAUDE.md
+investigations/new-research.md  # NO! Directory was deleted for a reason
+```
+
+### When Documentation IS Needed
+
+Create new documentation ONLY when:
+1. User explicitly requests it ("create a README for...")
+2. Adding a completely new major component (not a feature)
+3. External API documentation that users need
+
+### Keep It Concise
+
+- STATUS.md session entries: **5-10 lines max**
+- ISSUES.md entries: **Problem + solution, no essays**
+- Code comments: **Only where logic isn't obvious**
+- Commit messages: **One line summary + optional body**
 
 ---
 
@@ -288,24 +351,33 @@ For significant changes, also verify manually:
 
 ## Documentation Requirements
 
+> **Remember: Minimal documentation. See [Documentation Policy](#documentation-policy) above.**
+
 ### Files That MUST Be Updated
 
 | When You Change... | Update These Files |
 |--------------------|-------------------|
-| API endpoints | `docs/STATUS.md`, docstrings in `main.py` |
+| API endpoints | Docstrings in code only |
 | Environment variables | `.env.example`, `scripts/deploy.env.example` |
-| Death conditions | `docs/STATUS.md`, `docs/ISSUES.md`, `CLAUDE.md` |
-| AI actions | `ai/brain.py` docstrings, `docs/STATUS.md` |
-| Database schema | `observer/database.py` docstrings |
-| Deployment process | `CLAUDE.md`, this file |
-| Known issues | `docs/ISSUES.md` |
+| Death conditions | `CLAUDE.md` |
+| Architecture | `CLAUDE.md` |
+| Found/fixed a bug | `docs/ISSUES.md` |
+| End of session | `docs/STATUS.md` (5-10 lines max) |
+
+### Files You Should NOT Create
+
+- Session summaries (SESSION_X.md)
+- Planning documents (PLAN.md, TODO.md)
+- Implementation notes
+- Subdirectory READMEs
+- Research documents
 
 ### Documentation Style
 
-- Use Markdown formatting
-- Include code examples where helpful
-- Keep STATUS.md updated with session logs
-- Mark deprecated/historical sections clearly
+- **Brevity over completeness** - assume reader knows the codebase
+- **Code comments** - only for non-obvious logic
+- **Commit messages** - one line summary, details in body if needed
+- **STATUS.md** - bullet points, not paragraphs
 
 ---
 
@@ -603,4 +675,4 @@ Before pushing ANY changes:
 
 ---
 
-*Last updated: 2026-01-15 (Session 25)*
+*Last updated: 2026-01-16 (Documentation cleanup)*

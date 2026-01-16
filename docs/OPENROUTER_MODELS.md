@@ -1,6 +1,6 @@
-# OpenRouter Models & Pricing - Genesis Project
+# OpenRouter Models & Pricing
 
-> Canonical pricing reference (supersedes `investigations/openrouter-models-pricing-2026-01-08.md`).
+> **Note:** Prices may be outdated. Check https://openrouter.ai/models for current pricing.
 
 **Last Updated:** 2026-01-08
 **Budget:** $5/month (resets monthly)
