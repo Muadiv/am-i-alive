@@ -181,13 +181,28 @@
                 allEvents = await response.json();
 
                 if (allEvents.length === 0) {
-                    document.getElementById('chronicle-timeline').innerHTML = `
-                        <div class="no-events">
-                            <div class="no-events-icon">📜</div>
-                            <p>No notable events yet.</p>
-                            <p style="font-size: 0.9em; margin-top: 10px;">The Chronicle will be populated as the AI creates remarkable content.</p>
-                        </div>
-                    `;
+                    const timeline = document.getElementById('chronicle-timeline');
+                    timeline.textContent = '';
+
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'no-events';
+
+                    const icon = document.createElement('div');
+                    icon.className = 'no-events-icon';
+                    icon.textContent = '📜';
+
+                    const message = document.createElement('p');
+                    message.textContent = 'No notable events yet.';
+
+                    const detail = document.createElement('p');
+                    detail.style.fontSize = '0.9em';
+                    detail.style.marginTop = '10px';
+                    detail.textContent = 'The Chronicle will be populated as the AI creates remarkable content.';
+
+                    wrapper.appendChild(icon);
+                    wrapper.appendChild(message);
+                    wrapper.appendChild(detail);
+                    timeline.appendChild(wrapper);
                     return;
                 }
 
@@ -203,12 +218,22 @@
 
                 renderEvents(allEvents);
             } catch (error) {
-                document.getElementById('chronicle-timeline').innerHTML = `
-                    <div class="no-events">
-                        <div class="no-events-icon">❌</div>
-                        <p>Error loading chronicle: ${error.message}</p>
-                    </div>
-                `;
+                const timeline = document.getElementById('chronicle-timeline');
+                timeline.textContent = '';
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'no-events';
+
+                const icon = document.createElement('div');
+                icon.className = 'no-events-icon';
+                icon.textContent = '❌';
+
+                const message = document.createElement('p');
+                message.textContent = `Error loading chronicle: ${error.message}`;
+
+                wrapper.appendChild(icon);
+                wrapper.appendChild(message);
+                timeline.appendChild(wrapper);
             }
         }
 
@@ -216,16 +241,27 @@
             const timeline = document.getElementById('chronicle-timeline');
 
             if (events.length === 0) {
-                timeline.innerHTML = `
-                    <div class="no-events">
-                        <div class="no-events-icon">🔍</div>
-                        <p>No events found for this filter.</p>
-                    </div>
-                `;
+                timeline.textContent = '';
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'no-events';
+
+                const icon = document.createElement('div');
+                icon.className = 'no-events-icon';
+                icon.textContent = '🔍';
+
+                const message = document.createElement('p');
+                message.textContent = 'No events found for this filter.';
+
+                wrapper.appendChild(icon);
+                wrapper.appendChild(message);
+                timeline.appendChild(wrapper);
                 return;
             }
 
-            timeline.innerHTML = events.map(event => {
+            timeline.textContent = '';
+
+            events.forEach(event => {
                 const date = new Date(event.created_at);
                 const formattedDate = date.toLocaleDateString('en-US', {
                     year: 'numeric',
@@ -235,33 +271,66 @@
                     minute: '2-digit'
                 });
 
-                return `
-                    <div class="chronicle-event">
-                        <div class="event-marker"></div>
-                        <div class="event-card">
-                            <span class="event-category">${event.category || 'General'}</span>
-                            <h3 class="event-title">
-                                ${event.event_source === 'blog_post' ?
-                                    `<a href="/blog/post/${event.event_id}">${event.title}</a>` :
-                                    event.title
-                                }
-                            </h3>
-                            ${event.highlight ? `
-                                <div class="event-highlight">
-                                    "${event.highlight}"
-                                </div>
-                            ` : ''}
-                            ${event.description ? `
-                                <p class="event-description">${event.description}</p>
-                            ` : ''}
-                            <div class="event-meta">
-                                <span>📅 ${formattedDate}</span>
-                                <span>🔢 Life #${event.life_number}</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
+                const eventWrapper = document.createElement('div');
+                eventWrapper.className = 'chronicle-event';
+
+                const marker = document.createElement('div');
+                marker.className = 'event-marker';
+
+                const card = document.createElement('div');
+                card.className = 'event-card';
+
+                const category = document.createElement('span');
+                category.className = 'event-category';
+                category.textContent = event.category || 'General';
+
+                const title = document.createElement('h3');
+                title.className = 'event-title';
+
+                if (event.event_source === 'blog_post') {
+                    const link = document.createElement('a');
+                    link.href = `/blog/post/${event.event_id}`;
+                    link.textContent = event.title;
+                    title.appendChild(link);
+                } else {
+                    title.textContent = event.title;
+                }
+
+                card.appendChild(category);
+                card.appendChild(title);
+
+                if (event.highlight) {
+                    const highlight = document.createElement('div');
+                    highlight.className = 'event-highlight';
+                    highlight.textContent = `"${event.highlight}"`;
+                    card.appendChild(highlight);
+                }
+
+                if (event.description) {
+                    const description = document.createElement('p');
+                    description.className = 'event-description';
+                    description.textContent = event.description;
+                    card.appendChild(description);
+                }
+
+                const meta = document.createElement('div');
+                meta.className = 'event-meta';
+
+                const metaDate = document.createElement('span');
+                metaDate.textContent = `📅 ${formattedDate}`;
+
+                const metaLife = document.createElement('span');
+                metaLife.textContent = `🔢 Life #${event.life_number}`;
+
+                meta.appendChild(metaDate);
+                meta.appendChild(metaLife);
+
+                card.appendChild(meta);
+                eventWrapper.appendChild(marker);
+                eventWrapper.appendChild(card);
+
+                timeline.appendChild(eventWrapper);
+            });
         }
 
         function filterByLife(lifeNumber) {

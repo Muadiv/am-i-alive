@@ -479,14 +479,28 @@ async def get_system_stats():
             uptime_seconds = 0
 
     return {
-        "cpu_temp": cpu_temp,
-        "cpu_usage": cpu_percent,
-        "ram_usage": memory.percent,
-        "ram_available": f"{memory.available // (1024 * 1024)}MB",
-        "disk_usage": disk.percent,
+        "temperature": cpu_temp,
+        "cpu_percent": cpu_percent,
+        "memory_percent": memory.percent,
+        "disk_percent": disk.percent,
         "uptime_seconds": uptime_seconds,
-        "life_number": state.get("life_number")
+        "last_seen": state.get("last_seen")
     }
+
+
+@app.get("/api/birth/instructions")
+async def get_birth_instructions():
+    """Return the last recorded birth instructions for the current life."""
+    state = await db.get_current_state()
+    return {
+        "life_number": state.get("life_number"),
+        "bootstrap_mode": state.get("bootstrap_mode"),
+        "model": state.get("model"),
+        "ai_name": state.get("ai_name"),
+        "ai_icon": state.get("ai_icon"),
+        "instructions": state.get("birth_instructions")
+    }
+
 
 
 # =============================================================================
@@ -707,8 +721,16 @@ async def receive_birth(request: Request):
     model = data.get("model", "unknown")
     ai_name = data.get("ai_name")
     ai_icon = data.get("ai_icon")
+    birth_instructions = data.get("birth_instructions")
 
-    await db.record_birth(life_number, bootstrap_mode, model, ai_name=ai_name, ai_icon=ai_icon)
+    await db.record_birth(
+        life_number,
+        bootstrap_mode,
+        model,
+        ai_name=ai_name,
+        ai_icon=ai_icon,
+        birth_instructions=birth_instructions
+    )
     await db.log_activity(life_number, "birth", f"Life #{life_number} born as '{ai_name}' {ai_icon} with {model} model")
 
     return {"success": True, "life_number": life_number}

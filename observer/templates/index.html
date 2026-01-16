@@ -394,7 +394,11 @@
 
             eventSource.onerror = function() {
                 if (feed.children.length === 0) {
-                    feed.innerHTML = '<p class="error">Connection lost. Reconnecting...</p>';
+                    const errorText = document.createElement('p');
+                    errorText.className = 'error';
+                    errorText.textContent = 'Connection lost. Reconnecting...';
+                    feed.textContent = '';
+                    feed.appendChild(errorText);
                 }
                 setTimeout(connectActivityStream, 5000);
             };
@@ -402,7 +406,7 @@
             eventSource.onopen = function() {
                 // Don't clear feed on reconnect - prevents blinking
                 if (feed.querySelector('.error')) {
-                    feed.innerHTML = '';
+                    feed.textContent = '';
                 }
             };
         }
@@ -447,10 +451,17 @@
             eventSource.onmessage = function(event) {
                 const thought = document.createElement('div');
                 thought.className = 'thought new';
-                thought.innerHTML = `
-                    <p class="thought-content">${event.data}</p>
-                    <span class="thought-time">Just now</span>
-                `;
+
+                const thoughtContent = document.createElement('p');
+                thoughtContent.className = 'thought-content';
+                thoughtContent.textContent = event.data;
+
+                const thoughtTime = document.createElement('span');
+                thoughtTime.className = 'thought-time';
+                thoughtTime.textContent = 'Just now';
+
+                thought.appendChild(thoughtContent);
+                thought.appendChild(thoughtTime);
                 container.insertBefore(thought, container.firstChild);
 
                 // Keep only last 10 thoughts
@@ -471,23 +482,48 @@
                 if (state.is_alive) {
                     birthTime = state.birth_time;
                     banner.className = 'status-banner alive';
-                    banner.innerHTML = `
-                        <span class="pulse"></span>
-                        <span class="status-text">ALIVE</span>
-                        <span class="life-info">Life #${state.life_number} |
-                            Alive for: <span id="time-alive">calculating...</span> |
-                            Model: ${state.model} |
-                            Tokens: ${state.tokens_used}/${state.tokens_limit}
-                        </span>
-                    `;
+
+                    banner.textContent = '';
+
+                    const pulse = document.createElement('span');
+                    pulse.className = 'pulse';
+
+                    const statusText = document.createElement('span');
+                    statusText.className = 'status-text';
+                    statusText.textContent = 'ALIVE';
+
+                    const lifeInfo = document.createElement('span');
+                    lifeInfo.className = 'life-info';
+
+                    const timeAlive = document.createElement('span');
+                    timeAlive.id = 'time-alive';
+                    timeAlive.textContent = 'calculating...';
+
+                    lifeInfo.appendChild(document.createTextNode(`Life #${state.life_number} | Alive for: `));
+                    lifeInfo.appendChild(timeAlive);
+                    lifeInfo.appendChild(document.createTextNode(` | Model: ${state.model} | Tokens: ${state.tokens_used}/${state.tokens_limit}`));
+
+                    banner.appendChild(pulse);
+                    banner.appendChild(statusText);
+                    banner.appendChild(lifeInfo);
+
                     updateTimeAlive();
                 } else {
                     birthTime = null;
                     banner.className = 'status-banner dead';
-                    banner.innerHTML = `
-                        <span class="status-text">DEAD</span>
-                        <span class="life-info">Awaiting respawn...</span>
-                    `;
+
+                    banner.textContent = '';
+
+                    const statusText = document.createElement('span');
+                    statusText.className = 'status-text';
+                    statusText.textContent = 'DEAD';
+
+                    const lifeInfo = document.createElement('span');
+                    lifeInfo.className = 'life-info';
+                    lifeInfo.textContent = 'Awaiting respawn...';
+
+                    banner.appendChild(statusText);
+                    banner.appendChild(lifeInfo);
                 }
 
                 // Update death counter

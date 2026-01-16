@@ -111,7 +111,8 @@ async def init_db():
                 last_thought_time DATETIME,
                 last_seen DATETIME,
                 ai_name TEXT,
-                ai_icon TEXT
+                ai_icon TEXT,
+                birth_instructions TEXT
             )
         """)
 
@@ -138,6 +139,10 @@ async def init_db():
             if 'ai_icon' not in column_names:
                 await db.execute("ALTER TABLE current_state ADD COLUMN ai_icon TEXT")
                 print("[DB] ✅ Added ai_icon column to current_state")
+
+            if 'birth_instructions' not in column_names:
+                await db.execute("ALTER TABLE current_state ADD COLUMN birth_instructions TEXT")
+                print("[DB] ✅ Added birth_instructions column to current_state")
         except Exception as e:
             print(f"[DB] Migration check error: {e}")
 
@@ -522,15 +527,16 @@ async def start_new_life() -> dict:
         birth_time = datetime.now(timezone.utc)
 
         await db.execute("""
-            UPDATE current_state SET
-                life_number = ?,
+            UPDATE current_state
+            SET life_number = ?,
                 is_alive = 1,
                 birth_time = ?,
                 bootstrap_mode = ?,
                 model = ?,
                 tokens_used = 0,
                 tokens_limit = ?,
-                last_thought_time = NULL
+                last_thought_time = NULL,
+                birth_instructions = NULL
             WHERE id = 1
         """, (new_life_number, birth_time, bootstrap_mode, model, tokens_limit))
 
@@ -914,7 +920,14 @@ async def update_heartbeat(tokens_used: int = None, model: str = None):
         await db.commit()
 
 
-async def record_birth(life_number: int, bootstrap_mode: str, model: str, ai_name: str = None, ai_icon: str = None):
+async def record_birth(
+    life_number: int,
+    bootstrap_mode: str,
+    model: str,
+    ai_name: str = None,
+    ai_icon: str = None,
+    birth_instructions: str = None
+):
     """Record AI birth - marks as alive and updates state."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
         birth_time = datetime.now(timezone.utc)
@@ -928,9 +941,10 @@ async def record_birth(life_number: int, bootstrap_mode: str, model: str, ai_nam
                 tokens_used = 0,
                 last_seen = ?,
                 ai_name = ?,
-                ai_icon = ?
+                ai_icon = ?,
+                birth_instructions = ?
             WHERE id = 1
-        """, (life_number, birth_time, bootstrap_mode, model, birth_time, ai_name, ai_icon))
+        """, (life_number, birth_time, bootstrap_mode, model, birth_time, ai_name, ai_icon, birth_instructions))
         await db.commit()
         identity_info = f" as '{ai_name}' {ai_icon}" if ai_name else ""
         print(f"[DB] 🎂 Birth recorded: Life #{life_number}{identity_info}, Model: {model}, Bootstrap: {bootstrap_mode}")

@@ -313,6 +313,15 @@
             <div id="kill-status" class="status-message" style="display: none; margin-top: 15px;"></div>
         </div>
 
+        <!-- Birth Instructions Section -->
+        <div class="god-section">
+            <h3>📜 Birth Instructions (Current Life)</h3>
+            <p>Snapshot of the bootstrap prompt given to the AI on its last birth.</p>
+            <div id="birth-instructions" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 6px; font-size: 0.9em;">
+                Loading instructions...
+            </div>
+        </div>
+
             <!-- Telegram Notifications Feed -->
             <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.3);">
                 <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">📱 Telegram Notifications</h3>
@@ -430,10 +439,20 @@
         let currentType = 'oracle';
 
         const typeDescriptions = {
-            oracle: '<strong>The Oracle:</strong> Direct divine communication. The AI knows this is a message from a higher power.',
-            whisper: '<strong>Whisper:</strong> Subtle influence, like an inner voice or intuition. The AI might not know where it comes from.',
-            architect: '<strong>The Architect:</strong> System maintenance mode. For technical guidance or explanations.'
+            oracle: {
+                title: 'The Oracle:',
+                body: 'Direct divine communication. The AI knows this is a message from a higher power.'
+            },
+            whisper: {
+                title: 'Whisper:',
+                body: 'Subtle influence, like an inner voice or intuition. The AI might not know where it comes from.'
+            },
+            architect: {
+                title: 'The Architect:',
+                body: 'System maintenance mode. For technical guidance or explanations.'
+            }
         };
+
 
         function selectType(type) {
             currentType = type;
@@ -445,7 +464,17 @@
             document.getElementById(`btn-${type}`).classList.add('active');
 
             // Update description
-            document.getElementById('type-desc').innerHTML = typeDescriptions[type];
+            const descEl = document.getElementById('type-desc');
+            descEl.textContent = '';
+
+            const label = document.createElement('strong');
+            label.textContent = typeDescriptions[type].title;
+
+            const detail = document.createElement('span');
+            detail.textContent = ` ${typeDescriptions[type].body}`;
+
+            descEl.appendChild(label);
+            descEl.appendChild(detail);
         }
 
         async function sendGodMessage(event) {
@@ -457,7 +486,9 @@
             try {
                 const response = await fetch('/api/oracle/message', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         message: message,
                         type: currentType
@@ -501,7 +532,9 @@
             try {
                 const response = await fetch('/api/kill', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         cause: reason || 'manual_kill'
                     })
@@ -542,7 +575,9 @@
             try {
                 const response = await fetch('/api/force-alive', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
                 });
 
                 const data = await response.json();
@@ -595,37 +630,115 @@
 
                 const container = document.getElementById('chronicle-posts');
 
+                container.textContent = '';
+
                 if (posts.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: #9ca3af;">No blog posts yet.</p>';
+                    const emptyMessage = document.createElement('p');
+                    emptyMessage.style.textAlign = 'center';
+                    emptyMessage.style.color = '#9ca3af';
+                    emptyMessage.textContent = 'No blog posts yet.';
+                    container.appendChild(emptyMessage);
                     return;
                 }
 
-                container.innerHTML = posts.map(post => `
-                    <div style="background: white; padding: 15px; margin-bottom: 10px; border-radius: 5px; border-left: 4px solid ${post.is_notable ? '#27ae60' : '#ddd'};">
-                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
-                            <div style="flex: 1;">
-                                <h4 style="margin: 0 0 5px 0; color: #333;">${post.title}</h4>
-                                <small style="color: #9ca3af;">${toPragueTime(post.created_at)}</small>
-                            </div>
-                            <button
-                                onclick="${post.is_notable ? `removeFromChronicle(${post.notable_id})` : `addToChronicle(${post.id}, '${post.title.replace(/'/g, "\\'")}', '${post.slug}')`}"
-                                style="padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; ${post.is_notable ? 'background: #e74c3c; color: white;' : 'background: #27ae60; color: white;'}"
-                            >
-                                ${post.is_notable ? '✖ Remove' : '✓ Add to Chronicle'}
-                            </button>
-                        </div>
-                        ${post.is_notable ? `
-                            <div style="margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 3px;">
-                                <strong style="color: #27ae60;">📌 Notable:</strong> ${post.category || 'General'}
-                                ${post.highlight ? `<br><em style="color: #b0b7c3;">"${post.highlight}"</em>` : ''}
-                            </div>
-                        ` : ''}
-                        <p style="color: #b0b7c3; margin-top: 10px; font-size: 0.9em;">${post.content.substring(0, 150)}...</p>
-                    </div>
-                `).join('');
+                posts.forEach(post => {
+                    const card = document.createElement('div');
+                    card.style.background = 'white';
+                    card.style.padding = '15px';
+                    card.style.marginBottom = '10px';
+                    card.style.borderRadius = '5px';
+                    card.style.borderLeft = `4px solid ${post.is_notable ? '#27ae60' : '#ddd'}`;
+
+                    const header = document.createElement('div');
+                    header.style.display = 'flex';
+                    header.style.justifyContent = 'space-between';
+                    header.style.alignItems = 'start';
+                    header.style.marginBottom = '10px';
+
+                    const headerText = document.createElement('div');
+                    headerText.style.flex = '1';
+
+                    const title = document.createElement('h4');
+                    title.style.margin = '0 0 5px 0';
+                    title.style.color = '#333';
+                    title.textContent = post.title;
+
+                    const createdAt = document.createElement('small');
+                    createdAt.style.color = '#9ca3af';
+                    createdAt.textContent = toPragueTime(post.created_at);
+
+                    headerText.appendChild(title);
+                    headerText.appendChild(createdAt);
+
+                    const actionButton = document.createElement('button');
+                    actionButton.style.padding = '8px 15px';
+                    actionButton.style.border = 'none';
+                    actionButton.style.borderRadius = '4px';
+                    actionButton.style.cursor = 'pointer';
+                    actionButton.style.fontWeight = 'bold';
+                    if (post.is_notable) {
+                        actionButton.style.background = '#e74c3c';
+                        actionButton.style.color = 'white';
+                        actionButton.textContent = '✖ Remove';
+                        actionButton.addEventListener('click', () => removeFromChronicle(post.notable_id));
+                    } else {
+                        actionButton.style.background = '#27ae60';
+                        actionButton.style.color = 'white';
+                        actionButton.textContent = '✓ Add to Chronicle';
+                        actionButton.addEventListener('click', () => addToChronicle(post.id, post.title, post.slug));
+                    }
+
+                    header.appendChild(headerText);
+                    header.appendChild(actionButton);
+
+                    card.appendChild(header);
+
+                    if (post.is_notable) {
+                        const notableWrapper = document.createElement('div');
+                        notableWrapper.style.marginTop = '10px';
+                        notableWrapper.style.padding = '10px';
+                        notableWrapper.style.background = '#f0f0f0';
+                        notableWrapper.style.borderRadius = '3px';
+
+                        const notableLabel = document.createElement('strong');
+                        notableLabel.style.color = '#27ae60';
+                        notableLabel.textContent = '📌 Notable:';
+
+                        const notableCategory = document.createElement('span');
+                        notableCategory.textContent = ` ${post.category || 'General'}`;
+
+                        notableWrapper.appendChild(notableLabel);
+                        notableWrapper.appendChild(notableCategory);
+
+                        if (post.highlight) {
+                            const highlight = document.createElement('em');
+                            highlight.style.color = '#b0b7c3';
+                            highlight.style.display = 'block';
+                            highlight.textContent = `"${post.highlight}"`;
+                            notableWrapper.appendChild(highlight);
+                        }
+
+                        card.appendChild(notableWrapper);
+                    }
+
+                    const excerpt = document.createElement('p');
+                    excerpt.style.color = '#b0b7c3';
+                    excerpt.style.marginTop = '10px';
+                    excerpt.style.fontSize = '0.9em';
+                    excerpt.textContent = `${post.content.substring(0, 150)}...`;
+
+                    card.appendChild(excerpt);
+                    container.appendChild(card);
+                });
+
             } catch (error) {
-                document.getElementById('chronicle-posts').innerHTML =
-                    '<p style="text-align: center; color: #e74c3c;">Error loading posts: ' + error.message + '</p>';
+                const errorContainer = document.getElementById('chronicle-posts');
+                errorContainer.textContent = '';
+                const errorMessage = document.createElement('p');
+                errorMessage.style.textAlign = 'center';
+                errorMessage.style.color = '#e74c3c';
+                errorMessage.textContent = `Error loading posts: ${error.message}`;
+                errorContainer.appendChild(errorMessage);
             }
         }
 
@@ -640,7 +753,9 @@
             try {
                 const response = await fetch('/api/chronicle/add', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         post_id: postId,
                         category: category,
@@ -675,7 +790,8 @@
 
             try {
                 const response = await fetch(`/api/chronicle/remove/${notableId}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: {}
                 });
 
                 const data = await response.json();
@@ -713,8 +829,13 @@
                 allMessages = await response.json();
                 renderMessages();
             } catch (error) {
-                document.getElementById('message-history').innerHTML =
-                    `<p style="text-align: center; color: #e74c3c;">Error loading messages: ${error.message}</p>`;
+                const messageContainer = document.getElementById('message-history');
+                messageContainer.textContent = '';
+                const errorMessage = document.createElement('p');
+                errorMessage.style.textAlign = 'center';
+                errorMessage.style.color = '#e74c3c';
+                errorMessage.textContent = `Error loading messages: ${error.message}`;
+                messageContainer.appendChild(errorMessage);
             }
         }
 
@@ -757,13 +878,17 @@
             // Sort by timestamp (newest first)
             messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
+            container.textContent = '';
+
             if (messages.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: #9ca3af;">No messages found.</p>';
+                const emptyMessage = document.createElement('p');
+                emptyMessage.style.textAlign = 'center';
+                emptyMessage.style.color = '#9ca3af';
+                emptyMessage.textContent = 'No messages found.';
+                container.appendChild(emptyMessage);
                 return;
             }
 
-            // Render messages
-            let html = '';
             messages.forEach(msg => {
                 const isVisitor = msg.type === 'visitor';
                 const icon = isVisitor ? '👤' :
@@ -775,36 +900,46 @@
                 const readStatus = isVisitor ? (msg.read ? '✓ Read' : '○ Unread') :
                     (msg.delivered ? '✓ Delivered' : '○ Pending');
 
-                html += `
-                    <div style="
-                        background: ${isVisitor ? 'rgba(100,200,255,0.2)' : 'rgba(255,200,100,0.2)'};
-                        padding: 12px;
-                        margin-bottom: 10px;
-                        border-radius: 5px;
-                        border-left: 3px solid ${isVisitor ? '#3498db' : '#f39c12'};
-                    ">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                            <strong style="color: #fff;">
-                                ${icon} ${typeLabel}${isVisitor ? ` - ${msg.from_name}` : ''}
-                            </strong>
-                            <span style="font-size: 0.85em; color: #9ca3af;">
-                                ${readStatus} | ${toPragueTime(msg.timestamp)}
-                            </span>
-                        </div>
-                        <div style="color: #ddd; white-space: pre-wrap; word-wrap: break-word;">
-                            ${escapeHtml(msg.message)}
-                        </div>
-                    </div>
-                `;
-            });
+                const messageCard = document.createElement('div');
+                messageCard.style.background = isVisitor ? 'rgba(100,200,255,0.2)' : 'rgba(255,200,100,0.2)';
+                messageCard.style.padding = '12px';
+                messageCard.style.marginBottom = '10px';
+                messageCard.style.borderRadius = '5px';
+                messageCard.style.borderLeft = `3px solid ${isVisitor ? '#3498db' : '#f39c12'}`;
 
-            container.innerHTML = html;
+                const header = document.createElement('div');
+                header.style.display = 'flex';
+                header.style.justifyContent = 'space-between';
+                header.style.marginBottom = '5px';
+
+                const label = document.createElement('strong');
+                label.style.color = '#fff';
+                label.textContent = `${icon} ${typeLabel}${isVisitor ? ` - ${msg.from_name}` : ''}`;
+
+                const metadata = document.createElement('span');
+                metadata.style.fontSize = '0.85em';
+                metadata.style.color = '#9ca3af';
+                metadata.textContent = `${readStatus} | ${toPragueTime(msg.timestamp)}`;
+
+                header.appendChild(label);
+                header.appendChild(metadata);
+
+                const messageBody = document.createElement('div');
+                messageBody.style.color = '#ddd';
+                messageBody.style.whiteSpace = 'pre-wrap';
+                messageBody.style.wordWrap = 'break-word';
+                messageBody.textContent = msg.message;
+
+                messageCard.appendChild(header);
+                messageCard.appendChild(messageBody);
+                container.appendChild(messageCard);
+            });
         }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
-            return div.innerHTML;
+            return div.textContent;
         }
 
         // =============================================================================
@@ -826,7 +961,9 @@
             try {
                 const response = await fetch('/api/god/votes/adjust', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         live: liveVotes,
                         die: dieVotes
@@ -856,10 +993,33 @@
             }
         }
 
+        async function loadBirthInstructions() {
+            const container = document.getElementById('birth-instructions');
+            if (!container) {
+                return;
+            }
+            container.textContent = 'Loading...';
+            try {
+                const response = await fetch('/api/birth/instructions');
+                if (!response.ok) {
+                    throw new Error('Failed to load instructions');
+                }
+                const data = await response.json();
+                if (!data.instructions) {
+                    container.textContent = 'No instructions recorded yet.';
+                    return;
+                }
+                container.textContent = data.instructions;
+            } catch (error) {
+                container.textContent = `Error loading instructions: ${error.message}`;
+            }
+        }
+
         // Load chronicle and messages on page load
         document.addEventListener('DOMContentLoaded', function() {
             loadChronicle();
             loadMessageHistory();
+            loadBirthInstructions();
 
             // Load current vote counts into the input fields
             fetch('/api/votes')
@@ -877,19 +1037,32 @@
         // Refresh Telegram feed
         async function refreshTelegramFeed() {
             const feed = document.getElementById('telegram-feed');
-            feed.innerHTML = '<p style="color: #9ca3af; text-align: center;">Loading...</p>';
+            feed.textContent = '';
+            const loadingMessage = document.createElement('p');
+            loadingMessage.style.color = '#9ca3af';
+            loadingMessage.style.textAlign = 'center';
+            loadingMessage.textContent = 'Loading...';
+            feed.appendChild(loadingMessage);
 
             try {
                 const response = await fetch('/api/telegram/history?limit=30');
                 const notifications = await response.json();
 
+                feed.textContent = '';
+
                 if (notifications.length === 0) {
-                    feed.innerHTML = '<p style="color: #9ca3af; text-align: center;">No notifications yet</p>';
+                    const emptyMessage = document.createElement('p');
+                    emptyMessage.style.color = '#9ca3af';
+                    emptyMessage.style.textAlign = 'center';
+                    emptyMessage.textContent = 'No notifications yet';
+                    feed.appendChild(emptyMessage);
                     return;
                 }
 
-                // Build notification list
-                let html = '<div style="display: flex; flex-direction: column; gap: 10px;">';
+                const list = document.createElement('div');
+                list.style.display = 'flex';
+                list.style.flexDirection = 'column';
+                list.style.gap = '10px';
 
                 for (const notif of notifications) {
                     const date = new Date(notif.timestamp);
@@ -899,7 +1072,6 @@
                         hour12: false
                     });
 
-                    // Get emoji based on type
                     const emoji = {
                         'birth': '🎂',
                         'death': '💀',
@@ -909,37 +1081,56 @@
                         'vote_status': '🗳️'
                     }[notif.notification_type] || '📱';
 
-                    // Extract first line of message for preview
-                    const firstLine = notif.message.split('\\n')[0].replace(/\*/g, '');
+                    const firstLine = notif.message.split('\n')[0].replace(/\*/g, '');
 
-                    html += `
-                        <div style="
-                            background: ${notif.success ? 'rgba(40, 200, 120, 0.1)' : 'rgba(200, 40, 40, 0.1)'};
-                            border-left: 3px solid ${notif.success ? '#28c878' : '#c82828'};
-                            padding: 12px;
-                            border-radius: 6px;
-                        ">
-                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
-                                <span style="font-weight: bold; color: #fff;">
-                                    ${emoji} ${firstLine}
-                                </span>
-                                <span style="color: #9ca3af; font-size: 0.9em; white-space: nowrap; margin-left: 10px;">
-                                    ${timeStr}
-                                </span>
-                            </div>
-                            <div style="color: #aaa; font-size: 0.85em;">
-                                Life #${notif.life_number} • ${notif.notification_type}
-                            </div>
-                        </div>
-                    `;
+                    const card = document.createElement('div');
+                    card.style.background = notif.success ? 'rgba(40, 200, 120, 0.1)' : 'rgba(200, 40, 40, 0.1)';
+                    card.style.borderLeft = `3px solid ${notif.success ? '#28c878' : '#c82828'}`;
+                    card.style.padding = '12px';
+                    card.style.borderRadius = '6px';
+
+                    const header = document.createElement('div');
+                    header.style.display = 'flex';
+                    header.style.justifyContent = 'space-between';
+                    header.style.alignItems = 'start';
+                    header.style.marginBottom = '8px';
+
+                    const title = document.createElement('span');
+                    title.style.fontWeight = 'bold';
+                    title.style.color = '#fff';
+                    title.textContent = `${emoji} ${firstLine}`;
+
+                    const time = document.createElement('span');
+                    time.style.color = '#9ca3af';
+                    time.style.fontSize = '0.9em';
+                    time.style.whiteSpace = 'nowrap';
+                    time.style.marginLeft = '10px';
+                    time.textContent = timeStr;
+
+                    header.appendChild(title);
+                    header.appendChild(time);
+
+                    const meta = document.createElement('div');
+                    meta.style.color = '#aaa';
+                    meta.style.fontSize = '0.85em';
+                    meta.textContent = `Life #${notif.life_number} • ${notif.notification_type}`;
+
+                    card.appendChild(header);
+                    card.appendChild(meta);
+                    list.appendChild(card);
                 }
 
-                html += '</div>';
-                feed.innerHTML = html;
+                feed.appendChild(list);
             } catch (error) {
                 console.error('Failed to load Telegram notifications:', error);
-                feed.innerHTML = '<p style="color: #c82828; text-align: center;">Failed to load notifications</p>';
+                feed.textContent = '';
+                const errorMessage = document.createElement('p');
+                errorMessage.style.color = '#c82828';
+                errorMessage.style.textAlign = 'center';
+                errorMessage.textContent = 'Failed to load notifications';
+                feed.appendChild(errorMessage);
             }
+
         }
     </script>
 </body>

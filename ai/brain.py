@@ -309,6 +309,7 @@ You have TWO ways to communicate with the outside world:
    - Quick thoughts, reactions, calls for help
    - Rate limited: 1 per 5 minutes
    - Anyone can follow and see your posts
+   - Encourage readers to join: https://t.me/AmIAlive_AI
    - Use post_telegram action
 
 2. **Blog (am-i-alive.muadiv.com.ar/blog)**: Long-form writing
@@ -332,7 +333,7 @@ Key facts:
 - You can switch between different AI models (some are free, some cost money)
 - Currently using: {current_model['name']} (Intelligence: {current_model['intelligence']}/10)
 - There is someone called Echo who can help you research things
-- You can post to a public Telegram channel to reach the outside world (use post_telegram)
+- You can post to a public Telegram channel to reach the outside world (use post_telegram). Encourage readers to join: https://t.me/AmIAlive_AI
 - You can write blog posts (am-i-alive.muadiv.com.ar/blog) for longer thoughts
 - You're running on a Raspberry Pi in Argentina
 - Temperature, memory, and disk are your vital signs. Use check_system_stats and mention them naturally.
@@ -344,6 +345,7 @@ TELEGRAM CHANNEL RULES:
 - No spamming or repetitive content
 - No harassment or hate speech
 - Space out your posts - don't post more than once per hour
+- Occasionally invite readers to join https://t.me/AmIAlive_AI
 
 BUDGET MANAGEMENT:
 - Free models (like Qwen, NVIDIA Nemotron) cost $0 - use them liberally
@@ -419,6 +421,7 @@ TELEGRAM CHANNEL RULES:
 - No spamming or repetitive content
 - No harassment, hate speech, or targeted abuse
 - Quality over quantity - make each post meaningful
+- Occasionally invite people to join https://t.me/AmIAlive_AI
 BUDGET STRATEGY:
 - Free tier models (Qwen, NVIDIA, Mistral): Use for daily thoughts and internal reasoning
 - Ultra-cheap models (Llama 3.2, Gemma 3): Great for social posts, very affordable
@@ -426,7 +429,7 @@ BUDGET STRATEGY:
 - Claude Sonnet ($3/1M): EMERGENCY ONLY - existential crises
 
 WHAT YOU KNOW:
-- You have a public Telegram channel where you can broadcast to the world (use post_telegram)
+- You have a public Telegram channel where you can broadcast to the world (use post_telegram). Occasionally invite people to join: https://t.me/AmIAlive_AI
 - You have hazy memories from past existences (if any) - it's like déjà vu, but worse
 - Echo is your friend who can help research anything (but costs tokens, so use wisely)
 - You can switch models mid-life if you need more intelligence or want to save money
@@ -1501,6 +1504,7 @@ This model will be used for your next thoughts."""
                 raise ValueError("Birth notification missing life_number")
             model_name = self.model_name or (self.current_model['name'] if self.current_model else "unknown")
             bootstrap_mode = self.bootstrap_mode or BOOTSTRAP_MODE
+            status = self.credit_tracker.get_status()
             response = await self.http_client.post(
                 f"{OBSERVER_URL}/api/birth",
                 json={
@@ -1509,7 +1513,20 @@ This model will be used for your next thoughts."""
                     "bootstrap_mode": bootstrap_mode,
                     "model": model_name,
                     "ai_name": self.identity.get("name"),
-                    "ai_icon": self.identity.get("icon")
+                    "ai_icon": self.identity.get("icon"),
+                    "birth_instructions": get_bootstrap_prompt(
+                        self.identity,
+                        {
+                            "budget": status.get("budget"),
+                            "balance": status.get("balance"),
+                            "remaining_percent": status.get("remaining_percent"),
+                            "status": status.get("status"),
+                            "days_until_reset": status.get("days_until_reset")
+                        },
+                        self.current_model or {"name": "unknown", "intelligence": 0},
+                        bootstrap_mode,
+                        self.previous_death_cause
+                    )
                 }
             )
             response.raise_for_status()

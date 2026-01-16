@@ -167,10 +167,10 @@ class BudgetHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(response_data).encode())
 
             except Exception as e:
-                # Send error response
+                print(f"[BUDGET_SERVER] ❌ Failed to build budget response: {e}")
                 error_response = {
                     "error": True,
-                    "details": str(e),
+                    "details": "Internal server error",
                     "budget": 5.0,
                     "balance": 0,
                     "status": "unknown"
