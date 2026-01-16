@@ -4,6 +4,8 @@
 **Duration:** ~4 hours
 **AI Life:** #99 → #100 (Mirage)
 
+> Historical note: this session used Docker. Current deployment is bare-metal on DietPi.
+
 ---
 
 ## 🎯 Objectives Completed

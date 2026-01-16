@@ -133,7 +133,7 @@ Esta documento describe todas las formas en que el AI puede comunicarse con el m
    - Solo recibe fragmentos de memoria de vidas pasadas
 
 4. **No puede escapar su sandbox**
-   - Contenedor Docker con recursos limitados
+   - Servicio bare-metal con recursos limitados
    - Red interna aislada
    - Sin acceso root
 

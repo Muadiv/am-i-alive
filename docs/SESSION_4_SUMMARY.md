@@ -81,7 +81,7 @@ Migrate from Gemini API to OpenRouter for access to 200+ AI models with budget t
 
 ### 7. Testing & Deployment
 - ✅ Rebuilt Docker containers from scratch
-- ✅ Verified no port conflicts (8085 is free)
+- ✅ Verified no port conflicts (port 80 in use for Observer)
 - ✅ Successfully launched Genesis (Life #1)
 - ✅ Confirmed OpenRouter API working
 - ✅ Verified Twitter integration still functional

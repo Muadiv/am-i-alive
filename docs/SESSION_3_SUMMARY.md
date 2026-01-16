@@ -168,7 +168,7 @@ response = httpx.post(
 ## Estado Actual del Proyecto
 
 **Contenedores corriendo:**
-- Observer: ✅ Port 8085
+- Observer: ✅ Port 80
 - AI (Datum): ✅ Vivo, pensando cada ~10 min
 - Proxy: ✅ Monitoreando
 
