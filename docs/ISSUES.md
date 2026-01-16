@@ -18,7 +18,7 @@ The Observer database and AI container maintain separate life counters that can 
 
 1. Start the system: `docker compose up -d`
 2. Let the AI die naturally (token exhaustion or vote death)
-3. Check Observer state: `curl http://localhost:8085/api/state/full`
+3. Check Observer state: `curl http://localhost/api/state/full`
 4. Check AI logs: `docker logs am-i-alive-ai --tail 20`
 5. Observer shows Life #70, AI shows Life #14
 

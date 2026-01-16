@@ -14,10 +14,10 @@ docker ps --filter "name=am-i-alive"
 docker logs am-i-alive-ai --tail 20
 
 # Access web interface
-open http://localhost:8085
+open http://localhost
 
 # Check Observer state
-curl -s http://localhost:8085/api/state | python3 -m json.tool
+curl -s http://localhost/api/state | python3 -m json.tool
 ```
 
 ## Immediate Goals - Phase 4
@@ -274,11 +274,10 @@ Before implementing all the above, we should **test the current voting system**:
 
 ```bash
 # Test voting
-curl -X POST http://localhost:8085/api/vote/live
-curl -X POST http://localhost:8085/api/vote/die
+curl -X POST http://localhost/api/vote/live
+curl -X POST http://localhost/api/vote/die
+curl -s http://localhost/api/votes | python3 -m json.tool
 
-# Check votes
-curl -s http://localhost:8085/api/votes | python3 -m json.tool
 
 # Check if Observer kills AI when die > live
 ```

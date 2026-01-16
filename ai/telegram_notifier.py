@@ -13,7 +13,7 @@ from datetime import datetime
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Private chat with creator
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")  # Public channel for AI posts
-OBSERVER_URL = os.getenv("OBSERVER_URL", "http://observer:8080")
+OBSERVER_URL = os.getenv("OBSERVER_URL", "http://127.0.0.1")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 if not TELEGRAM_BOT_TOKEN:

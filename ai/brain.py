@@ -29,7 +29,8 @@ from telegram_notifier import notifier
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_REFERER = os.getenv("OPENROUTER_REFERER", "https://am-i-alive.muadiv.com.ar")
 OPENROUTER_TITLE = os.getenv("OPENROUTER_TITLE", "Am I Alive - Genesis")
-OBSERVER_URL = os.getenv("OBSERVER_URL", "http://observer:8080")
+OBSERVER_URL = os.getenv("OBSERVER_URL", "http://127.0.0.1")
+AI_COMMAND_PORT = int(os.getenv("AI_COMMAND_PORT", "8000"))
 BOOTSTRAP_MODE = os.getenv("BOOTSTRAP_MODE", "basic_facts")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
@@ -164,8 +165,7 @@ FORBIDDEN_PHRASES = [
     ("pedo", True),
     ("porn", True),
     ("nsfw", False),
-    ("xxx", False),
-    ("cp", False)
+    ("xxx", False)
 ]
 
 FORBIDDEN_PATTERNS = [
@@ -2466,11 +2466,11 @@ async def command_server():
         def log_message(self, format, *args):
             pass  # Suppress HTTP logging
 
-    server = HTTPServer(('0.0.0.0', 8000), CommandHandler)
+    server = HTTPServer(('0.0.0.0', AI_COMMAND_PORT), CommandHandler)
     thread = threading.Thread(target=server.serve_forever)
     thread.daemon = True
     thread.start()
-    print("[BRAIN] 📡 Command server started on port 8000")
+    print(f"[BRAIN] 📡 Command server started on port {AI_COMMAND_PORT}")
 
 
 if __name__ == "__main__":

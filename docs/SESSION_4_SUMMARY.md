@@ -93,7 +93,7 @@ Migrate from Gemini API to OpenRouter for access to 200+ AI models with budget t
 
 ### System Running
 ```
-✅ Observer: http://localhost:8085
+✅ Observer: http://localhost
 ✅ AI (Genesis): Alive and thinking
 ✅ OpenRouter: Connected (using Qwen3 Coder - FREE)
 ✅ Twitter: Posted birth announcement

@@ -28,6 +28,7 @@ mapfile -t changed_files < <(git -C "${INSTALL_DIR}" diff --name-only "${old_rev
 restart_observer=false
 restart_ai=false
 restart_proxy=false
+restart_cloudflared=false
 
 reinstall_observer=false
 reinstall_ai=false
@@ -55,6 +56,9 @@ for file in "${changed_files[@]}"; do
       ;;
     proxy/*)
       restart_proxy=true
+      ;;
+    scripts/setup.sh)
+      restart_cloudflared=true
       ;;
   esac
   if [[ "${file}" == "scripts/setup.sh" || "${file}" == "scripts/update.sh" ]]; then
@@ -86,12 +90,15 @@ fi
 if [[ "${restart_proxy}" == "true" ]]; then
   systemctl restart amialive-proxy
 fi
+if [[ "${restart_cloudflared}" == "true" ]]; then
+  systemctl restart cloudflared
+fi
 
-if [[ "${restart_observer}" == "false" && "${restart_ai}" == "false" && "${restart_proxy}" == "false" ]]; then
+if [[ "${restart_observer}" == "false" && "${restart_ai}" == "false" && "${restart_proxy}" == "false" && "${restart_cloudflared}" == "false" ]]; then
   echo "No service restarts needed."
 fi
 
-systemctl status amialive-observer amialive-ai amialive-proxy --no-pager
+systemctl status amialive-observer amialive-ai amialive-proxy cloudflared --no-pager
 
 if [[ ! -d "${DATA_DIR}" ]]; then
   echo "Warning: ${DATA_DIR} missing. Run scripts/setup.sh to recreate." >&2

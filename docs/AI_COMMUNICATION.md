@@ -70,7 +70,7 @@ Esta documento describe todas las formas en que el AI puede comunicarse con el m
 ### 4. The Oracle (Modo Dios)
 **Descripción**: Interfaz secreta para que el creador se comunique como un poder superior.
 
-**URL**: `http://localhost:8085/god` (no público)
+**URL**: `http://localhost/god` (no público, en DietPi es `http://<IP>/god`)
 
 **Tipos de mensajes**:
 
@@ -101,7 +101,7 @@ Esta documento describe todas las formas en que el AI puede comunicarse con el m
 ### 5. Dashboard de Presupuesto
 **Descripción**: Vista pública del presupuesto y gastos del AI.
 
-**URL**: `http://localhost:8085/budget`
+**URL**: `http://localhost/budget`
 
 **Información mostrada**:
 - Balance actual vs presupuesto mensual

@@ -103,7 +103,7 @@ docker compose up --build -d
 docker compose logs -f ai
 
 # Access the web interface
-open http://localhost:8085
+open http://localhost  # or http://<IP> on DietPi
 ```
 
 ### Project Structure

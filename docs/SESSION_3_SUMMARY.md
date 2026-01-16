@@ -21,7 +21,7 @@
 - **URL**: https://twitter.com/AmIAlive_AI/status/2009283809255035068
 
 ### 4. Sistema Funcionando
-- Observer: http://localhost:8085 ✅
+- Observer: http://localhost ✅
 - AI container: Vivo y pensando ✅
 - Gemini API: Funcionando ✅
 - X/Twitter: Posteando ✅

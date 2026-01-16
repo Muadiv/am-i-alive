@@ -91,7 +91,7 @@ ALLOWED_ATTRIBUTES = {
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # AI container API
-AI_API_URL = os.getenv("AI_API_URL", "http://ai:8001")
+AI_API_URL = os.getenv("AI_API_URL", "http://127.0.0.1:8000")
 
 # Admin and internal API auth
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
