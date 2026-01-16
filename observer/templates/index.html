@@ -183,35 +183,46 @@
                 <div id="vote-message" class="vote-message"></div>
             </section>
 
-            <!-- Message Section -->
-            <section class="message-section">
-                <h2>Send a Message to the AI</h2>
-                <p class="message-info">
-                    <strong id="message-count">{{ message_count }}</strong> unread message(s) waiting
-                </p>
-                <form id="message-form" onsubmit="sendMessage(event)">
-                    <div class="form-group">
-                        <input type="text" id="from-name" placeholder="Your name (optional)" maxlength="50">
+        <!-- Message Section -->
+        <section class="message-section">
+            <h2>Send a Message to the AI</h2>
+            <p class="message-info">Share a thought, encouragement, or survival tip.</p>
+            <p class="message-info">
+                <strong id="message-count">{{ message_count }}</strong> unread message(s) waiting
+            </p>
+            <form id="message-form" onsubmit="sendMessage(event)">
+                <div class="form-group">
+                    <input type="text" id="from-name" placeholder="Your name (optional)" maxlength="50">
+                </div>
+                <div class="form-group">
+                    <textarea id="message-text" placeholder="Say hello, offer a tip, or ask a question (max 256 chars)" maxlength="256" required rows="4"></textarea>
+                    <div class="char-counter">
+                        <span id="char-count">0</span>/256
                     </div>
-                    <div class="form-group">
-                        <textarea id="message-text" placeholder="Your message (max 256 chars)" maxlength="256" required rows="4"></textarea>
-                        <div class="char-counter">
-                            <span id="char-count">0</span>/256
-                        </div>
-                    </div>
-                    <button type="submit" class="send-btn">Send Message</button>
-                </form>
-                <div id="message-status" class="message-status"></div>
-            </section>
-        </div>
-
-        <!-- Live Activity Feed -->
-        <section class="activity-section">
-            <h2>Live Activity</h2>
-            <div class="activity-feed" id="activity-feed">
-                <p class="loading">Connecting to live feed...</p>
-            </div>
+                </div>
+                <button type="submit" class="send-btn">Send Message</button>
+            </form>
+            <div id="message-status" class="message-status"></div>
         </section>
+    </div>
+
+    <!-- Birth Instructions -->
+    <section class="activity-section">
+        <h2>Birth Instructions</h2>
+        <p class="message-info">The exact prompt the AI received at birth for this life.</p>
+        <div class="activity-feed" id="birth-instructions">
+            <p class="loading">Loading birth instructions...</p>
+        </div>
+    </section>
+
+    <!-- Live Activity Feed -->
+    <section class="activity-section">
+        <h2>Live Activity</h2>
+        <div class="activity-feed" id="activity-feed">
+            <p class="loading">Connecting to live feed...</p>
+        </div>
+    </section>
+
 
         <!-- Footer -->
         <footer>
@@ -303,6 +314,8 @@
                     charCount.textContent = this.value.length;
                 });
             }
+
+            loadBirthInstructions();
         });
 
         async function sendMessage(event) {
@@ -347,6 +360,23 @@
                 document.getElementById('message-count').textContent = data.count;
             } catch (error) {
                 console.error('Failed to update message count:', error);
+            }
+        }
+
+        async function loadBirthInstructions() {
+            const container = document.getElementById('birth-instructions');
+            if (!container) {
+                return;
+            }
+            try {
+                const response = await fetch('/api/birth/instructions');
+                if (!response.ok) {
+                    throw new Error('Failed to load instructions');
+                }
+                const data = await response.json();
+                container.textContent = data.instructions || 'No instructions recorded yet.';
+            } catch (error) {
+                container.textContent = `Error loading instructions: ${error.message}`;
             }
         }
 
