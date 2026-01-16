@@ -132,3 +132,26 @@ async def test_death_triggers_respawn(main_module, test_db, monkeypatch):
 
     assert "respawn_scheduled" in actions
     assert "birth" in actions
+
+
+@pytest.mark.asyncio
+async def test_death_respawn_cycle_updates_state(test_db):
+    """Death and respawn should toggle alive state and life number."""
+    first_life = await test_db.start_new_life()
+
+    await test_db.record_death(
+        cause="manual_kill",
+        summary="Test cycle",
+        vote_counts=None,
+        final_vote_result=None
+    )
+
+    state_dead = await test_db.get_current_state()
+    assert bool(state_dead["is_alive"]) is False
+
+    next_life = await test_db.start_new_life()
+    state_alive = await test_db.get_current_state()
+
+    assert next_life["life_number"] == first_life["life_number"] + 1
+    assert bool(state_alive["is_alive"]) is True
+    assert state_alive["life_number"] == next_life["life_number"]

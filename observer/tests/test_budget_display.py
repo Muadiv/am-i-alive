@@ -60,6 +60,8 @@ async def test_budget_endpoint_returns_token_data(main_module, monkeypatch):
     budget = response.context["budget"]
     assert "models" in budget
     assert "totals" in budget
+    assert "current_life" in budget
+    assert "all_time" in budget
 
 
 @pytest.mark.asyncio
@@ -91,16 +93,33 @@ async def test_budget_template_renders_tokens(main_module):
             "total_output_tokens": 8000,
             "total_tokens": 23000,
             "total_cost": 0.0
+        },
+        "current_life": {
+            "life_number": 12,
+            "total_input_tokens": 14000,
+            "total_output_tokens": 7000,
+            "total_tokens": 21000,
+            "total_cost": 0.0
+        },
+        "all_time": {
+            "total_input_tokens": 40000,
+            "total_output_tokens": 22000,
+            "total_tokens": 62000,
+            "total_cost": 0.0,
+            "total_lives": 12
         }
     }
 
     template = main_module.templates.get_template("budget.html")
     html = template.render(request=request, budget=budget)
 
+    assert "Current Life Totals" in html
+    assert "All-Time Totals" in html
     assert "Input:" in html
     assert "Output:" in html
     assert "Total:" in html
     assert "15,000" in html
+    assert "62,000" in html
 
 
 @pytest.mark.asyncio
@@ -132,6 +151,20 @@ async def test_free_models_show_zero_cost(main_module):
             "total_output_tokens": 500,
             "total_tokens": 1500,
             "total_cost": 0.0
+        },
+        "current_life": {
+            "life_number": 3,
+            "total_input_tokens": 1000,
+            "total_output_tokens": 500,
+            "total_tokens": 1500,
+            "total_cost": 0.0
+        },
+        "all_time": {
+            "total_input_tokens": 5000,
+            "total_output_tokens": 2000,
+            "total_tokens": 7000,
+            "total_cost": 0.0,
+            "total_lives": 3
         }
     }
 

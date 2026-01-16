@@ -314,6 +314,20 @@ async def budget_page(request: Request):
                 "total_tokens": 0,
                 "total_cost": 0.0
             })
+            budget_data.setdefault("current_life", {
+                "life_number": budget_data.get("lives", 0),
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_tokens": 0,
+                "total_cost": 0.0
+            })
+            budget_data.setdefault("all_time", {
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "total_tokens": 0,
+                "total_cost": 0.0,
+                "total_lives": budget_data.get("lives", 0)
+            })
     except Exception:
         budget_data = {"error": "Could not fetch budget data"}
 
@@ -1113,16 +1127,37 @@ async def oracle_message(request: Request):
 
     try:
         # Store the oracle message in database first
-        await db.submit_oracle_message(message, message_type)
+        result = await db.submit_oracle_message(message, message_type)
 
         # Then forward to AI
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{AI_API_URL}/oracle",
-                json={"message": message, "type": message_type},
+                json={"message": message, "type": message_type, "message_id": result.get("id")},
                 timeout=30.0
             )
             return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/oracle/ack")
+async def oracle_ack(request: Request):
+    """Acknowledge delivery of an oracle message."""
+    require_internal_key(request)
+    data = await request.json()
+    message_id = data.get("message_id")
+
+    if message_id is None:
+        raise HTTPException(status_code=400, detail="message_id required")
+
+    try:
+        message_id = int(message_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="message_id must be an integer") from exc
+
+    try:
+        return await db.mark_oracle_message_delivered(message_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

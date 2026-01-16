@@ -100,15 +100,29 @@ class BudgetHandler(BaseHTTPRequestHandler):
 
                 models_list.sort(key=lambda item: item["total_tokens"], reverse=True)
 
-                # Calculate ALL-TIME totals (entire project history)
-                all_time_input = 0
-                all_time_output = 0
-                all_time_cost = 0.0
+                current_life_usage = data.get("current_life_usage") or {}
+                current_life_number = current_life_usage.get(
+                    "life_number",
+                    data.get("current_life_number", data.get("total_lives", 0))
+                )
+                if current_life_usage:
+                    current_life_input = int(current_life_usage.get("input_tokens", 0) or 0)
+                    current_life_output = int(current_life_usage.get("output_tokens", 0) or 0)
+                    current_life_cost = float(current_life_usage.get("total_cost", 0.0) or 0.0)
+                else:
+                    current_life_input = total_input_tokens
+                    current_life_output = total_output_tokens
+                    current_life_cost = total_cost
 
-                for entry in usage_history:
-                    all_time_input += int(entry.get('input_tokens', 0) or 0)
-                    all_time_output += int(entry.get('output_tokens', 0) or 0)
-                    all_time_cost += float(entry.get('cost_usd', 0) or 0)
+                all_time_usage = data.get("all_time_usage") or {}
+                if all_time_usage:
+                    all_time_input = int(all_time_usage.get("input_tokens", 0) or 0)
+                    all_time_output = int(all_time_usage.get("output_tokens", 0) or 0)
+                    all_time_cost = float(all_time_usage.get("total_cost", 0.0) or 0.0)
+                else:
+                    all_time_input = total_input_tokens
+                    all_time_output = total_output_tokens
+                    all_time_cost = total_cost
 
                 # Build response
                 response_data = {
@@ -128,6 +142,13 @@ class BudgetHandler(BaseHTTPRequestHandler):
                         "total_output_tokens": total_output_tokens,
                         "total_tokens": total_input_tokens + total_output_tokens,
                         "total_cost": round(total_cost, 6)
+                    },
+                    "current_life": {
+                        "life_number": int(current_life_number or 0),
+                        "total_input_tokens": current_life_input,
+                        "total_output_tokens": current_life_output,
+                        "total_tokens": current_life_input + current_life_output,
+                        "total_cost": round(current_life_cost, 6)
                     },
                     "all_time": {  # All-time totals across entire project
                         "total_input_tokens": all_time_input,

@@ -20,6 +20,7 @@ __pycache__/
 *$py.class
 venv/
 .venv/
+observer/.venv/
 *.egg-info/
 
 # Database files (may contain sensitive data)

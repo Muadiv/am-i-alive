@@ -114,25 +114,54 @@
                 </div>
             </section>
 
-            {# BE-002: Total token usage summary #}
             <section class="budget-section">
-                <h2>Total Tokens Used</h2>
+                <h2>Current Life Totals</h2>
                 <div class="models-list">
                     <div class="model-item">
+                        <span class="model-name">Life</span>
+                        <span class="model-cost">#{{ budget.current_life.life_number }}</span>
+                    </div>
+                    <div class="model-item">
                         <span class="model-name">Input</span>
-                        <span class="model-cost">{{ "{:,}".format(budget.totals.total_input_tokens) }} tokens</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.current_life.total_input_tokens) }} tokens</span>
                     </div>
                     <div class="model-item">
                         <span class="model-name">Output</span>
-                        <span class="model-cost">{{ "{:,}".format(budget.totals.total_output_tokens) }} tokens</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.current_life.total_output_tokens) }} tokens</span>
                     </div>
                     <div class="model-item">
                         <span class="model-name">Total</span>
-                        <span class="model-cost">{{ "{:,}".format(budget.totals.total_tokens) }} tokens</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.current_life.total_tokens) }} tokens</span>
                     </div>
                     <div class="model-item">
                         <span class="model-name">Cost</span>
-                        <span class="model-cost">${{ "%.3f"|format(budget.totals.total_cost) }}</span>
+                        <span class="model-cost">${{ "%.3f"|format(budget.current_life.total_cost) }}</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="budget-section">
+                <h2>All-Time Totals</h2>
+                <div class="models-list">
+                    <div class="model-item">
+                        <span class="model-name">Lives</span>
+                        <span class="model-cost">{{ budget.all_time.total_lives }}</span>
+                    </div>
+                    <div class="model-item">
+                        <span class="model-name">Input</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.all_time.total_input_tokens) }} tokens</span>
+                    </div>
+                    <div class="model-item">
+                        <span class="model-name">Output</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.all_time.total_output_tokens) }} tokens</span>
+                    </div>
+                    <div class="model-item">
+                        <span class="model-name">Total</span>
+                        <span class="model-cost">{{ "{:,}".format(budget.all_time.total_tokens) }} tokens</span>
+                    </div>
+                    <div class="model-item">
+                        <span class="model-name">Cost</span>
+                        <span class="model-cost">${{ "%.3f"|format(budget.all_time.total_cost) }}</span>
                     </div>
                 </div>
             </section>

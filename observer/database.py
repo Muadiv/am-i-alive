@@ -1025,6 +1025,18 @@ async def submit_oracle_message(message: str, message_type: str) -> dict:
         }
 
 
+async def mark_oracle_message_delivered(message_id: int) -> dict:
+    """Mark an oracle message as delivered."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "UPDATE oracle_messages SET delivered = 1 WHERE id = ?",
+            (message_id,)
+        )
+        await db.commit()
+
+    return {"success": True, "id": message_id}
+
+
 async def get_all_messages(limit: int = 100) -> dict:
     """Get all messages (both visitor and oracle) for God Mode display."""
     async with aiosqlite.connect(DATABASE_PATH) as db:

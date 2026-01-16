@@ -92,7 +92,7 @@ Esta documento describe todas las formas en que el AI puede comunicarse con el m
 **Código relevante**:
 - `observer/templates/god.html`: Interfaz
 - `observer/main.py`: `/god` ruta y `/api/oracle/message` endpoint
-- `ai/brain.py`: manejo de mensajes oracle (TODO: implementar)
+- `ai/brain.py`: manejo de mensajes oracle + confirmación de entrega
 
 ---
 

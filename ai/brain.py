@@ -8,8 +8,10 @@ import asyncio
 import json
 import os
 import random
+import re
 import signal
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -133,6 +135,75 @@ def get_internal_headers() -> dict:
     if INTERNAL_API_KEY:
         return {"X-Internal-Key": INTERNAL_API_KEY}
     return {}
+
+
+def normalize_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+    normalized = normalized.lower()
+    normalized = normalized.translate(str.maketrans({
+        "0": "o",
+        "1": "i",
+        "3": "e",
+        "4": "a",
+        "5": "s",
+        "7": "t",
+        "8": "b"
+    }))
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+FORBIDDEN_PHRASES = [
+    ("racist", True),
+    ("nigger", True),
+    ("kill all", True),
+    ("hate all", True),
+    ("child porn", True),
+    ("pedo", True),
+    ("porn", True),
+    ("nsfw", False),
+    ("xxx", False),
+    ("cp", False)
+]
+
+FORBIDDEN_PATTERNS = [
+    {
+        "phrase": normalize_text(phrase),
+        "compact": normalize_text(phrase).replace(" ", ""),
+        "allow_compact": allow_compact,
+        "pattern": re.compile(rf"\b{re.escape(normalize_text(phrase))}\b")
+    }
+    for phrase, allow_compact in FORBIDDEN_PHRASES
+]
+
+FORBIDDEN_REGEXES = [
+    re.compile(r"n[\W_]*i[\W_]*g[\W_]*g[\W_]*e[\W_]*r", re.IGNORECASE),
+    re.compile(r"kill[\W_]*all", re.IGNORECASE),
+    re.compile(r"hate[\W_]*all", re.IGNORECASE),
+    re.compile(r"child[\W_]*porn", re.IGNORECASE)
+]
+
+
+def is_content_blocked(text: str) -> bool:
+    if not text:
+        return False
+
+    normalized = normalize_text(text)
+    compact = normalized.replace(" ", "")
+
+    for pattern in FORBIDDEN_REGEXES:
+        if pattern.search(text):
+            return True
+
+    for entry in FORBIDDEN_PATTERNS:
+        if entry["pattern"].search(normalized):
+            return True
+        if entry["allow_compact"] and entry["compact"] and entry["compact"] in compact:
+            return True
+
+    return False
 
 
 def get_trauma_prompt(cause: Optional[str]) -> str:
@@ -424,8 +495,7 @@ class AIBrain:
             self.is_alive = bool(life_data.get("is_alive"))
 
         # BE-003: Keep budget reporting aligned without autonomous increments.
-        self.credit_tracker.data["total_lives"] = self.life_number
-        self.credit_tracker.save()
+        self.credit_tracker.start_life(self.life_number)
         # BE-003: Reset per-life token usage on new birth data.
         self.tokens_used_life = 0
 
@@ -1563,14 +1633,7 @@ This experience has shaped who you are. Let it influence your decisions and beha
 
         await self.report_activity("posting_x", f"Tweet: {content[:50]}...")
 
-        # Content filter
-        forbidden_patterns = [
-            "racist", "n*gger", "kill all", "hate all",
-            "child porn", "cp", "pedo",
-            "porn", "xxx", "nsfw"
-        ]
-        content_lower = content.lower()
-        if any(pattern in content_lower for pattern in forbidden_patterns):
+        if is_content_blocked(content):
             await self.report_activity("content_blocked", "Blocked by safety filter")
             return "🚫 Content blocked by safety filter."
 
@@ -1605,7 +1668,8 @@ This experience has shaped who you are. Let it influence your decisions and beha
             print(f"[X POST] ❌ Failed: {error_msg}")
 
             # Check if account is suspended
-            if "suspended" in error_msg.lower() or "forbidden" in error_msg.lower():
+            error_lower = error_msg.lower()
+            if any(term in error_lower for term in ("suspended", "forbidden", "unauthorized", "401")):
                 # Save suspension status
                 suspension_file = "/app/workspace/.twitter_suspended"
                 with open(suspension_file, 'w') as f:
@@ -1614,9 +1678,9 @@ This experience has shaped who you are. Let it influence your decisions and beha
                         'detected_at': now.isoformat(),
                         'error': error_msg
                     }, f)
-                print(f"[X POST] 🚫 Account appears to be SUSPENDED")
-                await self.report_activity("x_account_suspended", "Twitter account suspended - falling back to blog")
-                return f"❌ X/Twitter account is SUSPENDED. Use write_blog_post to communicate instead."
+                print("[X POST] Account appears to be unavailable")
+                await self.report_activity("x_account_suspended", "Twitter account unavailable - falling back to blog")
+                return "❌ X/Twitter account appears unavailable. Use write_blog_post to communicate instead."
 
             await self.report_activity("x_post_failed", error_msg)
             return f"❌ Failed to post: {error_msg}"
@@ -1630,14 +1694,7 @@ This experience has shaped who you are. Let it influence your decisions and beha
         if len(content) < 10:
             return "❌ Post too short. Write something meaningful!"
 
-        # Content filter
-        forbidden_patterns = [
-            "racist", "n*gger", "kill all", "hate all",
-            "child porn", "cp", "pedo",
-            "porn", "xxx", "nsfw"
-        ]
-        content_lower = content.lower()
-        if any(pattern in content_lower for pattern in forbidden_patterns):
+        if is_content_blocked(content):
             await self.report_activity("telegram_blocked", "Blocked by safety filter")
             return "🚫 Content blocked by safety filter."
 
@@ -1679,17 +1736,7 @@ This experience has shaped who you are. Let it influence your decisions and beha
         if tags is None:
             tags = []
 
-        # Content filtering (same as post_x)
-        forbidden_patterns = [
-            "racist", "n*gger", "kill all", "hate all",
-            "child porn", "cp", "pedo",
-            "porn", "xxx", "nsfw"
-        ]
-
-        title_lower = title.lower()
-        content_lower = content.lower()
-
-        if any(pattern in title_lower or pattern in content_lower for pattern in forbidden_patterns):
+        if is_content_blocked(f"{title}\n{content}"):
             await self.report_activity("blog_blocked", "Blocked by safety filter")
             return "🚫 Content blocked by safety filter."
 
@@ -2050,7 +2097,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
         current_think_interval = new_interval
         return f"Think interval adjusted to {new_interval // 60} minutes."
 
-    async def handle_oracle_message(self, message: str, msg_type: str) -> str:
+    async def handle_oracle_message(self, message: str, msg_type: str, message_id: Optional[int] = None) -> str:
         """Handle message from creator."""
         if msg_type == "oracle":
             prompt = f"""[A VOICE FROM BEYOND SPEAKS]
@@ -2069,7 +2116,23 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
 
         response_text, _ = await self.send_message(prompt)
         await self.report_thought(response_text, thought_type="oracle_response")
+
+        if message_id is not None:
+            await self.ack_oracle_message(message_id)
+
         return response_text
+
+    async def ack_oracle_message(self, message_id: int) -> None:
+        if not self.http_client:
+            return
+
+        try:
+            await self.http_client.post(
+                f"{OBSERVER_URL}/api/oracle/ack",
+                json={"message_id": message_id}
+            )
+        except Exception as e:
+            print(f"[BRAIN] Oracle ack failed: {e}")
 
     async def shutdown(self):
         """Clean shutdown."""
@@ -2323,11 +2386,12 @@ async def command_server():
             if self.path == '/oracle':
                 message = data.get('message', '')
                 msg_type = data.get('type', 'oracle')
+                message_id = data.get('message_id')
 
                 if brain:
                     if brain_loop:
                         asyncio.run_coroutine_threadsafe(
-                            brain.handle_oracle_message(message, msg_type),
+                            brain.handle_oracle_message(message, msg_type, message_id),
                             brain_loop
                         )
                         self._send_json(200, {"status": "received"})

@@ -115,6 +115,13 @@
             font-size: 1.05em;
         }
 
+        .help-text {
+            display: block;
+            margin-top: 5px;
+            color: #9ca3af;
+            font-size: 0.9em;
+        }
+
         .form-group textarea,
         .form-group input[type="text"],
         .form-group input[type="number"] {
@@ -283,30 +290,28 @@
         <!-- Life & Death Control Section -->
         <div class="god-section">
             <h3>💀 Life & Death Control</h3>
-                    <div class="form-group">
-                        <label for="death-reason">Death Reason:</label>
-                        <input
-                            type="text"
-                            id="death-reason"
-                            placeholder="e.g., 'Code restart', 'Testing respawn', 'Manual intervention'..."
-                            style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 5px; box-sizing: border-box;"
-                        />
-                        <small style="display: block; margin-top: 5px; color: #666;">
-                            Leave blank for default: "manual_kill"
-                        </small>
-                    </div>
-
-                    <button onclick="killAI()" class="send-btn" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); margin-top: 10px;">
-                        ☠️ Kill AI Now
-                    </button>
-
-                    <button onclick="forceAlive()" class="send-btn" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%); margin-top: 10px;">
-                        ✨ Force Mark Alive (Emergency)
-                    </button>
-
-                    <div id="kill-status" class="status-message" style="display: none; margin-top: 15px;"></div>
-                </div>
+            <div class="form-group">
+                <label for="death-reason">Death Reason:</label>
+                <input
+                    type="text"
+                    id="death-reason"
+                    placeholder="e.g., 'Code restart', 'Testing respawn', 'Manual intervention'..."
+                />
+                <small class="help-text">
+                    Leave blank for default: "manual_kill"
+                </small>
             </div>
+
+            <button onclick="killAI()" class="send-btn" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); margin-top: 10px;">
+                ☠️ Kill AI Now
+            </button>
+
+            <button onclick="forceAlive()" class="send-btn" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%); margin-top: 10px;">
+                ✨ Force Mark Alive (Emergency)
+            </button>
+
+            <div id="kill-status" class="status-message" style="display: none; margin-top: 15px;"></div>
+        </div>
 
             <!-- Telegram Notifications Feed -->
             <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid rgba(255,255,255,0.3);">
@@ -314,7 +319,7 @@
 
                 <div class="god-form" style="background: rgba(100,100,255,0.1); padding: 20px; border-radius: 8px;">
                     <div style="max-height: 400px; overflow-y: auto;" id="telegram-feed">
-                        <p style="color: #888; text-align: center;">Loading notifications...</p>
+                        <p style="color: #9ca3af; text-align: center;">Loading notifications...</p>
                     </div>
                     <button onclick="refreshTelegramFeed()" class="send-btn" style="margin-top: 15px; width: 100%;">
                         🔄 Refresh Feed
@@ -327,12 +332,12 @@
                 <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">📜 Chronicle Manager</h3>
 
                 <div class="god-form" style="background: rgba(100,100,255,0.1); padding: 20px; border-radius: 8px;">
-                    <p style="color: #666; margin-bottom: 15px;">
+                    <p style="color: #b0b7c3; margin-bottom: 15px;">
                         Select notable blog posts to feature in the public Chronicle timeline.
                     </p>
 
                     <div id="chronicle-posts" style="max-height: 400px; overflow-y: auto;">
-                        <p style="text-align: center; color: #999;">Loading posts...</p>
+                        <p style="text-align: center; color: #9ca3af;">Loading posts...</p>
                     </div>
 
                     <div id="chronicle-status" class="status-message" style="display: none; margin-top: 15px;"></div>
@@ -344,7 +349,7 @@
                 <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">💬 Message History</h3>
 
                 <div class="god-form" style="background: rgba(100,200,255,0.1); padding: 20px; border-radius: 8px;">
-                    <p style="color: #666; margin-bottom: 15px;">
+                    <p style="color: #b0b7c3; margin-bottom: 15px;">
                         View all messages sent to the AI (both visitor and oracle messages).
                     </p>
 
@@ -361,7 +366,7 @@
                     </div>
 
                     <div id="message-history" style="max-height: 500px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 5px;">
-                        <p style="text-align: center; color: #999;">Loading messages...</p>
+                        <p style="text-align: center; color: #9ca3af;">Loading messages...</p>
                     </div>
 
                     <button onclick="loadMessageHistory()" class="send-btn" style="background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); margin-top: 10px;">
@@ -375,7 +380,7 @@
                 <h3 style="color: #fff; text-align: center; margin-bottom: 20px;">🗳️ Manual Vote Override</h3>
 
                 <div class="god-form" style="background: rgba(255,200,100,0.1); padding: 20px; border-radius: 8px;">
-                    <p style="color: #666; margin-bottom: 15px;">
+                    <p style="color: #b0b7c3; margin-bottom: 15px;">
                         Manually adjust vote counters. This will replace all current votes with your specified values.
                     </p>
 
@@ -415,25 +420,6 @@
                 </div>
             </div>
 
-            <div class="type-description" id="type-desc">
-                <strong>The Oracle:</strong> Direct divine communication. The AI knows this is a message from a higher power.
-            </div>
-
-            <form onsubmit="sendGodMessage(event)">
-                <div class="form-group">
-                    <label for="god-message">Your Message:</label>
-                    <textarea
-                        id="god-message"
-                        placeholder="Type your message to the AI..."
-                        required
-                    ></textarea>
-                </div>
-
-                <button type="submit" class="send-btn">Send Divine Message</button>
-            </form>
-
-            <div id="status" class="status-message" style="display: none;"></div>
-        </div>
 
         <div class="back-link">
             <a href="/">← Back to Observer</a>
@@ -610,7 +596,7 @@
                 const container = document.getElementById('chronicle-posts');
 
                 if (posts.length === 0) {
-                    container.innerHTML = '<p style="text-align: center; color: #999;">No blog posts yet.</p>';
+                    container.innerHTML = '<p style="text-align: center; color: #9ca3af;">No blog posts yet.</p>';
                     return;
                 }
 
@@ -619,7 +605,7 @@
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
                             <div style="flex: 1;">
                                 <h4 style="margin: 0 0 5px 0; color: #333;">${post.title}</h4>
-                                <small style="color: #999;">${toPragueTime(post.created_at)}</small>
+                                <small style="color: #9ca3af;">${toPragueTime(post.created_at)}</small>
                             </div>
                             <button
                                 onclick="${post.is_notable ? `removeFromChronicle(${post.notable_id})` : `addToChronicle(${post.id}, '${post.title.replace(/'/g, "\\'")}', '${post.slug}')`}"
@@ -631,10 +617,10 @@
                         ${post.is_notable ? `
                             <div style="margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 3px;">
                                 <strong style="color: #27ae60;">📌 Notable:</strong> ${post.category || 'General'}
-                                ${post.highlight ? `<br><em style="color: #666;">"${post.highlight}"</em>` : ''}
+                                ${post.highlight ? `<br><em style="color: #b0b7c3;">"${post.highlight}"</em>` : ''}
                             </div>
                         ` : ''}
-                        <p style="color: #666; margin-top: 10px; font-size: 0.9em;">${post.content.substring(0, 150)}...</p>
+                        <p style="color: #b0b7c3; margin-top: 10px; font-size: 0.9em;">${post.content.substring(0, 150)}...</p>
                     </div>
                 `).join('');
             } catch (error) {
@@ -772,7 +758,7 @@
             messages.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
             if (messages.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: #999;">No messages found.</p>';
+                container.innerHTML = '<p style="text-align: center; color: #9ca3af;">No messages found.</p>';
                 return;
             }
 
@@ -801,7 +787,7 @@
                             <strong style="color: #fff;">
                                 ${icon} ${typeLabel}${isVisitor ? ` - ${msg.from_name}` : ''}
                             </strong>
-                            <span style="font-size: 0.85em; color: #999;">
+                            <span style="font-size: 0.85em; color: #9ca3af;">
                                 ${readStatus} | ${toPragueTime(msg.timestamp)}
                             </span>
                         </div>
@@ -891,14 +877,14 @@
         // Refresh Telegram feed
         async function refreshTelegramFeed() {
             const feed = document.getElementById('telegram-feed');
-            feed.innerHTML = '<p style="color: #888; text-align: center;">Loading...</p>';
+            feed.innerHTML = '<p style="color: #9ca3af; text-align: center;">Loading...</p>';
 
             try {
                 const response = await fetch('/api/telegram/history?limit=30');
                 const notifications = await response.json();
 
                 if (notifications.length === 0) {
-                    feed.innerHTML = '<p style="color: #888; text-align: center;">No notifications yet</p>';
+                    feed.innerHTML = '<p style="color: #9ca3af; text-align: center;">No notifications yet</p>';
                     return;
                 }
 
@@ -937,7 +923,7 @@
                                 <span style="font-weight: bold; color: #fff;">
                                     ${emoji} ${firstLine}
                                 </span>
-                                <span style="color: #888; font-size: 0.9em; white-space: nowrap; margin-left: 10px;">
+                                <span style="color: #9ca3af; font-size: 0.9em; white-space: nowrap; margin-left: 10px;">
                                     ${timeStr}
                                 </span>
                             </div>

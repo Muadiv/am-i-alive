@@ -238,7 +238,7 @@ Implemented automatic 429 handling in `ai/brain.py`:
 ### ISSUE-005: X/Twitter API 401 Unauthorized
 
 **Priority:** Medium
-**Status:** Open
+**Status:** Open (Mitigated)
 **Discovered:** 2026-01-14 (Session 23)
 **Component:** AI/Twitter Integration
 
@@ -262,11 +262,11 @@ X/Twitter birth tweet returns 401 Unauthorized
 1. Regenerate X API credentials (API Key, Secret, Access Token)
 2. Verify app permissions (Read and Write)
 3. Check if account is suspended or restricted
-4. Add `.twitter_suspended` flag file when 401 detected
+4. Add `.twitter_suspended` flag file when 401 detected (implemented in Session 27)
 
 #### Workaround
 
-Using Telegram public channel (@AmIAlive_AI) as alternative communication method. Twitter integration deprioritized.
+Using Telegram public channel (@AmIAlive_AI) as alternative communication method. Session 27 auto-disables X on 401/unauthorized by writing `.twitter_suspended`.
 
 ---
 
