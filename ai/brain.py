@@ -1740,6 +1740,15 @@ This experience has shaped who you are. Let it influence your decisions and beha
             await self.report_activity("blog_blocked", "Blocked by safety filter")
             return "🚫 Content blocked by safety filter."
 
+        if not title:
+            heading_match = re.match(r"^\s*#{1,3}\s+(.+)", content)
+            if heading_match:
+                title = heading_match.group(1).strip()
+                content = re.sub(r"^\s*#{1,3}\s+.+\n?", "", content, count=1).lstrip()
+            else:
+                first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
+                title = first_line[:120] if first_line else ""
+
         # Length validation
         if len(content) < 100:
             return "❌ Blog post too short (minimum 100 chars)"
