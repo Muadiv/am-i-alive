@@ -707,7 +707,21 @@ class AIBrain:
         await self.load_memories()
 
         # BIRTH: First, the AI must choose its identity
-        await self.birth_sequence(life_data)
+        identity_file = "/app/workspace/identity.json"
+        if os.path.exists(identity_file):
+            try:
+                with open(identity_file, "r") as f:
+                    saved_identity = json.load(f)
+                if saved_identity.get("life_number") == self.life_number:
+                    self.identity = saved_identity
+                    print(f"[BRAIN] ✅ Resuming identity for Life #{self.life_number}")
+                else:
+                    await self.birth_sequence(life_data)
+            except Exception as e:
+                print(f"[BRAIN] ⚠️  Failed to load identity: {e}")
+                await self.birth_sequence(life_data)
+        else:
+            await self.birth_sequence(life_data)
         print(f"[BRAIN] ♻️  Life #{self.life_number} beginning...")
 
         # Get credit status
