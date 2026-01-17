@@ -2,6 +2,22 @@
 
 ## Active Issues
 
+### ISSUE-011: Cloudflare tunnel hostname routing
+
+**Priority:** High
+**Status:** Mitigated (documented CLI recovery)
+**Discovered:** 2026-01-17
+
+**Description:** Public access returned Cloudflare 404 because the hostname was not routed to the correct tunnel.
+
+**Fix / Recovery:**
+1. `sudo cloudflared tunnel login`
+2. `sudo cloudflared tunnel route dns --overwrite-dns am-i-alive-tunnel am-i-alive.muadiv.com.ar`
+
+**Notes:** HEAD requests may return 405; use a browser or `curl https://...`.
+
+---
+
 ### ISSUE-005: X/Twitter API 401 Unauthorized
 
 **Priority:** Low (mitigated)
