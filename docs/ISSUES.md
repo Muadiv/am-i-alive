@@ -16,6 +16,20 @@
 
 **Notes:** HEAD requests may return 405; use a browser or `curl https://...`.
 
+### ISSUE-012: DNS instability on DietPi (OpenRouter/Cloudflared)
+
+**Priority:** High
+**Status:** Open
+**Discovered:** 2026-01-17
+
+**Description:** Intermittent DNS resolution failures cause OpenRouter and Cloudflared errors (`Temporary failure in name resolution`).
+
+**Current Mitigation:**
+- Static resolvers in `/etc/network/interfaces` and `/etc/resolv.conf`.
+
+**Next Step:**
+- Evaluate installing a DNS cache (unbound or dnsmasq) once package repos are reachable.
+
 ---
 
 ### ISSUE-005: X/Twitter API 401 Unauthorized
