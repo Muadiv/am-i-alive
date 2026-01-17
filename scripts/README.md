@@ -46,7 +46,37 @@ Pull new code and restart services only when needed:
 sudo /opt/am-i-alive/scripts/update.sh
 ```
 
-### Cloudflare Tunnel
+### Cloudflare Tunnel (Zero Trust)
+
+**If the hostname stops working (Cloudflare 404):**
+
+1. Login the tunnel on the device to refresh credentials:
+
+```bash
+sudo cloudflared tunnel login
+```
+
+2. Attach the hostname to the tunnel (overwrites any existing DNS record):
+
+```bash
+sudo cloudflared tunnel route dns --overwrite-dns am-i-alive-tunnel am-i-alive.muadiv.com.ar
+```
+
+3. Confirm the tunnel service is running:
+
+```bash
+sudo systemctl status cloudflared --no-pager
+```
+
+3. Verify:
+
+```bash
+curl -I https://am-i-alive.muadiv.com.ar
+```
+
+A 405 on `curl -I` is expected (HEAD not allowed). Use a browser or `curl https://...`.
+
+**Bare‑metal config (setup script):**
 
 Set these in `/etc/am-i-alive/.env`:
 
