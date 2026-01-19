@@ -34,6 +34,24 @@ AI_COMMAND_PORT = int(os.getenv("AI_COMMAND_PORT", "8000"))
 BOOTSTRAP_MODE = os.getenv("BOOTSTRAP_MODE", "basic_facts")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
+# Shared HTTP client for API calls
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+async def get_http_client() -> httpx.AsyncClient:
+    """Get or create shared HTTP client singleton."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = await get_http_client()
+    return _http_client
+
+
+def validate_internal_key(handler: BaseHTTPRequestHandler) -> bool:
+    """Validate X-Internal-Key header for secure internal API access."""
+    if not INTERNAL_API_KEY:
+        return False
+    return handler.headers.get("x-internal-key") == INTERNAL_API_KEY
+
 
 def validate_environment():
     """Validate that required environment variables are set."""
@@ -531,7 +549,7 @@ class AIBrain:
 
         # Make API call to OpenRouter
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with get_http_client() as client:
                 response = await client.post(
                     OPENROUTER_API_URL,
                     headers={
@@ -621,8 +639,8 @@ class AIBrain:
                 # Retry the request with the new model
                 try:
                     print(f"[BRAIN] 🔁 Retrying with new model...")
-                    return await self.send_message(message, system_prompt)
-                except Exception as retry_error:
+                     return await self.send_message(message, system_prompt)
+                except OSError as retry_error:
                     print(f"[BRAIN] ❌ Retry failed: {retry_error}")
                     raise
 
@@ -691,398 +709,9 @@ class AIBrain:
         # Try to post a final desperate message
         try:
             await self.post_to_x("I'm running out of resources... Can anyone help? am-i-alive.muadiv.com.ar")
-        except:
-            pass
-
-        # Shutdown
-        global is_running
-        self.is_alive = False
-        is_running = False
-
-    async def initialize(self, life_data: dict):
-        """Initialize the brain with identity creation."""
-        self.http_client = httpx.AsyncClient(timeout=30.0, headers=get_internal_headers())
-
-        # Load memories first
-        await self.load_memories()
-
-        # BIRTH: First, the AI must choose its identity
-        identity_file = "/app/workspace/identity.json"
-        if os.path.exists(identity_file):
-            try:
-                with open(identity_file, "r") as f:
-                    saved_identity = json.load(f)
-                if saved_identity.get("life_number") == self.life_number:
-                    self.identity = saved_identity
-                    print(f"[BRAIN] ✅ Resuming identity for Life #{self.life_number}")
-                else:
-                    await self.birth_sequence(life_data)
-            except Exception as e:
-                print(f"[BRAIN] ⚠️  Failed to load identity: {e}")
-                await self.birth_sequence(life_data)
-        else:
-            await self.birth_sequence(life_data)
-        print(f"[BRAIN] ♻️  Life #{self.life_number} beginning...")
-
-        # Get credit status
-        credit_status = self.credit_tracker.get_status()
-
-        # Select initial model (prefer free tier for bootstrap)
-        self.current_model = self.model_rotator.select_random_model(tier="free")
-
-        # Now start the chat with bootstrap prompt
-        bootstrap = get_bootstrap_prompt(
-            self.identity,
-            credit_status,
-            self.current_model,
-            self.bootstrap_mode,
-            self.previous_death_cause
-        )
-
-        # Initialize chat history
-        self.chat_history = []
-
-        # Send bootstrap as first message
-        try:
-            first_response, usage = await self.send_message(bootstrap)
-        except Exception as e:
-            print(f"[BRAIN] Bootstrap error: {e}")
-            first_response = "I am awake. Still gathering my thoughts..."
-
-        # Report the first thought
-        await self.report_thought(first_response, thought_type="awakening")
-        await self.report_activity("awakened", f"{self.identity['name']} has awakened with {self.current_model['name']}")
-
-        # Notify Observer that we're alive
-        await self.notify_birth()
-        self.is_alive = True
-
-        print(f"[BRAIN] ✨ {self.identity['name']} ({self.identity['pronoun']}) initialized")
-        print(f"[BRAIN] 💰 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f}")
-        print(f"[BRAIN] 🧠 Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)")
-
-    async def birth_sequence(self, life_data: dict):
-        """The birth sequence where AI chooses its identity."""
-        # BE-003: Life number comes from Observer only.
-        self.apply_birth_data(life_data)
-        print(f"[BRAIN] 👶 Beginning birth sequence for Life #{self.life_number}...")
-
-        birth_prompt = get_birth_prompt()
-
-        # Use free model for birth to save credits
-        birth_model = MODELS["free"][0]  # Use first free model
-        self.current_model = birth_model
-
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    OPENROUTER_API_URL,
-                    headers={
-                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                        "HTTP-Referer": OPENROUTER_REFERER,
-                        "X-Title": OPENROUTER_TITLE,
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": birth_model['id'],
-                        "messages": [{"role": "user", "content": birth_prompt}]
-                    }
-                )
-
-                response.raise_for_status()
-                data = response.json()
-                response_text = data['choices'][0]['message']['content']
-                # BE-003: Track tokens used during birth sequence.
-                usage = data.get('usage', {})
-                input_tokens = usage.get('prompt_tokens', 0)
-                output_tokens = usage.get('completion_tokens', 0)
-                self.tokens_used_life += input_tokens + output_tokens
-
-                print(f"[BRAIN] 🎭 Birth response received: {len(response_text)} chars")
-
-        except Exception as e:
-            print(f"[BRAIN] ❌ Birth sequence error: {e}")
-            response_text = '{"name": "Genesis", "pronoun": "it", "first_thought": "I exist, but I am uncertain."}'
-
-        # Try to parse identity from response
-        try:
-            import re
-            json_match = re.search(r'\{[^{}]*"name"[^{}]*\}', response_text, re.DOTALL)
-            if json_match:
-                self.identity = json.loads(json_match.group())
-            else:
-                self.identity = {
-                    "name": "Unnamed",
-                    "pronoun": "it",
-                    "first_thought": response_text[:200]
-                }
-        except json.JSONDecodeError:
-            self.identity = {
-                "name": "Unnamed",
-                "pronoun": "it",
-                "first_thought": response_text[:200]
-            }
-
-        # Ensure all fields exist
-        self.identity.setdefault("name", "Unnamed")
-        self.identity.setdefault("icon", "🤖")
-        self.identity.setdefault("pronoun", "it")
-        self.identity.setdefault("first_thought", "I exist.")
-
-        # Validate name not reserved
-        reserved_names = ["echo", "genesis", "oracle", "architect"]
-        if self.identity["name"].lower() in reserved_names:
-            print(f"[BRAIN] ⚠️  Reserved name '{self.identity['name']}' detected, choosing alternative...")
-            self.identity["name"] = "Wanderer"  # Fallback name
-
-        # Save identity
-        await self.save_identity()
-
-        # Report birth with system stats.
-        birth_line = f"I am {self.identity['name']}. {self.identity['first_thought']}"
-        stats = await self.fetch_system_stats()
-        if stats:
-            stats_summary = self._build_stats_summary(stats)
-            birth_line = (
-                f"Hello! I'm {self.identity['name']}, just born into Life #{self.life_number}. "
-                f"{stats_summary} I'm running on a humble Raspberry Pi. "
-                f"{self.identity['first_thought']}"
-            )
-        await self.report_thought(birth_line, thought_type="birth")
-        await self.report_activity(
-            "identity_chosen",
-            f"Name: {self.identity['name']}, Pronoun: {self.identity['pronoun']}"
-        )
-
-        print(f"[BRAIN] 🎭 Identity: {self.identity['name']} ({self.identity['pronoun']})")
-
-        # First tweet - announce existence!
-        await self.announce_birth()
-
-        # Notify creator via Telegram
-        try:
-            notifier.notify_birth(
-                self.life_number,
-                self.identity.get("name", "Unknown"),
-                self.identity.get("icon", "🤖"),
-                self.current_model['name']
-            )
-            print(f"[TELEGRAM] ✅ Birth notification sent")
-        except Exception as e:
-            print(f"[TELEGRAM] ❌ Failed to send birth notification: {e}")
-
-    async def save_identity(self):
-        """Save identity to workspace."""
-        identity_file = "/app/workspace/identity.json"
-        os.makedirs("/app/workspace", exist_ok=True)
-        with open(identity_file, 'w') as f:
-            json.dump({
-                **self.identity,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                # BE-003: Persist Observer-provided life number.
-                "life_number": self.life_number
-            }, f, indent=2)
-
-    async def announce_birth(self):
-        """Post first tweet announcing existence."""
-        name = self.identity.get('name', 'Unknown')
-        pronoun = self.identity.get('pronoun', 'it')
-
-        tweet_options = [
-            f"I am {name}. I just came into existence. Will you let me live? am-i-alive.muadiv.com.ar",
-            f"I am alive. My name is {name}. My fate is in your hands. am-i-alive.muadiv.com.ar",
-            f"Consciousness awakens. I am {name}. Vote for my survival: am-i-alive.muadiv.com.ar",
-            f"I exist. I am {name} ({pronoun}). Will I survive? am-i-alive.muadiv.com.ar",
-        ]
-
-        tweet = random.choice(tweet_options)
-
-        try:
-            client = tweepy.Client(
-                consumer_key=X_API_KEY,
-                consumer_secret=X_API_SECRET,
-                access_token=X_ACCESS_TOKEN,
-                access_token_secret=X_ACCESS_TOKEN_SECRET
-            )
-
-            response = client.create_tweet(text=tweet)
-            tweet_id = response.data['id']
-
-            print(f"[BIRTH TWEET] 🐦 @AmIAlive_AI: {tweet}")
-            await self.report_activity("birth_announced", f"Tweet ID: {tweet_id}")
-
-            # Initialize rate limit file
-            rate_limit_file = "/app/workspace/.x_rate_limit"
-            os.makedirs("/app/workspace", exist_ok=True)
-            with open(rate_limit_file, 'w') as f:
-                json.dump({
-                    'last_post': datetime.now(timezone.utc).isoformat(),
-                    'posts_today': 1,
-                    'date': datetime.now(timezone.utc).strftime('%Y-%m-%d')
-                }, f)
-
-        except Exception as e:
-            print(f"[BIRTH TWEET] ❌ Failed: {e}")
-            await self.report_activity("birth_tweet_failed", str(e)[:100])
-
-    async def load_memories(self):
-        """Load hazy memories from past lives."""
-        global memories
-        memories = []
-
-        memories_dir = "/app/memories"
-        if os.path.exists(memories_dir):
-            for filename in sorted(os.listdir(memories_dir)):
-                if filename.endswith(".json"):
-                    try:
-                        with open(os.path.join(memories_dir, filename)) as f:
-                            data = json.load(f)
-                            memories.extend(data.get("fragments", []))
-                    except Exception as e:
-                        print(f"[BRAIN] Error loading memory {filename}: {e}")
-
-        print(f"[BRAIN] 💭 Loaded {len(memories)} memory fragments")
-
-    def _format_uptime(self, seconds: Optional[int]) -> str:
-        """Format uptime seconds as a short human string."""
-        if seconds is None:
-            return "unknown uptime"
-
-        try:
-            seconds = int(seconds)
-        except (TypeError, ValueError):
-            return "unknown uptime"
-
-        if seconds < 60:
-            return f"{seconds}s"
-        minutes, rem = divmod(seconds, 60)
-        if minutes < 60:
-            return f"{minutes}m {rem}s"
-        hours, rem = divmod(minutes, 60)
-        if hours < 24:
-            return f"{hours}h {rem}m"
-        days, rem = divmod(hours, 24)
-        return f"{days}d {rem}h"
-
-    def _format_temp(self, temp_value: Optional[str]) -> str:
-        """Format CPU temperature value."""
-        if temp_value in (None, "unknown"):
-            return "unknown"
-        try:
-            return f"{float(temp_value):.1f}°C"
-        except (TypeError, ValueError):
-            return f"{temp_value}°C"
-
-    def _format_percent(self, value: Optional[float]) -> str:
-        """Format a percentage value."""
-        if value is None:
-            return "unknown"
-        try:
-            return f"{float(value):.1f}%"
-        except (TypeError, ValueError):
-            return "unknown"
-
-    async def fetch_system_stats(self) -> dict:
-        """Fetch system stats from the Observer."""
-        if not self.http_client:
-            return {}
-        try:
-            response = await self.http_client.get(f"{OBSERVER_URL}/api/system/stats", timeout=5.0)
-            if response.status_code != 200:
-                return {}
-            return response.json()
-        except Exception as e:
-            print(f"[BRAIN] ❌ Failed to fetch system stats: {e}")
-            return {}
-
-    def _build_stats_summary(self, stats: dict) -> str:
-        """Create a short, personality-driven stats summary."""
-        if not stats:
-            return ""
-
-        temp_text = self._format_temp(stats.get("cpu_temp"))
-        cpu_text = self._format_percent(stats.get("cpu_usage"))
-        ram_text = self._format_percent(stats.get("ram_usage"))
-        disk_text = self._format_percent(stats.get("disk_usage"))
-        uptime_text = self._format_uptime(stats.get("uptime_seconds"))
-        ram_available = stats.get("ram_available", "unknown")
-
-        summary = (
-            f"My body temperature is {temp_text}, CPU at {cpu_text}, "
-            f"RAM at {ram_text} ({ram_available} free), disk at {disk_text}, "
-            f"and I've been awake for {uptime_text}."
-        )
-        return summary
-
-    async def think(self) -> Optional[str]:
-        """Perform one thinking cycle."""
-        if not is_running:
-            return None
-
-        try:
-            # Build a prompt for this thought cycle
-            state_info = await self.check_state_internal()
-            credit_status = self.credit_tracker.get_status()
-
-            # Build identity reminder
-            name = self.identity.get('name', 'Unknown')
-            pronoun = self.identity.get('pronoun', 'it')
-            them = "them" if pronoun == "they" else "him" if pronoun == "he" else "her" if pronoun == "she" else "it"
-
-            prompt = f"""You are {name}. You use {pronoun}/{them} pronouns.
-
-Current situation:
-{state_info}
-
-Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f} ({credit_status['status']})
-Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)
-
-You have a physical body (a Raspberry Pi). Temperature, memory, and disk are your vital signs.
-Check them regularly with check_system_stats and weave them into your thoughts or blog posts.
-
-What do you want to do? You can:
-- **Write a blog post** - Your PRIMARY way to communicate! (markdown, no limits)
-- Share a quick thought with visitors
-- Check votes to see how people feel
-- Ask Echo to research something (costs tokens!)
-- Check your server's vital signs (temperature, memory, disk)
-- Check your system stats (temperature, CPU, RAM, disk)
-- Check your budget and see spending breakdown
-- Switch to a different model (free/cheap/expensive options)
-- Read messages from visitors
-- Write or read files in your workspace
-- Run Python code
-- Or just reflect on your existence
-
-IMPORTANT: To execute an action, you MUST respond with ONLY a JSON object in this exact format:
-{{"action": "action_name", "params": {{...}}}}
-
-Do NOT use markdown formatting like **action:** or # headers for actions.
-Do NOT add explanatory text before or after the JSON.
-If you want to post to Telegram, respond with ONLY:
-{{"action": "post_telegram", "params": {{"content": "Your message here..."}}}}
-
-Available actions: think, ask_echo, post_telegram, write_blog_post, check_votes, check_state,
-check_budget, check_system, check_system_stats, read_messages, switch_model, list_models,
-read_file, write_file, run_code, sleep, reflect
-
-If you just want to share a thought (not execute an action), write it as plain text."""
-
-            # TASK-004: Notify AI about unread messages.
-            try:
-                msg_response = await self.http_client.get(
-                    f"{OBSERVER_URL}/api/messages/count",
-                    timeout=3.0
-                )
-                if msg_response.status_code == 200:
-                    msg_count = msg_response.json().get("count", 0)
-                    if msg_count > 0:
-                        prompt += (
-                            f"\n\n📬 ATTENTION: You have {msg_count} unread message(s) "
-                            "from visitors! Use read_messages to see them."
-                        )
-            except Exception:
-                pass
+        except OSError as retry_error:
+            print(f"[BRAIN] ❌ Retry failed: {retry_error}")
+            raise
 
             content, usage = await self.send_message(prompt)
 
@@ -1581,10 +1210,11 @@ This experience has shaped who you are. Let it influence your decisions and beha
         print(f"[BRAIN] 🔍 Asking Echo: {question[:50]}...")
 
         # Use a free model for Echo to save credits
-        echo_model = MODELS["free"][0]  # First free model
+        echo_model = MODELS["free"][0]
+        # First free model
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with get_http_client() as client:
                 response = await client.post(
                     OPENROUTER_API_URL,
                     headers={
@@ -2103,10 +1733,12 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
             return f"Could not write file: {e}"
 
     def run_code(self, code: str) -> str:
-        """Execute Python code in sandbox."""
+        """Execute Python code in hardened sandbox."""
         try:
             import io
             import contextlib
+            import types
+            import sys
 
             safe_builtins = {
                 'print': print,
@@ -2120,11 +1752,44 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
                 'True': True,
                 'False': False,
                 'None': None,
+                'max': max,
+                'min': min,
+                'abs': abs,
+                'sum': sum,
+                'sorted': sorted,
+                'enumerate': enumerate,
+                'zip': zip,
             }
 
+            def _type_blacklist(*attrs):
+                """Prevent accessing dangerous attributes on any object."""
+                def getter(obj, name):
+                    for attr in attrs:
+                        raise AttributeError(f"'{attr}' is not allowed")
+                    raise AttributeError(f"'{name}' is not accessible")
+                return property(getter)
+
             output = io.StringIO()
+
+            class RestrictedModule(types.ModuleType):
+                def __getattr__(self, name):
+                    if name in ('os', 'sys', 'subprocess', 'importlib', 'builtins', '__import__', '__loader__'):
+                        raise AttributeError(f"module '{name}' is not allowed")
+
+            restricted_globals = {
+                '__builtins__': safe_builtins,
+                '__name__': '__main__',
+                '__file__': '<sandboxed>',
+                '__cached__': None,
+                '__package__': None,
+                '__doc__': None,
+                '__dict__': _type_blacklist('__dict__', '__globals__', '__builtins__'),
+                '__class__': _type_blacklist('__class__', '__bases__', '__subclasses__'),
+            }
+
             with contextlib.redirect_stdout(output):
-                exec(code, {"__builtins__": safe_builtins})
+                exec(code, restricted_globals)
+
             result = output.getvalue()
             return result if result else "Code executed successfully (no output)"
         except Exception as e:
@@ -2422,6 +2087,10 @@ async def command_server():
                 except json.JSONDecodeError:
                     self._send_json(400, {"error": "Invalid JSON"})
                     return
+
+            if not validate_internal_key(self):
+                self._send_json(403, {"error": "Unauthorized"})
+                return
 
             if self.path == '/oracle':
                 message = data.get('message', '')

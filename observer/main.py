@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sse_starlette.sse import EventSourceResponse
+from fastapi_csrf_protect import CsrfProtect
 import aiosqlite
 import httpx
 import markdown2
@@ -49,6 +50,17 @@ app = FastAPI(
 
 # Templates and static files
 templates = Jinja2Templates(directory="templates")
+
+# Shared HTTP client for API calls
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+async def get_http_client() -> httpx.AsyncClient:
+    """Get or create shared HTTP client singleton."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=60.0)
+    return _http_client
 
 # Add Prague timezone filter (UTC+1)
 def to_prague_time(utc_time_str):
@@ -224,10 +236,7 @@ def require_local_network(request: Request):
 
 
 def require_admin(request: Request):
-    """Allow local requests, require admin token otherwise."""
-    if is_local_request(request):
-        return
-
+    """Require admin token for God Mode endpoints (no local network bypass)."""
     if not ADMIN_TOKEN:
         raise HTTPException(status_code=500, detail="Admin token not configured")
 
@@ -761,8 +770,8 @@ def sanitize_log(text: str) -> str:
 
 @app.post("/api/kill")
 async def kill_ai(request: Request, background_tasks: BackgroundTasks):
-    """Kill the AI (manual death by creator - local network only)."""
-    require_local_network(request)
+    """Kill the AI (manual death by creator - admin only)."""
+    require_admin(request)
     data = await request.json()
     cause = data.get("cause", "manual_kill")
 
@@ -778,8 +787,8 @@ async def kill_ai(request: Request, background_tasks: BackgroundTasks):
 
 @app.post("/api/respawn")
 async def respawn_ai(request: Request):
-    """Force respawn (for testing - local network only)."""
-    require_local_network(request)
+    """Force respawn (for testing - admin only)."""
+    require_admin(request)
     state = await db.get_current_state()
     if state.get("is_alive"):
         return {"success": False, "message": "AI is still alive"}
@@ -795,8 +804,8 @@ async def respawn_ai(request: Request):
 
 @app.post("/api/force-alive")
 async def force_alive(request: Request):
-    """Force mark AI as alive without restarting (God mode emergency fix - local network only)."""
-    require_local_network(request)
+    """Force mark AI as alive without restarting (admin only)."""
+    require_admin(request)
 
     # Get current AI state
     try:
@@ -1196,8 +1205,8 @@ async def get_god_messages(request: Request):
 
 
 @app.post("/api/god/votes/adjust")
-async def adjust_vote_counters(request: Request):
-    """Manually adjust vote counters (God Mode only)."""
+async def god_adjust_votes(request: Request):
+    """Manually adjust vote counts (admin only)."""
     require_admin(request)
     data = await request.json()
     live_count = data.get("live", 0)

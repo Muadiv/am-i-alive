@@ -13,10 +13,6 @@ import random
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/observer.db")
 MEMORIES_PATH = os.getenv("MEMORIES_PATH", "/app/memories")
 
-
-async def init_db():
-    """Initialize the database with required tables."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
         # Votes table - current voting window
         await db.execute("""
             CREATE TABLE IF NOT EXISTS votes (
@@ -26,6 +22,12 @@ async def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 window_id INTEGER NOT NULL
             )
+        """)
+
+        # Indexes for performance optimization
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_votes_window
+            ON votes(window_id, ip_hash)
         """)
 
         # Voting windows
@@ -83,6 +85,12 @@ async def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 tokens_used INTEGER DEFAULT 0
             )
+        """)
+
+        # Indexes for performance optimization
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_thoughts_life
+            ON thoughts(life_number, timestamp DESC)
         """)
 
         # Live activity log (sanitized for public display)
@@ -182,6 +190,12 @@ async def init_db():
             )
         """)
 
+        # Indexes for performance optimization
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_visitor_messages_ip
+            ON visitor_messages(ip_hash)
+        """)
+
         # Migration: Add ip_hash column if it doesn't exist
         try:
             cursor = await db.execute("PRAGMA table_info(visitor_messages)")
@@ -272,13 +286,13 @@ async def init_db():
 
 async def get_current_state() -> dict:
     """Get the current state of the AI."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM current_state WHERE id = 1") as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
-            return {"life_number": 0, "is_alive": False}
+    if not _db_connection:
+        raise RuntimeError("Database not initialized. Call init_db() first")
+    async with _db_connection.execute("SELECT * FROM current_state WHERE id = 1") as cursor:
+        row = await cursor.fetchone()
+        if row:
+            return dict(row)
+        return {"life_number": 0, "is_alive": False}
 
 
 
@@ -965,6 +979,8 @@ async def can_send_message(ip_hash: str) -> tuple[bool, Optional[int]]:
             return True, None
 
         last_message_time = datetime.fromisoformat(row[0])
+        if last_message_time.tzinfo is None:
+            last_message_time = last_message_time.replace(tzinfo=timezone.utc)
         time_since = datetime.now(timezone.utc) - last_message_time
         cooldown_seconds = 3600  # 1 hour
 

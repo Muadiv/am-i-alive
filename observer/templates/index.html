@@ -337,18 +337,37 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ from_name: fromName, message: message })
                 });
-                const data = await response.json();
 
-                statusEl.textContent = data.message;
-                statusEl.className = 'message-status ' + (data.success ? 'success' : 'error');
+                let data = null;
+                let rawText = '';
+                const contentType = response.headers.get('content-type') || '';
 
-                if (data.success) {
-                    document.getElementById('message-text').value = '';
-                    document.getElementById('char-count').textContent = '0';
-                    updateMessageCount();
+                if (contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    rawText = await response.text();
                 }
+
+                if (!response.ok) {
+                    const errorMessage = (data && (data.message || data.detail))
+                        || rawText
+                        || response.statusText
+                        || 'Failed to send message';
+                    statusEl.textContent = errorMessage;
+                    statusEl.className = 'message-status error';
+                    return;
+                }
+
+                const successMessage = (data && data.message) ? data.message : 'Message sent to the AI';
+                statusEl.textContent = successMessage;
+                statusEl.className = 'message-status success';
+
+                document.getElementById('message-text').value = '';
+                document.getElementById('char-count').textContent = '0';
+                updateMessageCount();
             } catch (error) {
-                statusEl.textContent = 'Error sending message';
+                const detail = error && error.message ? error.message : 'Unknown error';
+                statusEl.textContent = `Error sending message: ${detail}`;
                 statusEl.className = 'message-status error';
             }
         }

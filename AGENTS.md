@@ -121,6 +121,17 @@ Before implementing, determine:
 - Could this cause data loss or state corruption?
 - Is this a breaking change to the API?
 
+### 4. Standard Workflow (Required)
+
+Always follow this order for changes:
+1. Update code locally.
+2. Run tests (or note why you could not).
+3. Commit and push to GitHub.
+4. Deploy to DietPi via `sudo -u amialive git pull`.
+5. Restart affected services (`amialive-observer`, `amialive-ai`).
+
+Avoid hotfixing production files directly unless explicitly requested.
+
 ---
 
 ## Project Architecture
