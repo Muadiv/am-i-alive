@@ -38,7 +38,7 @@ class CreditTracker:
                     data['current_balance_usd'] = self.monthly_budget
                     data['reset_date'] = self.get_next_reset_date()
                     data['usage_monthly'] = 0
-                    self.save_data(data)
+                    self.save_if_changed(data)
 
                 needs_save = False
                 if "current_life_number" not in data:
@@ -63,7 +63,7 @@ class CreditTracker:
 
                 data = self.ensure_usage_fields(data)
                 if needs_save:
-                    self.save_data(data)
+                    self.save_if_changed(data)
                 return data
             except Exception as e:
                 print(f"[CREDITS] Error loading credits file: {e}")
@@ -214,7 +214,7 @@ class CreditTracker:
         if len(self.data['usage_history']) > 100:
             self.data['usage_history'] = self.data['usage_history'][-100:]
 
-        self.save_data(self.data)
+        self.save_if_changed(self.data)
 
         # Check status
         balance = self.data['current_balance_usd']
@@ -376,6 +376,11 @@ class CreditTracker:
     def save(self):
         """Save current data."""
         self.save_data(self.data)
+
+    def save_if_changed(self, data: Dict):
+        if data != self.data:
+            self.save_data(data)
+            self.data = data
 
     def increment_life(self):
         """Increment life counter (called on respawn)."""

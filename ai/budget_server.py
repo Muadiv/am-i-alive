@@ -8,7 +8,15 @@ import threading
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+from credit_tracker import CreditTracker
+
 CREDITS_FILE = "/app/credits/balance.json"
+
+_cache_lock = threading.Lock()
+_cached_payload = None
+_cached_at = None
+_cache_ttl_seconds = 5
+_credit_tracker = CreditTracker()
 
 
 class BudgetHandler(BaseHTTPRequestHandler):
@@ -20,147 +28,44 @@ class BudgetHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests."""
+        global _cached_payload, _cached_at
         if self.path == "/budget":
             try:
-                # Load budget data
-                with open(CREDITS_FILE, 'r') as f:
-                    data = json.load(f)
+                now = datetime.now(timezone.utc)
+                with _cache_lock:
+                    if _cached_payload and _cached_at:
+                        age = (now - _cached_at).total_seconds()
+                        if age < _cache_ttl_seconds:
+                            self.send_response(200)
+                            self.send_header('Content-Type', 'application/json')
+                            self.end_headers()
+                            self.wfile.write(json.dumps(_cached_payload).encode())
+                            return
 
-                # Calculate derived stats
-                total_tokens = sum(entry.get('total_tokens', 0) for entry in data.get('usage_history', []))
-                budget = data.get('monthly_budget_usd', 5.0)
-                balance = data.get('current_balance_usd', budget)
-                spent = budget - balance
-                remaining_percent = (balance / budget * 100) if budget > 0 else 0
+                data = _credit_tracker.get_status()
 
-                # Determine status
-                if remaining_percent > 75:
-                    status = "comfortable"
-                elif remaining_percent > 50:
-                    status = "moderate"
-                elif remaining_percent > 25:
-                    status = "cautious"
-                elif remaining_percent > 0:
-                    status = "critical"
-                else:
-                    status = "bankrupt"
-
-                # Calculate days until reset
-                try:
-                    reset_date = datetime.fromisoformat(data.get('reset_date', '2000-01-01'))
-                    days_until_reset = max(0, (reset_date - datetime.now(timezone.utc)).days)
-                except (TypeError, ValueError):
-                    days_until_reset = 0
-
-                # Get top models by spending
-                usage_by_model = data.get('usage_by_model', {})
-                top_models = [
-                    {"model": model, "cost": cost}
-                    for model, cost in sorted(usage_by_model.items(), key=lambda x: x[1], reverse=True)[:5]
-                ]
-
-                # BE-002: Aggregate token usage by model for detailed reporting
-                usage_history = data.get('usage_history', [])
-                models = {}
-                total_input_tokens = 0
-                total_output_tokens = 0
-                total_cost = 0.0
-
-                for entry in usage_history:
-                    model_id = entry.get('model', 'unknown')
-                    input_tokens = int(entry.get('input_tokens', 0) or 0)
-                    output_tokens = int(entry.get('output_tokens', 0) or 0)
-                    cost_usd = float(entry.get('cost_usd', 0) or 0)
-
-                    if model_id not in models:
-                        models[model_id] = {
-                            "input_tokens": 0,
-                            "output_tokens": 0,
-                            "cost": 0.0
-                        }
-
-                    models[model_id]["input_tokens"] += input_tokens
-                    models[model_id]["output_tokens"] += output_tokens
-                    models[model_id]["cost"] += cost_usd
-
-                    total_input_tokens += input_tokens
-                    total_output_tokens += output_tokens
-                    total_cost += cost_usd
-
-                models_list = []
-                for model_id, stats in models.items():
-                    model_total_tokens = stats["input_tokens"] + stats["output_tokens"]
-                    models_list.append({
-                        "model": model_id,
-                        "input_tokens": stats["input_tokens"],
-                        "output_tokens": stats["output_tokens"],
-                        "total_tokens": model_total_tokens,
-                        "cost": round(stats["cost"], 6)
-                    })
-
-                models_list.sort(key=lambda item: item["total_tokens"], reverse=True)
-
-                current_life_usage = data.get("current_life_usage") or {}
-                current_life_number = current_life_usage.get(
-                    "life_number",
-                    data.get("current_life_number", data.get("total_lives", 0))
-                )
-                if current_life_usage:
-                    current_life_input = int(current_life_usage.get("input_tokens", 0) or 0)
-                    current_life_output = int(current_life_usage.get("output_tokens", 0) or 0)
-                    current_life_cost = float(current_life_usage.get("total_cost", 0.0) or 0.0)
-                else:
-                    current_life_input = total_input_tokens
-                    current_life_output = total_output_tokens
-                    current_life_cost = total_cost
-
-                all_time_usage = data.get("all_time_usage") or {}
-                if all_time_usage:
-                    all_time_input = int(all_time_usage.get("input_tokens", 0) or 0)
-                    all_time_output = int(all_time_usage.get("output_tokens", 0) or 0)
-                    all_time_cost = float(all_time_usage.get("total_cost", 0.0) or 0.0)
-                else:
-                    all_time_input = total_input_tokens
-                    all_time_output = total_output_tokens
-                    all_time_cost = total_cost
-
-                # Build response
                 response_data = {
-                    "budget": budget,
-                    "balance": balance,
-                    "spent_this_month": spent,
-                    "remaining_percent": remaining_percent,
-                    "status": status,
-                    "reset_date": data.get('reset_date', 'unknown'),
-                    "days_until_reset": days_until_reset,
-                    "lives": data.get('total_lives', 0),
-                    "total_tokens": total_tokens,
-                    "top_models": top_models,
-                    "models": models_list,  # BE-002: Detailed token breakdown
-                    "totals": {  # BE-002: Total token usage summary (CURRENT CONTEXT - last 100 calls)
-                        "total_input_tokens": total_input_tokens,
-                        "total_output_tokens": total_output_tokens,
-                        "total_tokens": total_input_tokens + total_output_tokens,
-                        "total_cost": round(total_cost, 6)
-                    },
-                    "current_life": {
-                        "life_number": int(current_life_number or 0),
-                        "total_input_tokens": current_life_input,
-                        "total_output_tokens": current_life_output,
-                        "total_tokens": current_life_input + current_life_output,
-                        "total_cost": round(current_life_cost, 6)
-                    },
-                    "all_time": {  # All-time totals across entire project
-                        "total_input_tokens": all_time_input,
-                        "total_output_tokens": all_time_output,
-                        "total_tokens": all_time_input + all_time_output,
-                        "total_cost": round(all_time_cost, 6),
-                        "total_lives": data.get('total_lives', 0)
-                    },
+                    "budget": data.get("budget", data.get("monthly_budget_usd", 5.0)),
+                    "balance": data.get("balance", data.get("current_balance_usd", 0.0)),
+                    "spent_this_month": data.get("spent_this_month", 0.0),
+                    "remaining_percent": data.get("remaining_percent", 0.0),
+                    "status": data.get("status", "unknown"),
+                    "reset_date": data.get("reset_date", "unknown"),
+                    "days_until_reset": data.get("days_until_reset", 0),
+                    "lives": data.get("total_lives", data.get("total_lives", 0)),
+                    "total_tokens": data.get("total_tokens", 0),
+                    "top_models": data.get("top_models", []),
+                    "models": data.get("models", []),
+                    "totals": data.get("totals", {}),
+                    "current_life": data.get("current_life", {}),
+                    "all_time": data.get("all_time", {}),
                     "error": False
                 }
 
-                # Send response
+                with _cache_lock:
+                    _cached_payload = response_data
+                    _cached_at = now
+
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
