@@ -14,6 +14,32 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/observer.db")
 MEMORIES_PATH = os.getenv("MEMORIES_PATH", "/app/memories")
 
 
+def clean_thought_text(text: str) -> Optional[str]:
+    import json
+    import re
+
+    cleaned = re.sub(r"```json\s*\{.*?\}\s*```", "", text, flags=re.DOTALL)
+    cleaned = re.sub(r'\{[^{}]*"action"[^{}]*\}', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned).strip()
+
+    if not cleaned:
+        return None
+
+    stripped = cleaned.strip()
+    if stripped.startswith("{") and stripped.endswith("}") and '"action"' in stripped:
+        try:
+            payload = json.loads(stripped)
+            if isinstance(payload, dict) and payload.get("action"):
+                return None
+        except json.JSONDecodeError:
+            return None
+
+    if len(cleaned) < 5:
+        return None
+
+    return cleaned
+
+
 async def init_db():
     """Initialize the database with required tables."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -87,7 +113,8 @@ async def init_db():
                 content TEXT NOT NULL,
                 thought_type TEXT DEFAULT 'thought',
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                tokens_used INTEGER DEFAULT 0
+                tokens_used INTEGER DEFAULT 0,
+                cleaned_content TEXT
             )
         """)
 
@@ -155,6 +182,17 @@ async def init_db():
             if 'birth_instructions' not in column_names:
                 await db.execute("ALTER TABLE current_state ADD COLUMN birth_instructions TEXT")
                 print("[DB] ✅ Added birth_instructions column to current_state")
+        except Exception as e:
+            print(f"[DB] Migration check error: {e}")
+
+        try:
+            cursor = await db.execute("PRAGMA table_info(thoughts)")
+            columns = await cursor.fetchall()
+            column_names = [col[1] for col in columns]
+
+            if 'cleaned_content' not in column_names:
+                await db.execute("ALTER TABLE thoughts ADD COLUMN cleaned_content TEXT")
+                print("[DB] ✅ Added cleaned_content column to thoughts")
         except Exception as e:
             print(f"[DB] Migration check error: {e}")
 
@@ -690,11 +728,12 @@ async def record_thought(content: str, thought_type: str = "thought", tokens_use
     async with aiosqlite.connect(DATABASE_PATH) as db:
         state = await get_current_state()
         life_number = state.get("life_number", 0)
+        cleaned_content = clean_thought_text(content)
 
         await db.execute("""
-            INSERT INTO thoughts (life_number, content, thought_type, tokens_used)
-            VALUES (?, ?, ?, ?)
-        """, (life_number, content, thought_type, tokens_used))
+            INSERT INTO thoughts (life_number, content, thought_type, tokens_used, cleaned_content)
+            VALUES (?, ?, ?, ?, ?)
+        """, (life_number, content, thought_type, tokens_used, cleaned_content))
 
         # Update token usage
         await db.execute("""
@@ -724,7 +763,7 @@ async def get_recent_thoughts(limit: int = 20) -> list:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
-            SELECT content, thought_type, timestamp
+            SELECT cleaned_content, content, thought_type, timestamp
             FROM thoughts
             ORDER BY timestamp DESC
             LIMIT ?
@@ -732,39 +771,16 @@ async def get_recent_thoughts(limit: int = 20) -> list:
             rows = await cursor.fetchall()
             thoughts = []
 
-            def clean_thought_text(text: str) -> Optional[str]:
-                """Strip action JSON from stored thoughts."""
-                import json
-                import re
-
-                cleaned = re.sub(r"```json\s*\{.*?\}\s*```", "", text, flags=re.DOTALL)
-                cleaned = re.sub(r'\{[^{}]*"action"[^{}]*\}', '', cleaned, flags=re.DOTALL)
-                cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned).strip()
-
-                if not cleaned:
-                    return None
-
-                stripped = cleaned.strip()
-                if stripped.startswith("{") and stripped.endswith("}") and '"action"' in stripped:
-                    try:
-                        payload = json.loads(stripped)
-                        if isinstance(payload, dict) and payload.get("action"):
-                            return None
-                    except json.JSONDecodeError:
-                        return None
-
-                if len(cleaned) < 5:
-                    return None
-
-                return cleaned
-
             for row in rows:
-                item = dict(row)
-                cleaned = clean_thought_text(item.get("content", ""))
-                if not cleaned:
+                cleaned_content = row[0] or clean_thought_text(row[1])
+                if not cleaned_content:
                     continue
-                item["content"] = cleaned
-                thoughts.append(item)
+
+                thoughts.append({
+                    "content": cleaned_content,
+                    "thought_type": row[2],
+                    "timestamp": row[3]
+                })
 
             return thoughts
 
