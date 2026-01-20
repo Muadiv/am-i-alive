@@ -6,6 +6,7 @@ from fastapi import FastAPI
 import uvicorn
 
 from credit_tracker import CreditTracker
+from budget_aggregator import aggregate_usage
 
 
 _cache_lock = threading.Lock()
@@ -19,7 +20,9 @@ app = FastAPI()
 
 def _build_response() -> dict:
     data = _credit_tracker.get_status()
-    totals = data.get("totals", {})
+    usage_history = _credit_tracker.data.get("usage_history", [])
+    models, totals, _, _, _ = aggregate_usage(usage_history)
+
     response_data = {
         "budget": data.get("budget", data.get("monthly_budget_usd", 5.0)),
         "balance": data.get("balance", data.get("current_balance_usd", 0.0)),
@@ -31,7 +34,7 @@ def _build_response() -> dict:
         "lives": data.get("lives", data.get("total_lives", 0)),
         "total_tokens": totals.get("total_tokens", 0),
         "top_models": data.get("top_models", []),
-        "models": data.get("models", []),
+        "models": models,
         "totals": totals,
         "current_life": data.get("current_life", {}),
         "all_time": data.get("all_time", {}),
