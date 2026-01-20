@@ -13,6 +13,10 @@ import random
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/observer.db")
 MEMORIES_PATH = os.getenv("MEMORIES_PATH", "/app/memories")
 
+
+async def init_db():
+    """Initialize the database with required tables."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
         # Votes table - current voting window
         await db.execute("""
             CREATE TABLE IF NOT EXISTS votes (
@@ -286,13 +290,13 @@ MEMORIES_PATH = os.getenv("MEMORIES_PATH", "/app/memories")
 
 async def get_current_state() -> dict:
     """Get the current state of the AI."""
-    if not _db_connection:
-        raise RuntimeError("Database not initialized. Call init_db() first")
-    async with _db_connection.execute("SELECT * FROM current_state WHERE id = 1") as cursor:
-        row = await cursor.fetchone()
-        if row:
-            return dict(row)
-        return {"life_number": 0, "is_alive": False}
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM current_state WHERE id = 1") as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            return {"life_number": 0, "is_alive": False}
 
 
 

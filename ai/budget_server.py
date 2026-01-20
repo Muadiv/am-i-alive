@@ -49,7 +49,7 @@ class BudgetHandler(BaseHTTPRequestHandler):
                 try:
                     reset_date = datetime.fromisoformat(data.get('reset_date', '2000-01-01'))
                     days_until_reset = max(0, (reset_date - datetime.now(timezone.utc)).days)
-                except:
+                except (TypeError, ValueError):
                     days_until_reset = 0
 
                 # Get top models by spending

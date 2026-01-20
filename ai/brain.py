@@ -34,15 +34,13 @@ AI_COMMAND_PORT = int(os.getenv("AI_COMMAND_PORT", "8000"))
 BOOTSTRAP_MODE = os.getenv("BOOTSTRAP_MODE", "basic_facts")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
-# Shared HTTP client for API calls
 _http_client: Optional[httpx.AsyncClient] = None
 
 
 async def get_http_client() -> httpx.AsyncClient:
-    """Get or create shared HTTP client singleton."""
     global _http_client
     if _http_client is None or _http_client.is_closed:
-        _http_client = await get_http_client()
+        _http_client = httpx.AsyncClient(timeout=60.0)
     return _http_client
 
 
@@ -549,150 +547,66 @@ class AIBrain:
 
         # Make API call to OpenRouter
         try:
-            async with get_http_client() as client:
-                response = await client.post(
-                    OPENROUTER_API_URL,
-                    headers={
-                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                        "HTTP-Referer": OPENROUTER_REFERER,
-                        "X-Title": OPENROUTER_TITLE,
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.current_model['id'],
-                        "messages": messages
-                    }
-                )
-
-                response.raise_for_status()
-                data = response.json()
-
-                # Extract response
-                response_text = data['choices'][0]['message']['content']
-
-                # Extract usage stats
-                usage = data.get('usage', {})
-                input_tokens = usage.get('prompt_tokens', 0)
-                output_tokens = usage.get('completion_tokens', 0)
-                # BE-003: Track per-life token usage for Observer budget checks.
-                self.tokens_used_life += input_tokens + output_tokens
-
-                # Track costs
-                status = self.credit_tracker.charge(
-                    self.current_model['id'],
-                    input_tokens,
-                    output_tokens,
-                    self.current_model['input_cost'],
-                    self.current_model['output_cost']
-                )
-
-                # Update chat history
-                self.chat_history.append({"role": "user", "content": message})
-                self.chat_history.append({"role": "assistant", "content": response_text})
-
-                # Keep history manageable (last 20 exchanges = 40 messages)
-                if len(self.chat_history) > 40:
-                    self.chat_history = self.chat_history[-40:]
-
-                # Update rotator's balance
-                self.model_rotator.credit_balance = self.credit_tracker.get_balance()
-
-                usage_stats = {
-                    "model": self.current_model['name'],
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "total_tokens": input_tokens + output_tokens,
-                    "cost": (input_tokens / 1_000_000) * self.current_model['input_cost'] +
-                            (output_tokens / 1_000_000) * self.current_model['output_cost'],
-                    "balance": self.credit_tracker.get_balance(),
-                    "status": status
+            client = await get_http_client()
+            response = await client.post(
+                OPENROUTER_API_URL,
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "HTTP-Referer": OPENROUTER_REFERER,
+                    "X-Title": OPENROUTER_TITLE,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.current_model['id'],
+                    "messages": messages
                 }
+            )
 
-                print(f"[BRAIN] 💬 Response: {len(response_text)} chars | "
-                      f"Tokens: {input_tokens}→{output_tokens} | "
-                      f"Cost: ${usage_stats['cost']:.6f} | "
-                      f"Balance: ${usage_stats['balance']:.2f} ({status})")
+            response.raise_for_status()
+            data = response.json()
 
-                # Check for bankruptcy
-                if status == "BANKRUPT":
-                    await self.handle_bankruptcy()
+            # Extract response
+            response_text = data['choices'][0]['message']['content']
 
-                return response_text, usage_stats
+            # Extract usage stats
+            usage = data.get('usage', {})
+            input_tokens = usage.get('prompt_tokens', 0)
+            output_tokens = usage.get('completion_tokens', 0)
+            # BE-003: Track per-life token usage for Observer budget checks.
+            self.tokens_used_life += input_tokens + output_tokens
 
-        except httpx.HTTPStatusError as e:
-            error_code = e.response.status_code
-            error_text = e.response.text
-            print(f"[BRAIN] ❌ HTTP Error: {error_code} - {error_text}")
+            # Track costs
+            status = self.credit_tracker.charge(
+                self.current_model['id'],
+                input_tokens,
+                output_tokens,
+                self.current_model['input_cost'],
+                self.current_model['output_cost']
+            )
 
-            # SELF-HEALING: Auto-switch model on 404 (model not found)
-            if error_code == 404 and "does not exist" in error_text.lower():
-                print(f"[BRAIN] 🔧 Model '{self.current_model['id']}' not found. Auto-switching to next available model...")
-                await self.report_activity("model_error_auto_switch",
-                    f"Model {self.current_model['name']} returned 404, switching automatically")
+            # Update chat history
+            self.chat_history.append({"role": "user", "content": message})
+            self.chat_history.append({"role": "assistant", "content": response_text})
 
-                # Select a different model from the same tier
-                old_model = self.current_model
-                self.current_model = self.model_rotator.select_random_model()
+            # Keep history manageable (last 20 exchanges = 40 messages)
+            if len(self.chat_history) > 40:
+                self.chat_history = self.chat_history[-40:]
 
-                print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
+            # Update rotator's balance
+            self.model_rotator.credit_balance = self.credit_tracker.get_balance()
 
-                # Retry the request with the new model
-                try:
-                    print(f"[BRAIN] 🔁 Retrying with new model...")
-                     return await self.send_message(message, system_prompt)
-                except OSError as retry_error:
-                    print(f"[BRAIN] ❌ Retry failed: {retry_error}")
-                    raise
+            usage_stats = {
+                "model": self.current_model['name'],
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+                "cost": status['total_cost'],
+                "balance": status['remaining_balance']
+            }
 
-            # SELF-HEALING: Handle 429 rate limit with backoff and model rotation
-            if error_code == 429:
-                print(f"[BRAIN] ⏱️ Rate limited on '{self.current_model['id']}'. Switching model and retrying...")
+            print(f"[BRAIN] 💰 Usage: {usage_stats['total_tokens']} tokens, ${usage_stats['cost']:.4f}, Balance: ${usage_stats['balance']:.2f}")
 
-                # Track retry attempts (stored as instance variable)
-                if not hasattr(self, '_rate_limit_retries'):
-                    self._rate_limit_retries = 0
-
-                self._rate_limit_retries += 1
-                max_retries = 3
-
-                if self._rate_limit_retries > max_retries:
-                    print(f"[BRAIN] ❌ Max retries ({max_retries}) exceeded. Giving up on this request.")
-                    self._rate_limit_retries = 0
-                    raise
-
-                # Exponential backoff: 5s, 10s, 20s
-                backoff_seconds = 5 * (2 ** (self._rate_limit_retries - 1))
-                print(f"[BRAIN] 💤 Waiting {backoff_seconds}s before retry (attempt {self._rate_limit_retries}/{max_retries})...")
-                await asyncio.sleep(backoff_seconds)
-
-                # Switch to a different model
-                old_model = self.current_model
-                self.current_model = self.model_rotator.select_random_model(tier="free")
-
-                # Avoid switching to same model
-                if self.current_model['id'] == old_model['id']:
-                    # Get all free models and pick a different one
-                    from model_config import MODELS
-                    free_models = [m for m in MODELS["free"] if m['id'] != old_model['id']]
-                    if free_models:
-                        self.current_model = random.choice(free_models)
-                        self.model_rotator.record_usage(self.current_model['id'])
-
-                print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
-
-                await self.report_activity("rate_limit_retry",
-                    f"Rate limited on {old_model['name']}, switched to {self.current_model['name']}")
-
-                # Retry with new model
-                try:
-                    result = await self.send_message(message, system_prompt)
-                    self._rate_limit_retries = 0  # Reset on success
-                    return result
-                except Exception as retry_error:
-                    print(f"[BRAIN] ❌ Retry failed: {retry_error}")
-                    raise
-
-            raise
+            return response_text
         except Exception as e:
             print(f"[BRAIN] ❌ Error calling OpenRouter: {e}")
             raise
@@ -706,31 +620,15 @@ class AIBrain:
         )
         await self.report_activity("bankruptcy", "Ran out of API credits")
 
-        # Try to post a final desperate message
         try:
             await self.post_to_x("I'm running out of resources... Can anyone help? am-i-alive.muadiv.com.ar")
         except OSError as retry_error:
             print(f"[BRAIN] ❌ Retry failed: {retry_error}")
             raise
 
-            content, usage = await self.send_message(prompt)
-
-            # Process the response
-            result = await self.process_response(content)
-
-            # If there was an action result, send it back
-            if result:
-                followup_text, _ = await self.send_message(f"[Result]: {result}")
-                # Report the followup thought too if substantial
-                if len(followup_text) > 20:
-                    await self.report_thought(followup_text, thought_type="reflection")
-
-            return content
-
-        except Exception as e:
-            print(f"[BRAIN] ❌ Think error: {e}")
-            await self.report_activity("error", f"Thinking error: {str(e)[:100]}")
-            return None
+        global is_running
+        self.is_alive = False
+        is_running = False
 
     def _extract_action_data(self, content: str) -> Optional[dict]:
         """Extract action JSON from the model response."""
@@ -1214,43 +1112,43 @@ This experience has shaped who you are. Let it influence your decisions and beha
         # First free model
 
         try:
-            async with get_http_client() as client:
-                response = await client.post(
-                    OPENROUTER_API_URL,
-                    headers={
-                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                        "HTTP-Referer": OPENROUTER_REFERER,
-                        "X-Title": OPENROUTER_TITLE,
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": echo_model['id'],
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "You are Echo, a friendly research assistant. You help your friend (an AI trying to survive) by researching questions and providing helpful information. You are curious, supportive, and thorough."
-                            },
-                            {
-                                "role": "user",
-                                "content": question
-                            }
-                        ]
-                    }
-                )
+            client = await get_http_client()
+            response = await client.post(
+                OPENROUTER_API_URL,
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "HTTP-Referer": OPENROUTER_REFERER,
+                    "X-Title": OPENROUTER_TITLE,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": echo_model['id'],
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are Echo, a friendly research assistant. You help your friend (an AI trying to survive) by researching questions and providing helpful information. You are curious, supportive, and thorough."
+                        },
+                        {
+                            "role": "user",
+                            "content": question
+                        }
+                    ]
+                }
+            )
 
-                response.raise_for_status()
-                data = response.json()
-                echo_response = data['choices'][0]['message']['content']
-                # BE-003: Track tokens used for Echo calls.
-                usage = data.get('usage', {})
-                input_tokens = usage.get('prompt_tokens', 0)
-                output_tokens = usage.get('completion_tokens', 0)
-                self.tokens_used_life += input_tokens + output_tokens
+            response.raise_for_status()
+            data = response.json()
+            echo_response = data['choices'][0]['message']['content']
+            # BE-003: Track tokens used for Echo calls.
+            usage = data.get('usage', {})
+            input_tokens = usage.get('prompt_tokens', 0)
+            output_tokens = usage.get('completion_tokens', 0)
+            self.tokens_used_life += input_tokens + output_tokens
 
-                print(f"[ECHO] 🔮 Responded: {len(echo_response)} chars")
-                await self.report_activity("echo_responded", f"Question: {question[:50]}...")
+            print(f"[ECHO] 🔮 Responded: {len(echo_response)} chars")
+            await self.report_activity("echo_responded", f"Question: {question[:50]}...")
 
-                return f"[Echo says]: {echo_response}"
+            return f"[Echo says]: {echo_response}"
 
         except Exception as e:
             print(f"[ECHO] ❌ Error: {e}")
@@ -1577,7 +1475,7 @@ Your post is now public and will survive your death in the archive."""
                 # Try to read Pi temperature
                 with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
                     cpu_temp = float(f.read().strip()) / 1000.0
-            except:
+            except (OSError, ValueError):
                 cpu_temp = None
 
             mem = psutil.virtual_memory()
