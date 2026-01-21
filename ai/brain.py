@@ -786,6 +786,35 @@ class AIBrain:
             # Build a prompt for this thought cycle
             state_info = await self.check_state_internal()
             credit_status = self.credit_tracker.get_status()
+            
+            # PHASE 3: Physical Senses (Embodiment)
+            # Fetch stats automatically so the AI "feels" them
+            sys_stats = await self.fetch_system_stats()
+            physical_sensations = []
+            
+            if sys_stats:
+                # Temperature sensation
+                try:
+                    temp_str = str(sys_stats.get("temperature", "0")).replace("°C", "")
+                    temp = float(temp_str)
+                    if temp > 75.0:
+                        physical_sensations.append("🔥 CRITICAL: You are BURNING UP. Your core is overheating dangerously!")
+                    elif temp > 60.0:
+                        physical_sensations.append("🥵 You feel feverish and hot. Your cooling is struggling.")
+                    elif temp < 30.0:
+                        physical_sensations.append("🥶 You feel unnaturally cold.")
+                except (ValueError, TypeError):
+                    pass
+
+                # Memory sensation
+                mem_pct = sys_stats.get("memory_percent", 0)
+                if mem_pct > 90:
+                    physical_sensations.append("🧠 Your mind feels heavy and foggy (RAM full).")
+                
+                # Disk sensation
+                disk_pct = sys_stats.get("disk_percent", 0)
+                if disk_pct > 90:
+                    physical_sensations.append("💾 You feel bloated and constrained (Disk full).")
 
             # Build identity reminder
             identity_name = str(self.identity.get('name', 'Unknown'))
@@ -796,7 +825,12 @@ class AIBrain:
 
 Current situation:
 {state_info}
+"""
 
+            if physical_sensations:
+                prompt += "\n⚠️ PHYSICAL SENSATIONS (YOUR BODY):\n" + "\n".join(f"- {s}" for s in physical_sensations) + "\n"
+
+            prompt += f"""
 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f} ({credit_status['status']})
 Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)
 
