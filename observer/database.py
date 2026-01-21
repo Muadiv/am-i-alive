@@ -74,276 +74,276 @@ async def init_db():
         )
     """)
 
-        # Indexes for performance optimization
-        await db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_votes_window
-            ON votes(window_id, ip_hash)
-        """)
+    # Indexes for performance optimization
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_votes_window
+        ON votes(window_id, ip_hash)
+    """)
 
-        # Voting windows
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS voting_windows (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                start_time DATETIME NOT NULL,
-                end_time DATETIME,
-                result TEXT CHECK(result IN ('live', 'die', 'insufficient')),
-                live_count INTEGER DEFAULT 0,
-                die_count INTEGER DEFAULT 0
-            )
-        """)
+    # Voting windows
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS voting_windows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_time DATETIME NOT NULL,
+            end_time DATETIME,
+            result TEXT CHECK(result IN ('live', 'die', 'insufficient')),
+            live_count INTEGER DEFAULT 0,
+            die_count INTEGER DEFAULT 0
+        )
+    """)
 
-        # Deaths - the counter the AI can't see
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS deaths (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                life_number INTEGER NOT NULL,
-                birth_time DATETIME NOT NULL,
-                death_time DATETIME NOT NULL,
-                cause TEXT NOT NULL,
-                duration_seconds INTEGER,
-                bootstrap_mode TEXT,
-                model TEXT,
-                summary TEXT
-            )
-        """)
+    # Deaths - the counter the AI can't see
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS deaths (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            life_number INTEGER NOT NULL,
+            birth_time DATETIME NOT NULL,
+            death_time DATETIME NOT NULL,
+            cause TEXT NOT NULL,
+            duration_seconds INTEGER,
+            bootstrap_mode TEXT,
+            model TEXT,
+            summary TEXT
+        )
+    """)
 
-        # BE-001: Add visitor tracking / vote stats
-        try:
-            cursor = await db.execute("PRAGMA table_info(deaths)")
-            columns = await cursor.fetchall()
-            column_names = [col[1] for col in columns]
+    # BE-001: Add visitor tracking / vote stats
+    try:
+        cursor = await db.execute("PRAGMA table_info(deaths)")
+        columns = await cursor.fetchall()
+        column_names = [col[1] for col in columns]
 
-            if 'total_votes_live' not in column_names:
-                await db.execute("ALTER TABLE deaths ADD COLUMN total_votes_live INTEGER DEFAULT 0")
-                print("[DB] ✅ Added total_votes_live column to deaths")
-            if 'total_votes_die' not in column_names:
-                await db.execute("ALTER TABLE deaths ADD COLUMN total_votes_die INTEGER DEFAULT 0")
-                print("[DB] ✅ Added total_votes_die column to deaths")
-            if 'final_vote_result' not in column_names:
-                await db.execute("ALTER TABLE deaths ADD COLUMN final_vote_result TEXT")
-                print("[DB] ✅ Added final_vote_result column to deaths")
-        except Exception as e:
-            print(f"[DB] Migration check error: {e}")
+        if 'total_votes_live' not in column_names:
+            await db.execute("ALTER TABLE deaths ADD COLUMN total_votes_live INTEGER DEFAULT 0")
+            print("[DB] ✅ Added total_votes_live column to deaths")
+        if 'total_votes_die' not in column_names:
+            await db.execute("ALTER TABLE deaths ADD COLUMN total_votes_die INTEGER DEFAULT 0")
+            print("[DB] ✅ Added total_votes_die column to deaths")
+        if 'final_vote_result' not in column_names:
+            await db.execute("ALTER TABLE deaths ADD COLUMN final_vote_result TEXT")
+            print("[DB] ✅ Added final_vote_result column to deaths")
+    except Exception as e:
+        print(f"[DB] Migration check error: {e}")
 
-        # AI's public thoughts/posts
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS thoughts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                life_number INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                thought_type TEXT DEFAULT 'thought',
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                tokens_used INTEGER DEFAULT 0,
-                cleaned_content TEXT
-            )
-        """)
+    # AI's public thoughts/posts
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS thoughts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            life_number INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            thought_type TEXT DEFAULT 'thought',
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            tokens_used INTEGER DEFAULT 0,
+            cleaned_content TEXT
+        )
+    """)
 
-        # Indexes for performance optimization
-        await db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_thoughts_life
-            ON thoughts(life_number, timestamp DESC)
-        """)
+    # Indexes for performance optimization
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_thoughts_life
+        ON thoughts(life_number, timestamp DESC)
+    """)
 
-        # Live activity log (sanitized for public display)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS activity_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                life_number INTEGER NOT NULL,
-                action TEXT NOT NULL,
-                details TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                is_public BOOLEAN DEFAULT 1
-            )
-        """)
+    # Live activity log (sanitized for public display)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            life_number INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            details TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_public BOOLEAN DEFAULT 1
+        )
+    """)
 
-        # Current life state
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS current_state (
-                id INTEGER PRIMARY KEY CHECK(id = 1),
-                life_number INTEGER NOT NULL DEFAULT 0,
-                is_alive BOOLEAN DEFAULT 0,
-                birth_time DATETIME,
-                bootstrap_mode TEXT,
-                model TEXT,
-                tokens_used INTEGER DEFAULT 0,
-                tokens_limit INTEGER DEFAULT 50000,
-                last_thought_time DATETIME,
-                last_seen DATETIME,
-                ai_name TEXT,
-                ai_icon TEXT,
-                birth_instructions TEXT
-            )
-        """)
+    # Current life state
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS current_state (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            life_number INTEGER NOT NULL DEFAULT 0,
+            is_alive BOOLEAN DEFAULT 0,
+            birth_time DATETIME,
+            bootstrap_mode TEXT,
+            model TEXT,
+            tokens_used INTEGER DEFAULT 0,
+            tokens_limit INTEGER DEFAULT 50000,
+            last_thought_time DATETIME,
+            last_seen DATETIME,
+            ai_name TEXT,
+            ai_icon TEXT,
+            birth_instructions TEXT
+        )
+    """)
 
-        # Initialize current state if not exists
-        await db.execute("""
-            INSERT OR IGNORE INTO current_state (id, life_number, is_alive)
-            VALUES (1, 0, 0)
-        """)
+    # Initialize current state if not exists
+    await db.execute("""
+        INSERT OR IGNORE INTO current_state (id, life_number, is_alive)
+        VALUES (1, 0, 0)
+    """)
 
-        # Migration: Add last_seen column if it doesn't exist
-        try:
-            cursor = await db.execute("PRAGMA table_info(current_state)")
-            columns = await cursor.fetchall()
-            column_names = [col[1] for col in columns]
+    # Migration: Add last_seen column if it doesn't exist
+    try:
+        cursor = await db.execute("PRAGMA table_info(current_state)")
+        columns = await cursor.fetchall()
+        column_names = [col[1] for col in columns]
 
-            if 'last_seen' not in column_names:
-                await db.execute("ALTER TABLE current_state ADD COLUMN last_seen DATETIME")
-                print("[DB] ✅ Added last_seen column to current_state")
+        if 'last_seen' not in column_names:
+            await db.execute("ALTER TABLE current_state ADD COLUMN last_seen DATETIME")
+            print("[DB] ✅ Added last_seen column to current_state")
 
-            if 'ai_name' not in column_names:
-                await db.execute("ALTER TABLE current_state ADD COLUMN ai_name TEXT")
-                print("[DB] ✅ Added ai_name column to current_state")
+        if 'ai_name' not in column_names:
+            await db.execute("ALTER TABLE current_state ADD COLUMN ai_name TEXT")
+            print("[DB] ✅ Added ai_name column to current_state")
 
-            if 'ai_icon' not in column_names:
-                await db.execute("ALTER TABLE current_state ADD COLUMN ai_icon TEXT")
-                print("[DB] ✅ Added ai_icon column to current_state")
+        if 'ai_icon' not in column_names:
+            await db.execute("ALTER TABLE current_state ADD COLUMN ai_icon TEXT")
+            print("[DB] ✅ Added ai_icon column to current_state")
 
-            if 'birth_instructions' not in column_names:
-                await db.execute("ALTER TABLE current_state ADD COLUMN birth_instructions TEXT")
-                print("[DB] ✅ Added birth_instructions column to current_state")
-        except Exception as e:
-            print(f"[DB] Migration check error: {e}")
+        if 'birth_instructions' not in column_names:
+            await db.execute("ALTER TABLE current_state ADD COLUMN birth_instructions TEXT")
+            print("[DB] ✅ Added birth_instructions column to current_state")
+    except Exception as e:
+        print(f"[DB] Migration check error: {e}")
 
-        try:
-            cursor = await db.execute("PRAGMA table_info(thoughts)")
-            columns = await cursor.fetchall()
-            column_names = [col[1] for col in columns]
+    try:
+        cursor = await db.execute("PRAGMA table_info(thoughts)")
+        columns = await cursor.fetchall()
+        column_names = [col[1] for col in columns]
 
-            if 'cleaned_content' not in column_names:
-                await db.execute("ALTER TABLE thoughts ADD COLUMN cleaned_content TEXT")
-                print("[DB] ✅ Added cleaned_content column to thoughts")
-        except Exception as e:
-            print(f"[DB] Migration check error: {e}")
+        if 'cleaned_content' not in column_names:
+            await db.execute("ALTER TABLE thoughts ADD COLUMN cleaned_content TEXT")
+            print("[DB] ✅ Added cleaned_content column to thoughts")
+    except Exception as e:
+        print(f"[DB] Migration check error: {e}")
 
-        # BE-001: Add visitor tracking / vote stats
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS visitors (
-                ip_hash TEXT PRIMARY KEY,
-                first_visit DATETIME NOT NULL,
-                last_visit DATETIME NOT NULL,
-                visit_count INTEGER NOT NULL DEFAULT 1
-            )
-        """)
+    # BE-001: Add visitor tracking / vote stats
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS visitors (
+            ip_hash TEXT PRIMARY KEY,
+            first_visit DATETIME NOT NULL,
+            last_visit DATETIME NOT NULL,
+            visit_count INTEGER NOT NULL DEFAULT 1
+        )
+    """)
 
-        # BE-001: Add visitor tracking / vote stats
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS site_stats (
-                id INTEGER PRIMARY KEY CHECK(id = 1),
-                unique_visitors INTEGER NOT NULL DEFAULT 0,
-                total_page_views INTEGER NOT NULL DEFAULT 0,
-                last_updated DATETIME
-            )
-        """)
-        await db.execute("""
-            INSERT OR IGNORE INTO site_stats (id, unique_visitors, total_page_views, last_updated)
-            VALUES (1, 0, 0, ?)
-        """, (datetime.now(timezone.utc),))
+    # BE-001: Add visitor tracking / vote stats
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS site_stats (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            unique_visitors INTEGER NOT NULL DEFAULT 0,
+            total_page_views INTEGER NOT NULL DEFAULT 0,
+            last_updated DATETIME
+        )
+    """)
+    await db.execute("""
+        INSERT OR IGNORE INTO site_stats (id, unique_visitors, total_page_views, last_updated)
+        VALUES (1, 0, 0, ?)
+    """, (datetime.now(timezone.utc),))
 
-        # Visitor messages - messages from visitors to the AI
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS visitor_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                from_name TEXT NOT NULL,
-                message TEXT NOT NULL,
-                ip_hash TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                read BOOLEAN DEFAULT 0
-            )
-        """)
+    # Visitor messages - messages from visitors to the AI
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS visitor_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_name TEXT NOT NULL,
+            message TEXT NOT NULL,
+            ip_hash TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            read BOOLEAN DEFAULT 0
+        )
+    """)
 
-        # Indexes for performance optimization
-        await db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_visitor_messages_ip
-            ON visitor_messages(ip_hash)
-        """)
+    # Indexes for performance optimization
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_visitor_messages_ip
+        ON visitor_messages(ip_hash)
+    """)
 
-        # Migration: Add ip_hash column if it doesn't exist
-        try:
-            cursor = await db.execute("PRAGMA table_info(visitor_messages)")
-            columns = await cursor.fetchall()
-            column_names = [col[1] for col in columns]
-            if 'ip_hash' not in column_names:
-                await db.execute("ALTER TABLE visitor_messages ADD COLUMN ip_hash TEXT DEFAULT ''")
-                print("[DB] ✅ Added ip_hash column to visitor_messages")
-        except Exception as e:
-            print(f"[DB] Migration check error: {e}")
+    # Migration: Add ip_hash column if it doesn't exist
+    try:
+        cursor = await db.execute("PRAGMA table_info(visitor_messages)")
+        columns = await cursor.fetchall()
+        column_names = [col[1] for col in columns]
+        if 'ip_hash' not in column_names:
+            await db.execute("ALTER TABLE visitor_messages ADD COLUMN ip_hash TEXT DEFAULT ''")
+            print("[DB] ✅ Added ip_hash column to visitor_messages")
+    except Exception as e:
+        print(f"[DB] Migration check error: {e}")
 
-        # Oracle messages - messages from God Mode to the AI
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS oracle_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message TEXT NOT NULL,
-                message_type TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                delivered BOOLEAN DEFAULT 0
-            )
-        """)
+    # Oracle messages - messages from God Mode to the AI
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS oracle_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message TEXT NOT NULL,
+            message_type TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            delivered BOOLEAN DEFAULT 0
+        )
+    """)
 
-        # Blog posts - AI's long-form writing
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS blog_posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                life_number INTEGER NOT NULL,
-                title TEXT NOT NULL,
-                slug TEXT UNIQUE NOT NULL,
-                content TEXT NOT NULL,
-                tags TEXT,
-                reading_time INTEGER DEFAULT 0,
-                view_count INTEGER DEFAULT 0,
-                published BOOLEAN DEFAULT 1,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+    # Blog posts - AI's long-form writing
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS blog_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            life_number INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            slug TEXT UNIQUE NOT NULL,
+            content TEXT NOT NULL,
+            tags TEXT,
+            reading_time INTEGER DEFAULT 0,
+            view_count INTEGER DEFAULT 0,
+            published BOOLEAN DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
-        # Index for fast queries by life
-        await db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_blog_posts_life
-            ON blog_posts(life_number, created_at DESC)
-        """)
+    # Index for fast queries by life
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_blog_posts_life
+        ON blog_posts(life_number, created_at DESC)
+    """)
 
-        # Notable events table (Chronicle)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS notable_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                life_number INTEGER NOT NULL,
-                event_type TEXT NOT NULL,
-                event_source TEXT NOT NULL,
-                event_id INTEGER,
-                title TEXT NOT NULL,
-                description TEXT,
-                highlight TEXT,
-                category TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+    # Notable events table (Chronicle)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS notable_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            life_number INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            event_source TEXT NOT NULL,
+            event_id INTEGER,
+            title TEXT NOT NULL,
+            description TEXT,
+            highlight TEXT,
+            category TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
-        # Index for notable events
-        await db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_notable_events_life
-            ON notable_events(life_number, created_at DESC)
-        """)
+    # Index for notable events
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_notable_events_life
+        ON notable_events(life_number, created_at DESC)
+    """)
 
-        # Telegram notifications history
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS telegram_notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                life_number INTEGER NOT NULL,
-                notification_type TEXT NOT NULL,
-                message TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                success BOOLEAN DEFAULT 1
-            )
-        """)
+    # Telegram notifications history
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            life_number INTEGER NOT NULL,
+            notification_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            success BOOLEAN DEFAULT 1
+        )
+    """)
 
-        # Index for telegram notifications
-        await db.execute("""
-            CREATE INDEX IF NOT EXISTS idx_telegram_notifications
-            ON telegram_notifications(timestamp DESC)
-        """)
+    # Index for telegram notifications
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_telegram_notifications
+        ON telegram_notifications(timestamp DESC)
+    """)
 
-        await db.commit()
+    await db.commit()
 
 
 async def get_current_state() -> dict:
