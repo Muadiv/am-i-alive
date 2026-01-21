@@ -53,6 +53,15 @@ mkdir -p "${INSTALL_DIR}" "${DATA_DIR}" "${ENV_DIR}" /app
 mkdir -p "${DATA_DIR}"/{data,vault,memories,logs,workspace,credits}
 chown -R amialive:amialive "${DATA_DIR}" "${INSTALL_DIR}"
 
+# Add udev rule for LED control (allow amialive group to write to leds)
+cat > /etc/udev/rules.d/99-leds.rules <<EOF
+SUBSYSTEM=="leds", ACTION=="add", RUN+="/bin/chgrp -R amialive /sys/class/leds/%k", RUN+="/bin/chmod -R g+w /sys/class/leds/%k"
+EOF
+# Apply rule to existing LEDs
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules && udevadm trigger
+fi
+
 if [[ -d "${INSTALL_DIR}/.git" ]]; then
   sudo -u amialive git -C "${INSTALL_DIR}" remote set-url origin "${REPO_URL}"
   sudo -u amialive git -C "${INSTALL_DIR}" pull --ff-only

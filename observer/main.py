@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await db.close_db()
 
 
 app = FastAPI(
@@ -919,7 +920,8 @@ async def notify_ai_birth(life_info: dict) -> bool:
         "tokens_limit": life_info.get("tokens_limit"),
         "birth_time": life_info.get("birth_time"),
         "memories": life_info.get("memories", []),
-        "previous_death_cause": life_info.get("previous_death_cause")
+        "previous_death_cause": life_info.get("previous_death_cause"),
+        "previous_life": life_info.get("previous_life", {})
     }
 
     max_attempts = 3
@@ -994,12 +996,18 @@ async def force_ai_sync(observer_state: dict):
     # BE-003: Emergency sync mechanism.
     print("[SYNC] 🔄 Forcing AI to sync with Observer state...")
 
-    # Get previous death cause for trauma prompt
-    previous_death_cause = None
+    # Get previous life details for trauma prompt
+    previous_life = {}
     try:
-        previous_death_cause = await db.get_previous_death_cause()
+        conn = await db.get_db()
+        async with conn.execute("""
+            SELECT * FROM deaths ORDER BY id DESC LIMIT 1
+        """) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                previous_life = dict(row)
     except Exception as e:
-        print(f"[SYNC] ⚠️ Could not get previous death cause: {e}")
+        print(f"[SYNC] ⚠️ Could not get previous life details: {e}")
 
     try:
         async with httpx.AsyncClient() as client:
@@ -1010,7 +1018,8 @@ async def force_ai_sync(observer_state: dict):
                     "bootstrap_mode": observer_state.get("bootstrap_mode"),
                     "model": observer_state.get("model"),
                     "is_alive": observer_state.get("is_alive", False),
-                    "previous_death_cause": previous_death_cause
+                    "previous_death_cause": previous_life.get("cause"),
+                    "previous_life": previous_life
                 },
                 timeout=10.0
             )

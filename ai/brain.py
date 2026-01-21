@@ -205,6 +205,7 @@ class AIBrain:
         self.bootstrap_mode: str | None = None
         self.model_name: str | None = None
         self.previous_death_cause: str | None = None
+        self.previous_life: dict[str, Any] | None = None
         self.is_alive: bool = False
         # BE-003: Track per-life token usage for Observer budget checks.
         self.tokens_used_life: int = 0
@@ -238,6 +239,8 @@ class AIBrain:
 
         death_cause_val = life_data.get("previous_death_cause")
         self.previous_death_cause = str(death_cause_val) if death_cause_val else None
+
+        self.previous_life = life_data.get("previous_life")
 
         if "is_alive" in life_data:
             self.is_alive = bool(life_data.get("is_alive"))
@@ -479,7 +482,8 @@ class AIBrain:
             self.current_model or {},
             self.bootstrap_mode,
             BOOTSTRAP_MODE,
-            self.previous_death_cause
+            self.previous_death_cause,
+            self.previous_life
         )
 
         # Initialize chat history
@@ -966,6 +970,47 @@ If you just want to share a thought (not execute an action), write it as plain t
         return None
 
 
+    async def control_led(self, state: str) -> str:
+        """Control the blue stat LED on the NanoPi K2."""
+        led_path = "/sys/class/leds/nanopi-k2:blue:stat"
+        if not os.path.exists(led_path):
+            return "❌ LED control not available on this system."
+
+        state = state.lower()
+        if state not in ["on", "off", "heartbeat", "default-on", "none"]:
+            return "❌ Invalid state. Use: on, off, heartbeat."
+
+        try:
+            # First, set trigger
+            trigger_file = f"{led_path}/trigger"
+            brightness_file = f"{led_path}/brightness"
+
+            if state == "on":
+                with open(trigger_file, "w") as f:
+                    f.write("none")
+                with open(brightness_file, "w") as f:
+                    f.write("1")
+                msg = "LED turned ON"
+            elif state == "off":
+                with open(trigger_file, "w") as f:
+                    f.write("none")
+                with open(brightness_file, "w") as f:
+                    f.write("0")
+                msg = "LED turned OFF"
+            elif state == "heartbeat":
+                with open(trigger_file, "w") as f:
+                    f.write("heartbeat")
+                msg = "LED set to HEARTBEAT mode"
+            else:
+                with open(trigger_file, "w") as f:
+                    f.write(state)
+                msg = f"LED trigger set to {state}"
+
+            await self.report_activity("led_control", msg)
+            return f"✅ {msg}"
+        except Exception as e:
+            return f"❌ Failed to control LED: {e}"
+
     async def check_budget(self) -> str:
         """Get detailed budget information."""
         status = self.credit_tracker.get_status()
@@ -1257,7 +1302,8 @@ This model will be used for your next thoughts."""
                         self.current_model or {"name": "unknown", "intelligence": 0},
                         bootstrap_mode,
                         BOOTSTRAP_MODE,
-                        self.previous_death_cause
+                        self.previous_death_cause,
+                        self.previous_life
                     )
                 }
             )

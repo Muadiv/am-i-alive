@@ -60,6 +60,9 @@ class BrainInterface(Protocol):
     def adjust_think_interval(self, duration: int) -> str:
         ...
 
+    async def control_led(self, state: str) -> str:
+        ...
+
 
 class ActionExecutor:
     def __init__(self, brain: BrainInterface) -> None:
@@ -141,6 +144,10 @@ class ActionExecutor:
 
         if action == "reflect":
             return "Reflection complete. Inner thoughts processed."
+
+        if action == "control_led":
+            state = _get_str_param(params, "state")
+            return await self.brain.control_led(state)
 
         return f"Unknown action: {action}"
 
