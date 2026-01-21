@@ -1,0 +1,21 @@
+{
+  "typeCheckingMode": "basic",
+  "reportImplicitRelativeImport": "none",
+  "reportDeprecated": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportUnnecessaryIsInstance": "none",
+  "reportUnusedCallResult": "none",
+  "reportAny": "none",
+  "reportInvalidCast": "none",
+  "reportUnreachable": "none",
+  "reportDeprecated": "none",
+  "reportImplicitRelativeImport": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownParameterType": "none"
+}

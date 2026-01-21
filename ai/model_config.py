@@ -5,6 +5,8 @@ This module defines available models, pricing, and rotation strategy.
 The AI can choose models based on task complexity vs cost.
 """
 
+from typing import Any
+
 # Model tiers for the AI's brain
 MODELS = {
     # FREE TIER - Use these for frequent, low-stakes thoughts
@@ -133,7 +135,7 @@ DAILY_BUDGET_RECOMMENDATIONS = {
     "aggressive": 0.20  # Living on the edge
 }
 
-def get_model_by_id(model_id: str) -> dict:
+def get_model_by_id(model_id: str) -> dict[str, Any] | None:
     """Find a model by its ID across all tiers."""
     for tier in MODELS.values():
         for model in tier:

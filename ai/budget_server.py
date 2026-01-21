@@ -5,33 +5,35 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 import uvicorn
 
-from credit_tracker import CreditTracker
-from budget_aggregator import aggregate_usage
+from .credit_tracker import CreditTracker  # type: ignore
+from .budget_aggregator import aggregate_usage  # type: ignore
 
 
 _cache_lock = threading.Lock()
-_cached_payload = None
-_cached_at = None
+_cached_payload: dict[str, object] | None = None
+_cached_at: datetime | None = None
 _cache_ttl_seconds = 5
 _credit_tracker = CreditTracker()
 
 app = FastAPI()
 
 
-def _build_response() -> dict:
+def _build_response() -> dict[str, object]:
     data = _credit_tracker.get_status()
     usage_history = _credit_tracker.data.get("usage_history", [])
+    if not isinstance(usage_history, list):
+        usage_history = []
     models, totals, _, _, _ = aggregate_usage(usage_history)
 
-    response_data = {
-        "budget": data.get("budget", data.get("monthly_budget_usd", 5.0)),
-        "balance": data.get("balance", data.get("current_balance_usd", 0.0)),
+    response_data: dict[str, object] = {
+        "budget": data.get("budget") or data.get("monthly_budget_usd", 5.0),
+        "balance": data.get("balance") or data.get("current_balance_usd", 0.0),
         "spent_this_month": data.get("spent_this_month", 0.0),
         "remaining_percent": data.get("remaining_percent", 0.0),
         "status": data.get("status", "unknown"),
         "reset_date": data.get("reset_date", "unknown"),
         "days_until_reset": data.get("days_until_reset", 0),
-        "lives": data.get("lives", data.get("total_lives", 0)),
+        "lives": data.get("lives") or data.get("total_lives", 0),
         "total_tokens": totals.get("total_tokens", 0),
         "top_models": data.get("top_models", []),
         "models": models,
@@ -43,11 +45,11 @@ def _build_response() -> dict:
     return response_data
 
 
-def _get_cached_response() -> dict:
+def _get_cached_response() -> dict[str, object]:
     global _cached_payload, _cached_at
     now = datetime.now(timezone.utc)
     with _cache_lock:
-        if _cached_payload and _cached_at:
+        if _cached_payload is not None and _cached_at is not None:
             age = (now - _cached_at).total_seconds()
             if age < _cache_ttl_seconds:
                 return _cached_payload
@@ -69,7 +71,7 @@ async def health():
     return {"status": "ok"}
 
 
-def start_budget_server(port=8000):
+def start_budget_server(port: int = 8000) -> uvicorn.Server:
     server_config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")
     server = uvicorn.Server(server_config)
     thread = threading.Thread(target=server.run, daemon=True)
@@ -78,7 +80,7 @@ def start_budget_server(port=8000):
 
 
 if __name__ == "__main__":
-    start_budget_server()
+    _server = start_budget_server()
     try:
         while True:
             time.sleep(1)

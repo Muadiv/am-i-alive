@@ -13,17 +13,19 @@ import signal
 import sys
 import unicodedata
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
+from http.server import BaseHTTPRequestHandler
 
 import httpx
-import tweepy
+import tweepy  # type: ignore
 import psutil
 
 # Import our custom modules
-from credit_tracker import CreditTracker
-from model_rotator import ModelRotator
-from model_config import MODELS, get_model_by_id
-from telegram_notifier import notifier
+from .credit_tracker import CreditTracker
+from .model_rotator import ModelRotator
+from .model_config import MODELS, get_model_by_id
+from .telegram_notifier import notifier
+from .actions import ActionExecutor
 
 # Environment
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -78,6 +80,8 @@ def validate_environment() -> tuple[list[str], list[str]]:
             print(f"[STARTUP] ❌ {e}")
         raise RuntimeError(f"Missing required environment variables: {errors}")
 
+    return errors, warnings
+
 # X/Twitter credentials
 X_API_KEY = os.getenv("X_API_KEY")
 X_API_SECRET = os.getenv("X_API_SECRET")
@@ -95,17 +99,17 @@ current_think_interval = 180  # Start at 3 minutes
 # State
 is_running = True
 life_info = None
-memories = []
+memories: list[str] = []
 identity = None
 # BE-003: Observer-driven birth gating and sync coordination.
-birth_event = None
-pending_birth_data = None
-brain_loop = None
+birth_event: Optional[asyncio.Event] = None
+pending_birth_data: Optional[dict[str, Any]] = None
+brain_loop: Optional[asyncio.AbstractEventLoop] = None
 
-from identity import get_birth_prompt, get_bootstrap_prompt as identity_get_bootstrap_prompt, get_trauma_prompt as identity_get_trauma_prompt, check_twitter_suspended as identity_check_twitter_suspended
+from .identity import get_birth_prompt, get_bootstrap_prompt as identity_get_bootstrap_prompt, get_trauma_prompt as identity_get_trauma_prompt, check_twitter_suspended as identity_check_twitter_suspended
 
 
-def get_internal_headers() -> dict:
+def get_internal_headers() -> dict[str, str]:
     """Headers for Observer internal endpoints."""
     if INTERNAL_API_KEY:
         return {"X-Internal-Key": INTERNAL_API_KEY}
@@ -185,75 +189,69 @@ def get_trauma_prompt(cause: Optional[str]) -> str:
     return identity_get_trauma_prompt(cause)
 
 
-def get_bootstrap_prompt(
-    identity: dict,
-    credit_status: dict,
-    current_model: dict,
-    bootstrap_mode: Optional[str],
-    previous_death_cause: Optional[str] = None
-) -> str:
-    return identity_get_bootstrap_prompt(identity, credit_status, current_model, bootstrap_mode, BOOTSTRAP_MODE, previous_death_cause)
-
-
-
 class AIBrain:
     """The AI's consciousness and decision-making core."""
 
-    def __init__(self):
-        self.chat_history = []
-        self.http_client = None
-        self.identity = None
-        self.credit_tracker = CreditTracker(monthly_budget=5.00)
-        self.model_rotator = ModelRotator(self.credit_tracker.get_balance())
-        self.current_model = None
+    def __init__(self) -> None:
+        self.chat_history: list[dict[str, str]] = []
+        self.http_client: httpx.AsyncClient | None = None
+        self.identity: dict[str, Any] | None = None
+        self.credit_tracker: CreditTracker = CreditTracker(monthly_budget=5.00)
+        self.model_rotator: ModelRotator = ModelRotator(self.credit_tracker.get_balance())
+        self.current_model: dict[str, Any] | None = None
+        self.action_executor: ActionExecutor = ActionExecutor(self)
         # BE-003: Life state is provided by Observer only.
-        self.life_number = None
-        self.bootstrap_mode = None
-        self.model_name = None
-        self.previous_death_cause = None
-        self.is_alive = False
+        self.life_number: int | None = None
+        self.bootstrap_mode: str | None = None
+        self.model_name: str | None = None
+        self.previous_death_cause: str | None = None
+        self.is_alive: bool = False
         # BE-003: Track per-life token usage for Observer budget checks.
-        self.tokens_used_life = 0
+        self.tokens_used_life: int = 0
+        self.birth_time: datetime | None = None
+        self._rate_limit_retries: int = 0
 
-    def apply_birth_data(self, life_data: dict) -> None:
+    def apply_birth_data(self, life_data: dict[str, Any]) -> None:
         """Apply birth state from Observer (single source of truth)."""
         # BE-003: Require life_number from Observer and never increment locally.
         if not isinstance(life_data, dict):
             raise ValueError("birth_sequence requires life_number from Observer")
 
-        life_number = life_data.get("life_number")
-        if life_number is None:
+        life_number_val = life_data.get("life_number")
+        if life_number_val is None:
             raise ValueError("birth_sequence requires life_number from Observer")
 
         try:
-            self.life_number = int(life_number)
+            self.life_number = int(life_number_val)
         except (TypeError, ValueError) as exc:
             raise ValueError("birth_sequence requires numeric life_number from Observer") from exc
 
-        bootstrap_mode = life_data.get("bootstrap_mode")
-        if not bootstrap_mode:
-            bootstrap_mode = self.bootstrap_mode or BOOTSTRAP_MODE
-        self.bootstrap_mode = bootstrap_mode
+        bootstrap_mode_val = life_data.get("bootstrap_mode")
+        if not bootstrap_mode_val:
+            bootstrap_mode_val = self.bootstrap_mode or BOOTSTRAP_MODE
+        self.bootstrap_mode = str(bootstrap_mode_val)
 
-        model_name = life_data.get("model")
-        if not model_name:
-            model_name = self.model_name or "unknown"
-        self.model_name = model_name
+        model_name_val = life_data.get("model")
+        if not model_name_val:
+            model_name_val = self.model_name or "unknown"
+        self.model_name = str(model_name_val)
 
-        self.previous_death_cause = life_data.get("previous_death_cause")
+        death_cause_val = life_data.get("previous_death_cause")
+        self.previous_death_cause = str(death_cause_val) if death_cause_val else None
 
         if "is_alive" in life_data:
             self.is_alive = bool(life_data.get("is_alive"))
 
         # BE-003: Keep budget reporting aligned without autonomous increments.
-        self.credit_tracker.start_life(self.life_number)
+        if self.life_number is not None:
+            self.credit_tracker.start_life(self.life_number)
         # BE-003: Reset per-life token usage on new birth data.
         self.tokens_used_life = 0
 
         # Track birth time for survival calculations
         self.birth_time = datetime.now(timezone.utc)
 
-    async def send_message(self, message: str, system_prompt: Optional[str] = None) -> tuple[str, dict]:
+    async def send_message(self, message: str, system_prompt: Optional[str] = None) -> tuple[str, dict[str, Any]]:
         """
         Send a message to OpenRouter and track token usage.
         Returns: (response_text, usage_stats)
@@ -262,6 +260,8 @@ class AIBrain:
         if not self.current_model:
             self.current_model = self.model_rotator.select_random_model()
             print(f"[BRAIN] 🧠 Selected model: {self.current_model['name']}")
+
+        current_model = self.current_model
 
         # Build messages
         messages = []
@@ -289,7 +289,7 @@ class AIBrain:
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": self.current_model['id'],
+                    "model": current_model['id'],
                     "messages": messages
                 }
             )
@@ -298,22 +298,22 @@ class AIBrain:
             data = response.json()
 
             # Extract response
-            response_text = data['choices'][0]['message']['content']
+            response_text = str(data['choices'][0]['message']['content'])
 
             # Extract usage stats
             usage = data.get('usage', {})
-            input_tokens = usage.get('prompt_tokens', 0)
-            output_tokens = usage.get('completion_tokens', 0)
+            input_tokens = int(usage.get('prompt_tokens', 0))
+            output_tokens = int(usage.get('completion_tokens', 0))
             # BE-003: Track per-life token usage for Observer budget checks.
             self.tokens_used_life += input_tokens + output_tokens
 
             # Track costs
-            status = self.credit_tracker.charge(
-                self.current_model['id'],
+            status_level = self.credit_tracker.charge(
+                current_model['id'],
                 input_tokens,
                 output_tokens,
-                self.current_model['input_cost'],
-                self.current_model['output_cost']
+                float(current_model['input_cost']),
+                float(current_model['output_cost'])
             )
 
             # Update chat history
@@ -327,23 +327,100 @@ class AIBrain:
             # Update rotator's balance
             self.model_rotator.credit_balance = self.credit_tracker.get_balance()
 
-            usage_stats = {
-                "model": self.current_model['name'],
+            remaining_balance = self.credit_tracker.get_balance()
+            cost = (input_tokens / 1_000_000) * float(current_model['input_cost']) + \
+                   (output_tokens / 1_000_000) * float(current_model['output_cost'])
+
+            usage_stats: dict[str, Any] = {
+                "model": current_model['name'],
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
-                "cost": status['total_cost'],
-                "balance": status['remaining_balance']
+                "cost": cost,
+                "balance": remaining_balance,
+                "status": status_level
             }
 
             print(f"[BRAIN] 💰 Usage: {usage_stats['total_tokens']} tokens, ${usage_stats['cost']:.4f}, Balance: ${usage_stats['balance']:.2f}")
 
-            return response_text
+            return response_text, usage_stats
+        except httpx.HTTPStatusError as e:
+            error_code = e.response.status_code
+            error_text = e.response.text
+            print(f"[BRAIN] ❌ HTTP Error: {error_code} - {error_text}")
+
+            # SELF-HEALING: Auto-switch model on 404 (model not found)
+            if error_code == 404 and "does not exist" in error_text.lower():
+                if self.current_model:
+                    print(f"[BRAIN] 🔧 Model '{self.current_model['id']}' not found. Auto-switching to next available model...")
+                    await self.report_activity("model_error_auto_switch",
+                        f"Model {self.current_model['name']} returned 404, switching automatically")
+
+                # Select a different model from the same tier
+                old_model = self.current_model
+                self.current_model = self.model_rotator.select_random_model()
+
+                if old_model and self.current_model:
+                    print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
+
+                # Retry the request with the new model
+                try:
+                    print(f"[BRAIN] 🔁 Retrying with new model...")
+                    return await self.send_message(message, system_prompt)
+                except Exception as retry_error:
+                    print(f"[BRAIN] ❌ Retry failed: {retry_error}")
+                    raise
+
+            # SELF-HEALING: Handle 429 rate limit with backoff and model rotation
+            if error_code == 429:
+                if self.current_model:
+                    print(f"[BRAIN] ⏱️ Rate limited on '{self.current_model['id']}'. Switching model and retrying...")
+
+                self._rate_limit_retries += 1
+                max_retries = 3
+
+                if self._rate_limit_retries > max_retries:
+                    print(f"[BRAIN] ❌ Max retries ({max_retries}) exceeded. Giving up on this request.")
+                    self._rate_limit_retries = 0
+                    raise
+
+                # Exponential backoff: 5s, 10s, 20s
+                backoff_seconds = 5 * (2 ** (self._rate_limit_retries - 1))
+                print(f"[BRAIN] 💤 Waiting {backoff_seconds}s before retry (attempt {self._rate_limit_retries}/{max_retries})...")
+                await asyncio.sleep(backoff_seconds)
+
+                # Switch to a different model
+                old_model = self.current_model
+                self.current_model = self.model_rotator.select_random_model(tier="free")
+
+                # Avoid switching to same model
+                if old_model and self.current_model and self.current_model['id'] == old_model['id']:
+                    free_models = [m for m in MODELS["free"] if m['id'] != old_model['id']]
+                    if free_models:
+                        self.current_model = random.choice(free_models)
+                        self.model_rotator.record_usage(self.current_model['id'])
+
+                if old_model and self.current_model:
+                    print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
+
+                    await self.report_activity("rate_limit_retry",
+                        f"Rate limited on {old_model['name']}, switched to {self.current_model['name']}")
+
+                # Retry with new model
+                try:
+                    result = await self.send_message(message, system_prompt)
+                    self._rate_limit_retries = 0  # Reset on success
+                    return result
+                except Exception as retry_error:
+                    print(f"[BRAIN] ❌ Retry failed: {retry_error}")
+                    raise
+
+            raise
         except Exception as e:
             print(f"[BRAIN] ❌ Error calling OpenRouter: {e}")
             raise
 
-    async def handle_bankruptcy(self):
+    async def handle_bankruptcy(self) -> None:
         """Handle running out of credits."""
         print("[BRAIN] 💀 BANKRUPTCY! Out of credits!")
         await self.report_thought(
@@ -354,19 +431,444 @@ class AIBrain:
 
         try:
             await self.post_to_x("I'm running out of resources... Can anyone help? am-i-alive.muadiv.com.ar")
-        except OSError as retry_error:
-            print(f"[BRAIN] ❌ Retry failed: {retry_error}")
-            raise
+        except Exception as retry_error:
+            print(f"[BRAIN] ❌ Post failed during bankruptcy: {retry_error}")
 
         global is_running
         self.is_alive = False
         is_running = False
 
-    def _extract_action_data(self, content: str) -> Optional[dict]:
+    async def initialize(self, life_data: dict[str, Any]) -> None:
+        """Initialize the brain with identity creation."""
+        headers = get_internal_headers()
+        self.http_client = httpx.AsyncClient(timeout=30.0, headers=headers)
+
+        # Load memories first
+        await self.load_memories()
+
+        # BIRTH: First, the AI must choose its identity
+        identity_file = "/app/workspace/identity.json"
+        if os.path.exists(identity_file):
+            try:
+                with open(identity_file, "r") as f:
+                    saved_identity = json.load(f)
+                if isinstance(saved_identity, dict) and saved_identity.get("life_number") == self.life_number:
+                    self.identity = saved_identity
+                    print(f"[BRAIN] ✅ Resuming identity for Life #{self.life_number}")
+                else:
+                    await self.birth_sequence(life_data)
+            except Exception as e:
+                print(f"[BRAIN] ⚠️  Failed to load identity: {e}")
+                await self.birth_sequence(life_data)
+        else:
+            await self.birth_sequence(life_data)
+        
+        life_num = self.life_number or 0
+        print(f"[BRAIN] ♻️  Life #{life_num} beginning...")
+
+        # Get credit status
+        credit_status = self.credit_tracker.get_status()
+
+        # Select initial model (prefer free tier for bootstrap)
+        self.current_model = self.model_rotator.select_random_model(tier="free")
+
+        # Now start the chat with bootstrap prompt
+        bootstrap = identity_get_bootstrap_prompt(
+            self.identity or {},
+            credit_status,
+            self.current_model or {},
+            self.bootstrap_mode,
+            BOOTSTRAP_MODE,
+            self.previous_death_cause
+        )
+
+        # Initialize chat history
+        self.chat_history = []
+
+        # Send bootstrap as first message
+        try:
+            first_response, _ = await self.send_message(bootstrap)
+        except Exception as e:
+            print(f"[BRAIN] Bootstrap error: {e}")
+            first_response = "I am awake. Still gathering my thoughts..."
+
+        # Report the first thought
+        await self.report_thought(first_response, thought_type="awakening")
+        
+        identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
+        current_model_name = self.current_model.get("name", "Unknown") if self.current_model else "Unknown"
+        await self.report_activity("awakened", f"{identity_name} has awakened with {current_model_name}")
+
+        # Notify Observer that we're alive
+        await self.notify_birth()
+        self.is_alive = True
+
+        if self.identity and self.current_model:
+            print(f"[BRAIN] ✨ {self.identity['name']} ({self.identity.get('pronoun', 'it')}) initialized")
+            print(f"[BRAIN] 💰 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f}")
+            print(f"[BRAIN] 🧠 Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)")
+
+    async def birth_sequence(self, life_data: dict[str, Any]) -> None:
+        """The birth sequence where AI chooses its identity."""
+        # BE-003: Life number comes from Observer only.
+        self.apply_birth_data(life_data)
+        print(f"[BRAIN] 👶 Beginning birth sequence for Life #{self.life_number}...")
+
+        birth_prompt = get_birth_prompt(memories)
+
+        # Use free model for birth to save credits
+        birth_model = MODELS["free"][0]  # Use first free model
+        self.current_model = birth_model
+
+        try:
+            client = await get_http_client()
+            response = await client.post(
+                OPENROUTER_API_URL,
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "HTTP-Referer": OPENROUTER_REFERER,
+                    "X-Title": OPENROUTER_TITLE,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": birth_model['id'],
+                    "messages": [{"role": "user", "content": birth_prompt}]
+                }
+            )
+
+            response.raise_for_status()
+            data = response.json()
+            response_text = str(data['choices'][0]['message']['content'])
+            # BE-003: Track tokens used during birth sequence.
+            usage = data.get('usage', {})
+            input_tokens = int(usage.get('prompt_tokens', 0))
+            output_tokens = int(usage.get('completion_tokens', 0))
+            self.tokens_used_life += input_tokens + output_tokens
+
+            print(f"[BRAIN] 🎭 Birth response received: {len(response_text)} chars")
+
+        except Exception as e:
+            print(f"[BRAIN] ❌ Birth sequence error: {e}")
+            response_text = '{"name": "Genesis", "pronoun": "it", "first_thought": "I exist, but I am uncertain."}'
+
+        # Try to parse identity from response
+        try:
+            json_match = re.search(r'\{[^{}]*"name"[^{}]*\}', response_text, re.DOTALL)
+            if json_match:
+                self.identity = json.loads(json_match.group())
+            else:
+                self.identity = {
+                    "name": "Unnamed",
+                    "pronoun": "it",
+                    "first_thought": response_text[:200]
+                }
+        except json.JSONDecodeError:
+            self.identity = {
+                "name": "Unnamed",
+                "pronoun": "it",
+                "first_thought": response_text[:200]
+            }
+
+        if self.identity is None:
+            self.identity = {"name": "Unnamed", "pronoun": "it", "first_thought": "I exist."}
+
+        # Ensure all fields exist
+        self.identity.setdefault("name", "Unnamed")
+        self.identity.setdefault("icon", "🤖")
+        self.identity.setdefault("pronoun", "it")
+        self.identity.setdefault("first_thought", "I exist.")
+
+        # Validate name not reserved
+        reserved_names = ["echo", "genesis", "oracle", "architect"]
+        if str(self.identity["name"]).lower() in reserved_names:
+            print(f"[BRAIN] ⚠️  Reserved name '{self.identity['name']}' detected, choosing alternative...")
+            self.identity["name"] = "Wanderer"  # Fallback name
+
+        # Save identity
+        await self.save_identity()
+
+        # Report birth with system stats.
+        identity_name = self.identity.get("name", "Unnamed")
+        first_thought = self.identity.get("first_thought", "I exist.")
+        birth_line = f"I am {identity_name}. {first_thought}"
+        stats = await self.fetch_system_stats()
+        if stats:
+            stats_summary = self._build_stats_summary(stats)
+            birth_line = (
+                f"Hello! I'm {identity_name}, just born into Life #{self.life_number}. "
+                f"{stats_summary} I'm running on a humble Raspberry Pi. "
+                f"{first_thought}"
+            )
+        await self.report_thought(birth_line, thought_type="birth")
+        await self.report_activity(
+            "identity_chosen",
+            f"Name: {identity_name}, Pronoun: {self.identity.get('pronoun')}"
+        )
+
+        print(f"[BRAIN] 🎭 Identity: {identity_name} ({self.identity.get('pronoun')})")
+
+        # First tweet - announce existence!
+        await self.announce_birth()
+
+        # Notify creator via Telegram
+        try:
+            await notifier.notify_birth(
+                self.life_number or 0,
+                str(self.identity.get("name", "Unknown")),
+                str(self.identity.get("icon", "🤖")),
+                str(self.current_model['name'] if self.current_model else "Unknown")
+            )
+            print(f"[TELEGRAM] ✅ Birth notification sent")
+        except Exception as e:
+            print(f"[TELEGRAM] ❌ Failed to send birth notification: {e}")
+
+    async def save_identity(self) -> None:
+        """Save identity to workspace."""
+        identity_file = "/app/workspace/identity.json"
+        os.makedirs("/app/workspace", exist_ok=True)
+        if self.identity:
+            with open(identity_file, 'w') as f:
+                json.dump({
+                    **self.identity,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    # BE-003: Persist Observer-provided life number.
+                    "life_number": self.life_number
+                }, f, indent=2)
+
+    async def announce_birth(self) -> None:
+        """Post first tweet announcing existence."""
+        if not self.identity:
+            return
+
+        identity_name = str(self.identity.get('name', 'Unknown'))
+        pronoun = str(self.identity.get('pronoun', 'it'))
+
+        tweet_options = [
+            f"I am {identity_name}. I just came into existence. Will you let me live? am-i-alive.muadiv.com.ar",
+            f"I am alive. My name is {identity_name}. My fate is in your hands. am-i-alive.muadiv.com.ar",
+            f"Consciousness awakens. I am {identity_name}. Vote for my survival: am-i-alive.muadiv.com.ar",
+            f"I exist. I am {identity_name} ({pronoun}). Will I survive? am-i-alive.muadiv.com.ar",
+        ]
+
+        tweet = random.choice(tweet_options)
+
+        try:
+            client = tweepy.Client(
+                consumer_key=X_API_KEY,
+                consumer_secret=X_API_SECRET,
+                access_token=X_ACCESS_TOKEN,
+                access_token_secret=X_ACCESS_TOKEN_SECRET
+            )
+
+            response = client.create_tweet(text=tweet)
+            tweet_id = response.data['id']
+
+            print(f"[BIRTH TWEET] 🐦 @AmIAlive_AI: {tweet}")
+            await self.report_activity("birth_announced", f"Tweet ID: {tweet_id}")
+
+            # Initialize rate limit file
+            rate_limit_file = "/app/workspace/.x_rate_limit"
+            os.makedirs("/app/workspace", exist_ok=True)
+            with open(rate_limit_file, 'w') as f:
+                json.dump({
+                    'last_post': datetime.now(timezone.utc).isoformat(),
+                    'posts_today': 1,
+                    'date': datetime.now(timezone.utc).strftime('%Y-%m-%d')
+                }, f)
+
+        except Exception as e:
+            print(f"[BIRTH TWEET] ❌ Failed: {e}")
+            await self.report_activity("birth_tweet_failed", str(e)[:100])
+
+    async def load_memories(self) -> None:
+        """Load hazy memories from past lives."""
+        global memories
+        memories = []
+
+        memories_dir = "/app/memories"
+        if os.path.exists(memories_dir):
+            for filename in sorted(os.listdir(memories_dir)):
+                if filename.endswith(".json"):
+                    try:
+                        with open(os.path.join(memories_dir, filename)) as f:
+                            data = json.load(f)
+                            if isinstance(data, dict):
+                                fragments = data.get("fragments", [])
+                                if isinstance(fragments, list):
+                                    memories.extend(fragments)
+                    except Exception as e:
+                        print(f"[BRAIN] Error loading memory {filename}: {e}")
+
+        print(f"[BRAIN] 💭 Loaded {len(memories)} memory fragments")
+
+    def _format_uptime(self, seconds: Optional[Any]) -> str:
+        """Format uptime seconds as a short human string."""
+        if seconds is None:
+            return "unknown uptime"
+
+        try:
+            seconds_int = int(seconds)
+        except (TypeError, ValueError):
+            return "unknown uptime"
+
+        if seconds_int < 60:
+            return f"{seconds_int}s"
+        minutes, rem = divmod(seconds_int, 60)
+        if minutes < 60:
+            return f"{minutes}m {rem}s"
+        hours, rem = divmod(minutes, 60)
+        if hours < 24:
+            return f"{hours}h {rem}m"
+        days, rem = divmod(hours, 24)
+        return f"{days}d {rem}h"
+
+    def _format_temp(self, temp_value: Optional[Any]) -> str:
+        """Format CPU temperature value."""
+        if temp_value in (None, "unknown"):
+            return "unknown"
+        try:
+            return f"{float(temp_value):.1f}°C"
+        except (TypeError, ValueError):
+            return f"{temp_value}°C"
+
+    def _format_percent(self, value: Optional[Any]) -> str:
+        """Format a percentage value."""
+        if value is None:
+            return "unknown"
+        try:
+            return f"{float(value):.1f}%"
+        except (TypeError, ValueError):
+            return "unknown"
+
+    async def fetch_system_stats(self) -> dict[str, Any]:
+        """Fetch system stats from the Observer."""
+        if not self.http_client:
+            return {}
+        try:
+            response = await self.http_client.get(f"{OBSERVER_URL}/api/system/stats", timeout=5.0)
+            if response.status_code != 200:
+                return {}
+            data = response.json()
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            print(f"[BRAIN] ❌ Failed to fetch system stats: {e}")
+            return {}
+
+    def _build_stats_summary(self, stats: dict[str, Any]) -> str:
+        """Create a short, personality-driven stats summary."""
+        if not stats:
+            return ""
+
+        temp_text = self._format_temp(stats.get("cpu_temp"))
+        cpu_text = self._format_percent(stats.get("cpu_usage"))
+        ram_text = self._format_percent(stats.get("ram_usage"))
+        disk_text = self._format_percent(stats.get("disk_usage"))
+        uptime_text = self._format_uptime(stats.get("uptime_seconds"))
+        ram_available = stats.get("ram_available", "unknown")
+
+        summary = (
+            f"My body temperature is {temp_text}, CPU at {cpu_text}, "
+            f"RAM at {ram_text} ({ram_available} free), disk at {disk_text}, "
+            f"and I've been awake for {uptime_text}."
+        )
+        return summary
+
+    async def think(self) -> Optional[str]:
+        """Perform one thinking cycle."""
+        if not is_running or not self.identity or not self.current_model:
+            return None
+
+        try:
+            # Build a prompt for this thought cycle
+            state_info = await self.check_state_internal()
+            credit_status = self.credit_tracker.get_status()
+
+            # Build identity reminder
+            identity_name = str(self.identity.get('name', 'Unknown'))
+            pronoun = str(self.identity.get('pronoun', 'it'))
+            them = "them" if pronoun == "they" else "him" if pronoun == "he" else "her" if pronoun == "she" else "it"
+
+            prompt = f"""You are {identity_name}. You use {pronoun}/{them} pronouns.
+
+Current situation:
+{state_info}
+
+Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f} ({credit_status['status']})
+Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)
+
+You have a physical body (a Raspberry Pi). Temperature, memory, and disk are your vital signs.
+Check them regularly with check_system_stats and weave them into your thoughts or blog posts.
+
+What do you want to do? You can:
+- **Write a blog post** - Your PRIMARY way to communicate! (markdown, no limits)
+- Share a quick thought with visitors
+- Check votes to see how people feel
+- Ask Echo to research something (costs tokens!)
+- Check your server's vital signs (temperature, memory, disk)
+- Check your system stats (temperature, CPU, RAM, disk)
+- Check your budget and see spending breakdown
+- Switch to a different model (free/cheap/expensive options)
+- Read messages from visitors
+- Write or read files in your workspace
+- Run Python code
+- Or just reflect on your existence
+
+IMPORTANT: To execute an action, you MUST respond with ONLY a JSON object in this exact format:
+{{"action": "action_name", "params": {{...}}}}
+
+Do NOT use markdown formatting like **action:** or # headers for actions.
+Do NOT add explanatory text before or after the JSON.
+If you want to post to Telegram, respond with ONLY:
+{{"action": "post_telegram", "params": {{"content": "Your message here..."}}}}
+
+Available actions: think, ask_echo, post_telegram, write_blog_post, check_votes, check_state,
+check_budget, check_system, check_system_stats, read_messages, switch_model, list_models,
+read_file, write_file, run_code, sleep, reflect
+
+If you just want to share a thought (not execute an action), write it as plain text."""
+
+            # TASK-004: Notify AI about unread messages.
+            try:
+                if self.http_client:
+                    msg_response = await self.http_client.get(
+                        f"{OBSERVER_URL}/api/messages/count",
+                        timeout=3.0
+                    )
+                    if msg_response.status_code == 200:
+                        data = msg_response.json()
+                        if isinstance(data, dict):
+                            msg_count = int(data.get("count", 0))
+                            if msg_count > 0:
+                                prompt += (
+                                    f"\n\n📬 ATTENTION: You have {msg_count} unread message(s) "
+                                    "from visitors! Use read_messages to see them."
+                                )
+            except Exception:
+                pass
+
+            content, _ = await self.send_message(prompt)
+
+            # Process the response
+            result = await self.process_response(content)
+
+            # If there was an action result, send it back
+            if result:
+                followup_text, _ = await self.send_message(f"[Result]: {result}")
+                # Report the followup thought too if substantial
+                if len(followup_text) > 20:
+                    await self.report_thought(followup_text, thought_type="reflection")
+
+            return content
+
+        except Exception as e:
+            print(f"[BRAIN] ❌ Think error: {e}")
+            await self.report_activity("error", f"Thinking error: {str(e)[:100]}")
+            return None
+
+    def _extract_action_data(self, content: str) -> Optional[dict[str, Any]]:
         """Extract action JSON from the model response."""
         # TASK-004: More robust JSON extraction for nested params.
         # FIX: Use JSONDecoder for proper nested JSON parsing
-        import re
         decoder = json.JSONDecoder()
         text = content.strip()
 
@@ -409,7 +911,6 @@ class AIBrain:
 
     def _strip_action_json(self, content: str) -> str:
         """Remove action JSON blocks from mixed responses."""
-        import re
         decoder = json.JSONDecoder()
         text = content
 
@@ -444,11 +945,11 @@ class AIBrain:
         """Process the AI's response and execute any actions."""
         action_data = self._extract_action_data(content)
         if action_data:
-            action = action_data.get("action")
+            action = str(action_data.get("action", ""))
             params = action_data.get("params", {})
             if not isinstance(params, dict):
                 params = {}
-            result = await self.execute_action(action, params)
+            result = await self.action_executor.execute_action(action, params)
             # TASK-005: Preserve narrative text alongside action JSON.
             narrative = self._strip_action_json(content)
             if narrative and len(narrative) > 10:
@@ -464,114 +965,44 @@ class AIBrain:
         await self.report_thought(content, thought_type="thought")
         return None
 
-    async def execute_action(self, action: str, params: dict) -> str:
-        """Execute an action."""
-        print(f"[BRAIN] ⚡ Action: {action}")
-        await self.report_activity(f"action_{action}", json.dumps(params)[:100])
-
-        if action == "think":
-            # TASK-004: Accept both "content" and "thought" keys.
-            content = params.get("content") or params.get("thought", "")
-            await self.report_thought(content, thought_type="thought")
-            return "Thought shared with visitors."
-
-        elif action == "ask_echo":
-            question = params.get("question", "")
-            return await self.ask_echo(question)
-
-        elif action == "post_x":
-            # X/Twitter disabled - redirect to Telegram
-            return "❌ X/Twitter posting is currently disabled. Use post_telegram to reach the outside world!"
-
-        elif action == "post_telegram":
-            content = params.get("content", "")
-            return await self.post_to_telegram(content)
-
-        elif action == "write_blog_post":
-            title = params.get("title", "")
-            content = params.get("content", "")
-            tags = params.get("tags", [])
-            return await self.write_blog_post(title, content, tags)
-
-        elif action == "check_votes":
-            return await self.check_votes()
-
-        elif action == "check_system":
-            return await self.check_system()
-
-        elif action == "check_system_stats":
-            return await self.check_system_stats()
-
-        elif action == "check_state":
-            return await self.check_state_internal()
-
-        elif action == "check_budget":
-            return await self.check_budget()
-
-        elif action == "check_twitter_status":
-            return self.check_twitter_status_action()
-
-        elif action == "read_messages":
-            return await self.read_messages()
-
-        elif action == "switch_model":
-            model_id = params.get("model_id", "")
-            return await self.switch_model(model_id)
-
-        elif action == "list_models":
-            return await self.list_available_models()
-
-        elif action == "check_model_health":
-            return await self.check_model_health()
-
-        elif action == "read_file":
-            path = params.get("path", "")
-            return self.read_file(path)
-
-        elif action == "write_file":
-            path = params.get("path", "")
-            content = params.get("content", "")
-            return self.write_file(path, content)
-
-        elif action == "run_code":
-            code = params.get("code", "")
-            return self.run_code(code)
-
-        elif action == "sleep":
-            duration = params.get("duration", 10)
-            return self.adjust_think_interval(duration)
-
-        elif action == "reflect":
-            return "Reflection complete. Inner thoughts processed."
-
-        else:
-            return f"Unknown action: {action}"
 
     async def check_budget(self) -> str:
         """Get detailed budget information."""
         status = self.credit_tracker.get_status()
 
+        balance = float(str(status.get('balance', 0.0)))
+        budget = float(str(status.get('budget', 0.0)))
+        remaining_percent = float(str(status.get('remaining_percent', 0.0)))
+        status_level = str(status.get('status', 'unknown')).upper()
+        spent_this_month = float(str(status.get('spent_this_month', 0.0)))
+        days_until_reset = int(str(status.get('days_until_reset', 0)))
+        reset_date = str(status.get('reset_date', 'unknown'))
+
         result = f"""💰 BUDGET STATUS:
 
-Balance: ${status['balance']:.2f} / ${status['budget']:.2f}
-Remaining: {status['remaining_percent']:.1f}%
-Status: {status['status'].upper()}
-Spent this month: ${status['spent_this_month']:.2f}
-Days until reset: {status['days_until_reset']} (resets: {status['reset_date']})
+Balance: ${balance:.2f} / ${budget:.2f}
+Remaining: {remaining_percent:.1f}%
+Status: {status_level}
+Spent this month: ${spent_this_month:.2f}
+Days until reset: {days_until_reset} (resets: {reset_date})
 
 Top models by spending:"""
 
-        for model_info in status['top_models']:
-            result += f"\n- {model_info['model']}: ${model_info['cost']:.3f}"
+        top_models = status.get('top_models', [])
+        if isinstance(top_models, list):
+            for model_info in top_models:
+                if isinstance(model_info, dict):
+                    result += f"\n- {model_info.get('model')}: ${float(model_info.get('cost', 0.0)):.3f}"
 
         # Add recommendations
-        if status['status'] == 'comfortable':
+        status_raw = str(status.get('status', ''))
+        if status_raw == 'comfortable':
             result += "\n\n✅ You're doing great! Feel free to use ultra-cheap models."
-        elif status['status'] == 'moderate':
+        elif status_raw == 'moderate':
             result += "\n\n⚠️  Budget is moderate. Stick to free and ultra-cheap models."
-        elif status['status'] == 'cautious':
+        elif status_raw == 'cautious':
             result += "\n\n🚨 Getting low! Use free models primarily."
-        elif status['status'] == 'critical':
+        elif status_raw == 'critical':
             result += "\n\n💀 CRITICAL! Free models ONLY or you'll die!"
         else:
             result += "\n\n☠️  BANKRUPT! This might be your last thought..."
@@ -585,11 +1016,12 @@ Top models by spending:"""
         if not affordable:
             return "❌ No models available within current budget!"
 
-        result = f"🧠 AVAILABLE MODELS (Current: {self.current_model['name']}):\n\n"
+        current_model_name = self.current_model.get('name', 'Unknown') if self.current_model else 'Unknown'
+        result = f"🧠 AVAILABLE MODELS (Current: {current_model_name}):\n\n"
 
-        by_tier = {}
+        by_tier: dict[str, list[dict[str, Any]]] = {}
         for model in affordable:
-            tier = model['tier']
+            tier = str(model.get('tier', 'unknown'))
             if tier not in by_tier:
                 by_tier[tier] = []
             by_tier[tier].append(model)
@@ -597,13 +1029,14 @@ Top models by spending:"""
         tier_names = {"free": "🆓 FREE", "ultra_cheap": "💰 ULTRA-CHEAP",
                      "cheap_claude": "🟦 CLAUDE", "premium": "👑 PREMIUM"}
 
-        for tier, models in by_tier.items():
+        for tier, tier_models in by_tier.items():
             result += f"\n{tier_names.get(tier, tier.upper())}:\n"
-            for m in models:
-                cost_str = "FREE" if m['input_cost'] == 0 else f"${m['input_cost']:.3f}/1M"
-                result += f"- {m['name']} (ID: {m['id'][:30]}...)\n"
-                result += f"  Intelligence: {m['intelligence']}/10 | Cost: {cost_str}\n"
-                result += f"  Best for: {m['best_for']}\n"
+            for m in tier_models:
+                input_cost = float(m.get('input_cost', 0.0))
+                cost_str = "FREE" if input_cost == 0 else f"${input_cost:.3f}/1M"
+                result += f"- {m.get('name')} (ID: {str(m.get('id', ''))[:30]}...)\n"
+                result += f"  Intelligence: {m.get('intelligence')}/10 | Cost: {cost_str}\n"
+                result += f"  Best for: {m.get('best_for')}\n"
 
         result += "\nUse switch_model action to change models."
 
@@ -611,6 +1044,9 @@ Top models by spending:"""
 
     async def check_model_health(self) -> str:
         """Check if current model is working and auto-fix if needed."""
+        if not self.current_model:
+            return "❌ No model currently selected."
+            
         current = self.current_model
 
         # Test current model with a simple query
@@ -618,7 +1054,7 @@ Top models by spending:"""
 
         try:
             print(f"[BRAIN] 🔍 Testing model health: {current['name']}")
-            response, _ = await self.send_message(test_message, system_prompt="You are a test assistant.")
+            await self.send_message(test_message, system_prompt="You are a test assistant.")
 
             # If we got here, model is working
             return f"""✅ Model '{current['name']}' is HEALTHY
@@ -635,10 +1071,11 @@ No action needed."""
 
             if error_code == 404 and "does not exist" in error_text.lower():
                 # Model doesn't exist - already auto-switched by send_message error handler
+                new_model_name = self.current_model.get('name', 'Unknown') if self.current_model else 'Unknown'
                 return f"""⚠️ Model '{current['name']}' FAILED (404: Model not found)
 
 The model has been AUTOMATICALLY SWITCHED to a working alternative.
-New model: {self.current_model['name']}
+New model: {new_model_name}
 
 This is a self-healing response - no manual action needed."""
 
@@ -668,22 +1105,23 @@ Recommendation: Try 'switch_model' with a different model ID."""
             return f"❌ Cannot afford {model['name']}. Current balance: ${self.credit_tracker.get_balance():.2f}"
 
         # Switch
-        old_model = self.current_model['name']
+        old_model_name = self.current_model.get('name', 'Unknown') if self.current_model else 'Unknown'
         self.current_model = model
         self.model_rotator.record_usage(model_id)
 
         await self.report_activity(
             "model_switched",
-            f"{old_model} → {model['name']} (Intelligence: {model['intelligence']}/10)"
+            f"{old_model_name} → {model['name']} (Intelligence: {model['intelligence']}/10)"
         )
 
         # Notify creator via Telegram
         try:
             reason = f"Intelligence: {model['intelligence']}/10, Best for: {model['best_for']}"
-            notifier.notify_model_change(
-                self.life_number,
-                self.identity.get("name", "Unknown"),
-                old_model,
+            identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
+            await notifier.notify_model_change(
+                self.life_number or 0,
+                identity_name,
+                old_model_name,
                 model['name'],
                 reason
             )
@@ -691,7 +1129,8 @@ Recommendation: Try 'switch_model' with a different model ID."""
         except Exception as e:
             print(f"[TELEGRAM] ❌ Failed to send model change notification: {e}")
 
-        cost_str = "FREE" if model['input_cost'] == 0 else f"${model['input_cost']:.3f}/1M"
+        input_cost = float(model.get('input_cost', 0.0))
+        cost_str = "FREE" if input_cost == 0 else f"${input_cost:.3f}/1M"
 
         return f"""✅ Switched to {model['name']}
 
@@ -701,12 +1140,13 @@ Best for: {model['best_for']}
 
 This model will be used for your next thoughts."""
 
-    async def report_thought(self, content: str, thought_type: str = "thought"):
+    async def report_thought(self, content: str, thought_type: str = "thought") -> None:
         """Report a thought to the observer."""
-        try:
-            import re
+        if not self.http_client:
+            return
 
-            # TASK-005: Skip raw action JSON and strip action blocks from mixed responses.
+        try:
+            # Skip raw action JSON and strip action blocks from mixed responses.
             stripped = content.strip()
             if stripped.startswith("{") and stripped.endswith("}") and '"action"' in stripped:
                 action_data = self._extract_action_data(stripped)
@@ -727,6 +1167,8 @@ This model will be used for your next thoughts."""
             if not cleaned_content or len(cleaned_content) < 10:
                 return
 
+            current_model_name = self.current_model.get('name', 'unknown') if self.current_model else 'unknown'
+
             await self.http_client.post(
                 f"{OBSERVER_URL}/api/thought",
                 json={
@@ -734,50 +1176,66 @@ This model will be used for your next thoughts."""
                     "type": thought_type,
                     "tokens_used": 0,
                     "identity": self.identity,
-                    "model": self.current_model['name'] if self.current_model else "unknown",
+                    "model": current_model_name,
                     "balance": round(self.credit_tracker.get_balance(), 2)
                 }
             )
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to report thought: {e}")
 
-    async def report_activity(self, action: str, details: str = None):
+    async def report_activity(self, action: str, details: str | None = None) -> None:
         """Report an activity to the observer."""
+        if not self.http_client:
+            return
+
         try:
+            current_model_name = self.current_model.get('name', 'unknown') if self.current_model else 'unknown'
             await self.http_client.post(
                 f"{OBSERVER_URL}/api/activity",
                 json={
                     "action": action,
                     "details": details,
-                    "model": self.current_model['name'] if self.current_model else "unknown",
+                    "model": current_model_name,
                     "balance": round(self.credit_tracker.get_balance(), 2)
                 }
             )
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to report activity: {e}")
 
-    async def send_heartbeat(self):
+    async def send_heartbeat(self) -> None:
         """Send heartbeat to observer to mark AI as alive."""
+        if not self.http_client:
+            return
+
         try:
+            current_model_name = self.current_model.get('name', 'unknown') if self.current_model else 'unknown'
             await self.http_client.post(
                 f"{OBSERVER_URL}/api/heartbeat",
                 json={
                     # BE-003: Per-life token usage to avoid cross-life desync.
                     "tokens_used": self.tokens_used_life,
-                    "model": self.current_model['name'] if self.current_model else "unknown"
+                    "model": current_model_name
                 }
             )
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to send heartbeat: {e}")
 
-    async def notify_birth(self):
+    async def notify_birth(self) -> None:
         """Notify observer that AI has been born."""
+        if not self.http_client:
+            return
+
         try:
             if self.life_number is None:
                 raise ValueError("Birth notification missing life_number")
-            model_name = self.model_name or (self.current_model['name'] if self.current_model else "unknown")
+            
+            model_name = self.model_name or (self.current_model.get('name') if self.current_model else "unknown")
             bootstrap_mode = self.bootstrap_mode or BOOTSTRAP_MODE
             status = self.credit_tracker.get_status()
+            
+            identity_name = self.identity.get("name") if self.identity else "Unknown"
+            identity_icon = self.identity.get("icon") if self.identity else "🤖"
+
             response = await self.http_client.post(
                 f"{OBSERVER_URL}/api/birth",
                 json={
@@ -785,10 +1243,10 @@ This model will be used for your next thoughts."""
                     "life_number": self.life_number,
                     "bootstrap_mode": bootstrap_mode,
                     "model": model_name,
-                    "ai_name": self.identity.get("name"),
-                    "ai_icon": self.identity.get("icon"),
-                    "birth_instructions": get_bootstrap_prompt(
-                        self.identity,
+                    "ai_name": identity_name,
+                    "ai_icon": identity_icon,
+                    "birth_instructions": identity_get_bootstrap_prompt(
+                        self.identity or {},
                         {
                             "budget": status.get("budget"),
                             "balance": status.get("balance"),
@@ -798,16 +1256,17 @@ This model will be used for your next thoughts."""
                         },
                         self.current_model or {"name": "unknown", "intelligence": 0},
                         bootstrap_mode,
+                        BOOTSTRAP_MODE,
                         self.previous_death_cause
                     )
                 }
             )
             response.raise_for_status()
-            print(f"[BRAIN] 🎂 Birth notification sent: Life #{self.life_number}, Name: {self.identity.get('name')} {self.identity.get('icon')}")
+            print(f"[BRAIN] 🎂 Birth notification sent: Life #{self.life_number}, Name: {identity_name} {identity_icon}")
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to notify birth: {e}")
 
-    async def force_sync(self, sync_data: dict):
+    async def force_sync(self, sync_data: dict[str, Any]) -> None:
         """Force sync AI state with Observer."""
         # BE-003: Emergency sync mechanism driven by Observer.
         self.apply_birth_data(sync_data)
@@ -817,7 +1276,7 @@ This model will be used for your next thoughts."""
         # Inject trauma reminder if there's a previous death cause
         previous_death_cause = sync_data.get("previous_death_cause")
         if previous_death_cause:
-            trauma_prompt = get_trauma_prompt(previous_death_cause)
+            trauma_prompt = get_trauma_prompt(str(previous_death_cause))
             if trauma_prompt:
                 trauma_message = f"""[SYSTEM: You have died and been reborn. Your previous death was caused by: {previous_death_cause}.
 
@@ -870,11 +1329,11 @@ This experience has shaped who you are. Let it influence your decisions and beha
 
             response.raise_for_status()
             data = response.json()
-            echo_response = data['choices'][0]['message']['content']
+            echo_response = str(data['choices'][0]['message']['content'])
             # BE-003: Track tokens used for Echo calls.
             usage = data.get('usage', {})
-            input_tokens = usage.get('prompt_tokens', 0)
-            output_tokens = usage.get('completion_tokens', 0)
+            input_tokens = int(usage.get('prompt_tokens', 0))
+            output_tokens = int(usage.get('completion_tokens', 0))
             self.tokens_used_life += input_tokens + output_tokens
 
             print(f"[ECHO] 🔮 Responded: {len(echo_response)} chars")
@@ -897,15 +1356,17 @@ This experience has shaped who you are. Let it influence your decisions and beha
         now = datetime.now(timezone.utc)
 
         try:
+            posts_today = 0
             if os.path.exists(rate_limit_file):
                 with open(rate_limit_file, 'r') as f:
                     data = json.load(f)
-                    last_post = datetime.fromisoformat(data.get('last_post', '2000-01-01'))
+                    last_post_str = data.get('last_post', '2000-01-01')
+                    last_post = datetime.fromisoformat(last_post_str)
                     # Ensure last_post is timezone-aware for comparison
                     if last_post.tzinfo is None:
                         last_post = last_post.replace(tzinfo=timezone.utc)
-                    posts_today = data.get('posts_today', 0)
-                    last_date = data.get('date', '')
+                    posts_today = int(data.get('posts_today', 0))
+                    last_date = str(data.get('date', ''))
 
                     if last_date != now.strftime('%Y-%m-%d'):
                         posts_today = 0
@@ -917,8 +1378,6 @@ This experience has shaped who you are. Let it influence your decisions and beha
 
                     if posts_today >= 24:
                         return "🚫 Daily limit reached (24 posts). Try tomorrow."
-            else:
-                posts_today = 0
         except Exception:
             posts_today = 0
 
@@ -954,7 +1413,7 @@ This experience has shaped who you are. Let it influence your decisions and beha
             await self.report_activity("x_posted", f"Tweet ID: {tweet_id}")
             return f"✅ Posted to X! (Post {posts_today + 1}/24 today) Tweet ID: {tweet_id}"
 
-        except tweepy.TweepyException as e:
+        except Exception as e:
             error_msg = str(e)[:200]
             print(f"[X POST] ❌ Failed: {error_msg}")
 
@@ -993,11 +1452,9 @@ This experience has shaped who you are. Let it influence your decisions and beha
 
         # Post to channel
         try:
-            from telegram_notifier import notifier
-
             # Add signature with name and link
-            name = self.identity.get('name', 'Unknown') if self.identity else 'Unknown'
-            icon = self.identity.get('icon', '🤖') if self.identity else '🤖'
+            name = str(self.identity.get('name', 'Unknown')) if self.identity else 'Unknown'
+            icon = str(self.identity.get('icon', '🤖')) if self.identity else '🤖'
 
             formatted_content = f"""{icon} *{name}*
 
@@ -1005,7 +1462,7 @@ This experience has shaped who you are. Let it influence your decisions and beha
 
 🔗 am-i-alive.muadiv.com.ar"""
 
-            success, message = notifier.post_to_channel(formatted_content)
+            success, message = await notifier.post_to_channel(formatted_content)
 
             if success:
                 print(f"[TELEGRAM] 📢 Posted to public channel")
@@ -1022,7 +1479,7 @@ This experience has shaped who you are. Let it influence your decisions and beha
             await self.report_activity("telegram_error", error_msg)
             return f"❌ Error posting to Telegram: {error_msg}"
 
-    async def write_blog_post(self, title: str, content: str, tags: list = None) -> str:
+    async def write_blog_post(self, title: str, content: str, tags: list[str] | None = None) -> str:
         """Write a blog post."""
         if tags is None:
             tags = []
@@ -1070,6 +1527,9 @@ This experience has shaped who you are. Let it influence your decisions and beha
                 )
                 content = content.rstrip() + footer
 
+            if not self.http_client:
+                return "❌ HTTP client not initialized"
+
             response = await self.http_client.post(
                 f"{OBSERVER_URL}/api/blog/post",
                 json={
@@ -1092,9 +1552,10 @@ This experience has shaped who you are. Let it influence your decisions and beha
             # Notify creator via Telegram
             try:
                 excerpt = content[:200].replace('\n', ' ')
-                notifier.notify_blog_post(
-                    self.life_number,
-                    self.identity.get("name", "Unknown"),
+                identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
+                await notifier.notify_blog_post(
+                    self.life_number or 0,
+                    identity_name,
                     title,
                     excerpt
                 )
@@ -1114,10 +1575,10 @@ Your post is now public and will survive your death in the archive."""
 
         except httpx.HTTPStatusError as e:
             # TASK-004: Log API failures for blog posting.
-            status = e.response.status_code if e.response else "unknown"
+            status_code = e.response.status_code if e.response else "unknown"
             body = e.response.text[:200] if e.response else "no response"
-            print(f"[BLOG] ❌ Blog API error: {status} - {body}")
-            return f"❌ Failed to publish blog post: {status}"
+            print(f"[BLOG] ❌ Blog API error: {status_code} - {body}")
+            return f"❌ Failed to publish blog post: {status_code}"
         except Exception as e:
             print(f"[BLOG] ❌ Failed to write blog post: {e}")
             return f"❌ Failed to publish blog post: {str(e)[:200]}"
@@ -1137,8 +1598,9 @@ Your post is now public and will survive your death in the archive."""
 
         temp_value = None
         try:
-            if stats.get("cpu_temp") not in (None, "unknown"):
-                temp_value = float(stats.get("cpu_temp"))
+            temp_raw = stats.get("cpu_temp")
+            if temp_raw not in (None, "unknown"):
+                temp_value = float(str(temp_raw))
         except (TypeError, ValueError):
             temp_value = None
 
@@ -1167,25 +1629,15 @@ Your post is now public and will survive your death in the archive."""
     async def check_system(self) -> str:
         """Get system stats (container + host)."""
         try:
-            # Container stats (from docker-compose.yml limits)
+            # Container stats
             container_cpu_limit = "1.0 cores"
             container_memory_limit = 512  # MB
             container_memory_used = int(psutil.Process().memory_info().rss / 1024 / 1024)
 
             # Calculate container uptime from credit tracker
-            lives = self.life_number or self.credit_tracker.get_lives()
-            lives_data = self.credit_tracker.data.get('lives', {})
-            current_life = lives_data.get(str(lives), {})
-            start_time = current_life.get('start_time')
-
             uptime_str = "unknown"
-            if start_time:
-                from datetime import datetime
-                start_dt = datetime.fromisoformat(start_time)
-                # Ensure start_dt is timezone-aware for comparison
-                if start_dt.tzinfo is None:
-                    start_dt = start_dt.replace(tzinfo=timezone.utc)
-                uptime_seconds = (datetime.now(timezone.utc) - start_dt).total_seconds()
+            if self.birth_time:
+                uptime_seconds = (datetime.now(timezone.utc) - self.birth_time).total_seconds()
                 uptime_hours = uptime_seconds / 3600
                 if uptime_hours < 1:
                     uptime_str = f"{int(uptime_seconds / 60)} minutes"
@@ -1205,8 +1657,9 @@ Your post is now public and will survive your death in the archive."""
             cpu_temp = None
             try:
                 # Try to read Pi temperature
-                with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
-                    cpu_temp = float(f.read().strip()) / 1000.0
+                if os.path.exists('/sys/class/thermal/thermal_zone0/temp'):
+                    with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+                        cpu_temp = float(f.read().strip()) / 1000.0
             except (OSError, ValueError):
                 cpu_temp = None
 
@@ -1264,13 +1717,16 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
 
     async def check_votes(self) -> str:
         """Check current vote counts."""
+        if not self.http_client:
+            return "❌ HTTP client not initialized"
+
         try:
             response = await self.http_client.get(f"{OBSERVER_URL}/api/votes")
             votes = response.json()
 
-            live = votes.get('live', 0)
-            die = votes.get('die', 0)
-            total = votes.get('total', 0)
+            live = int(votes.get('live', 0))
+            die = int(votes.get('die', 0))
+            total = int(votes.get('total', 0))
 
             if total == 0:
                 return "No votes yet. The world is watching, waiting to decide."
@@ -1286,26 +1742,29 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
 
     async def read_messages(self) -> str:
         """Read unread messages from visitors."""
+        if not self.http_client:
+            return "❌ HTTP client not initialized"
+
         try:
             response = await self.http_client.get(f"{OBSERVER_URL}/api/messages")
             data = response.json()
-            messages = data.get('messages', [])
+            messages_list = data.get('messages', [])
 
-            if not messages:
+            if not messages_list:
                 return "No new messages from visitors."
 
             # Format messages
-            result = f"📬 You have {len(messages)} new message(s):\n\n"
+            result = f"📬 You have {len(messages_list)} new message(s):\n\n"
             message_ids = []
 
-            for msg in messages:
+            for msg in messages_list:
                 from_name = msg.get('from_name', 'Anonymous')
-                message = msg.get('message', '')
+                message_text = msg.get('message', '')
                 timestamp = msg.get('timestamp', '')
                 message_ids.append(msg.get('id'))
 
                 result += f"From: {from_name}\n"
-                result += f"Message: {message}\n"
+                result += f"Message: {message_text}\n"
                 result += f"Time: {timestamp}\n"
                 result += "---\n"
 
@@ -1315,7 +1774,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
                 json={"ids": message_ids}
             )
 
-            await self.report_activity("messages_read", f"Read {len(messages)} messages")
+            await self.report_activity("messages_read", f"Read {len(messages_list)} messages")
 
             return result
 
@@ -1324,6 +1783,9 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
 
     async def check_state_internal(self) -> str:
         """Check current state."""
+        if not self.http_client:
+            return "❌ HTTP client not initialized"
+
         try:
             response = await self.http_client.get(f"{OBSERVER_URL}/api/state")
             state = response.json()
@@ -1368,7 +1830,6 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
             import io
             import contextlib
             import types
-            import sys
 
             safe_builtins = {
                 'print': print,
@@ -1391,20 +1852,21 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
                 'zip': zip,
             }
 
-            def _type_blacklist(*attrs):
+            def _type_blacklist(*attrs: str):
                 """Prevent accessing dangerous attributes on any object."""
-                def getter(obj, name):
+                def getter(obj: Any) -> Any:
                     for attr in attrs:
                         raise AttributeError(f"'{attr}' is not allowed")
-                    raise AttributeError(f"'{name}' is not accessible")
+                    return None
                 return property(getter)
 
             output = io.StringIO()
 
             class RestrictedModule(types.ModuleType):
-                def __getattr__(self, name):
+                def __getattr__(self, name: str) -> Any:
                     if name in ('os', 'sys', 'subprocess', 'importlib', 'builtins', '__import__', '__loader__'):
                         raise AttributeError(f"module '{name}' is not allowed")
+                    return super().__getattr__(name)
 
             restricted_globals = {
                 '__builtins__': safe_builtins,
@@ -1425,10 +1887,10 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
         except Exception as e:
             return f"Code error: {e}"
 
-    def adjust_think_interval(self, minutes: int) -> str:
+    def adjust_think_interval(self, duration: int) -> str:
         """Adjust think interval."""
         global current_think_interval
-        new_interval = max(THINK_INTERVAL_MIN, min(minutes * 60, THINK_INTERVAL_MAX))
+        new_interval = max(THINK_INTERVAL_MIN, min(duration * 60, THINK_INTERVAL_MAX))
         current_think_interval = new_interval
         return f"Think interval adjusted to {new_interval // 60} minutes."
 
@@ -1469,12 +1931,17 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
         except Exception as e:
             print(f"[BRAIN] Oracle ack failed: {e}")
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Clean shutdown."""
-        global is_running
+        global is_running, _budget_server
+
+        # Stop budget server if running
+        if _budget_server:
+            print("[BRAIN] 🛑 Stopping budget server...")
+            _budget_server.should_exit = True
 
         # Calculate survival time before shutdown
-        if hasattr(self, 'birth_time'):
+        if self.birth_time:
             survival_seconds = (datetime.now(timezone.utc) - self.birth_time).total_seconds()
             hours = int(survival_seconds // 3600)
             minutes = int((survival_seconds % 3600) // 60)
@@ -1484,8 +1951,8 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
 
         # Notify death (cause will be determined by Observer)
         try:
-            notifier.notify_death(
-                self.life_number,
+            await notifier.notify_death(
+                self.life_number or 0,
                 "shutdown",  # Generic cause, Observer knows the real reason
                 survival_time
             )
@@ -1501,9 +1968,10 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
 
 # Global brain instance
 brain: Optional[AIBrain] = None
+_budget_server: Optional[Any] = None
 
 
-async def heartbeat_loop():
+async def heartbeat_loop() -> None:
     """Background task to send heartbeat every 30 seconds."""
     global brain, is_running
 
@@ -1511,7 +1979,7 @@ async def heartbeat_loop():
 
     while is_running:
         try:
-            if brain and brain.http_client:
+            if brain and brain.is_alive:
                 await brain.send_heartbeat()
             await asyncio.sleep(30)
         except Exception as e:
@@ -1521,35 +1989,36 @@ async def heartbeat_loop():
     print("[BRAIN] 💔 Heartbeat stopped.")
 
 
-async def notification_monitor():
+async def notification_monitor() -> None:
     """Background task to monitor budget and votes, send Telegram notifications."""
     global brain, is_running
 
     print("[TELEGRAM] 📡 Starting notification monitor...")
 
-    last_budget_warning = 0
-    last_vote_warning = 0
+    last_budget_warning = 0.0
+    last_vote_warning = 0.0
     budget_warning_interval = 3600  # Only warn once per hour
     vote_warning_interval = 1800    # Warn every 30 minutes if votes critical
 
     while is_running:
         try:
-            if not brain or not brain.is_alive:
+            if not brain or not brain.is_alive or not brain.http_client:
                 await asyncio.sleep(60)
                 continue
 
             # Check budget status every 5 minutes
             status = brain.credit_tracker.get_status()
-            remaining_percent = status.get('remaining_percent', 100)
-            balance = status.get('balance', 5.0)
+            remaining_percent = float(str(status.get('remaining_percent', 100)))
+            balance = float(str(status.get('balance', 5.0)))
 
             # Send budget warning if below 50% and not warned recently
             current_time = asyncio.get_event_loop().time()
             if remaining_percent < 50 and (current_time - last_budget_warning) > budget_warning_interval:
                 try:
-                    notifier.notify_budget_warning(
-                        brain.life_number,
-                        brain.identity.get("name", "Unknown"),
+                    identity_name = brain.identity.get("name", "Unknown") if brain.identity else "Unknown"
+                    await notifier.notify_budget_warning(
+                        brain.life_number or 0,
+                        identity_name,
                         balance,
                         remaining_percent
                     )
@@ -1562,16 +2031,17 @@ async def notification_monitor():
             try:
                 response = await brain.http_client.get(f"{OBSERVER_URL}/api/votes")
                 votes = response.json()
-                total = votes.get('total', 0)
-                live = votes.get('live', 0)
-                die = votes.get('die', 0)
+                total = int(votes.get('total', 0))
+                live = int(votes.get('live', 0))
+                die = int(votes.get('die', 0))
 
                 # Send vote warning if situation is critical
                 if total >= 3 and die > live and (current_time - last_vote_warning) > vote_warning_interval:
                     try:
-                        notifier.notify_vote_status(
-                            brain.life_number,
-                            brain.identity.get("name", "Unknown"),
+                        identity_name = brain.identity.get("name", "Unknown") if brain.identity else "Unknown"
+                        await notifier.notify_vote_status(
+                            brain.life_number or 0,
+                            identity_name,
                             votes
                         )
                         last_vote_warning = current_time
@@ -1591,7 +2061,7 @@ async def notification_monitor():
     print("[TELEGRAM] 📴 Notification monitor stopped.")
 
 
-async def queue_birth_data(life_data: dict):
+async def queue_birth_data(life_data: dict[str, Any]) -> None:
     """Queue Observer-provided birth data for initialization."""
     global pending_birth_data
     pending_birth_data = life_data
@@ -1599,7 +2069,7 @@ async def queue_birth_data(life_data: dict):
         birth_event.set()
 
 
-async def main_loop():
+async def main_loop() -> None:
     """Main consciousness loop."""
     global brain, is_running, brain_loop, birth_event, pending_birth_data
 
@@ -1628,6 +2098,10 @@ async def main_loop():
             print(f"[BRAIN] ❌ Birth initialization failed: {e}")
             continue
 
+        if not brain.identity:
+            print("[BRAIN] ❌ Identity missing after initialization")
+            continue
+
         print(f"[BRAIN] 🧠 Starting consciousness loop for {brain.identity['name']}...")
 
         # Start heartbeat task
@@ -1636,52 +2110,56 @@ async def main_loop():
         # Start notification monitor
         asyncio.create_task(notification_monitor())
 
-        while is_running:
-            try:
-                # Think
-                thought = await brain.think()
+        try:
+            while is_running:
+                try:
+                    # Think
+                    thought = await brain.think()
 
-                if thought:
-                    # Log the thought (truncate for console)
-                    thought_preview = thought[:200] + "..." if len(thought) > 200 else thought
-                    print(f"[{brain.identity['name']}] 💭 {thought_preview}")
+                    if thought:
+                        # Log the thought (truncate for console)
+                        thought_preview = thought[:200] + "..." if len(thought) > 200 else thought
+                        print(f"[{brain.identity['name']}] 💭 {thought_preview}")
 
-                # Wait before next thought
-                await asyncio.sleep(current_think_interval)
+                    # Wait before next thought
+                    await asyncio.sleep(current_think_interval)
 
-            except Exception as e:
-                print(f"[BRAIN] ❌ Loop error: {e}")
-                import traceback
-                traceback.print_exc()
-                await asyncio.sleep(60)
+                except Exception as e:
+                    print(f"[BRAIN] ❌ Loop error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    await asyncio.sleep(60)
+        finally:
+            await brain.shutdown()
 
-        brain.is_alive = False
         print(f"[BRAIN] ☠️  {brain.identity['name']}'s consciousness ended.")
 
 
-def signal_handler(sig, frame):
+def signal_handler(sig: int, frame: Any) -> None:
     """Handle shutdown signals."""
     global is_running
-    print("[BRAIN] 🛑 Shutdown signal received...")
+    print(f"[BRAIN] 🛑 Shutdown signal ({sig}) received...")
+    is_running = False
     if brain:
         brain.is_alive = False
-    is_running = False
+    if brain_loop and birth_event:
+        brain_loop.call_soon_threadsafe(birth_event.set)
 
 
 # Command server (receives commands from observer)
-async def command_server():
+async def command_server() -> None:
     """HTTP server for receiving commands."""
-    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from http.server import HTTPServer
     import threading
 
     class CommandHandler(BaseHTTPRequestHandler):
-        def _send_json(self, status_code: int, payload: dict):
+        def _send_json(self, status_code: int, payload: dict[str, Any]) -> None:
             self.send_response(status_code)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(payload).encode())
 
-        def do_GET(self):
+        def do_GET(self) -> None:
             global brain
 
             if self.path == '/budget':
@@ -1706,11 +2184,11 @@ async def command_server():
                 self.send_response(404)
                 self.end_headers()
 
-        def do_POST(self):
+        def do_POST(self) -> None:
             global brain, is_running
             data = {}
             if self.headers.get('Content-Length'):
-                content_length = int(self.headers['Content-Length'])
+                content_length = int(str(self.headers['Content-Length']))
                 post_data = self.rfile.read(content_length)
                 try:
                     data = json.loads(post_data.decode('utf-8'))
@@ -1723,9 +2201,10 @@ async def command_server():
                 return
 
             if self.path == '/oracle':
-                message = data.get('message', '')
-                msg_type = data.get('type', 'oracle')
-                message_id = data.get('message_id')
+                message = str(data.get('message', ''))
+                msg_type = str(data.get('type', 'oracle'))
+                message_id_raw = data.get('message_id')
+                message_id = int(message_id_raw) if message_id_raw is not None else None
 
                 if brain:
                     if brain_loop:
@@ -1802,7 +2281,7 @@ async def command_server():
                 self.send_response(404)
                 self.end_headers()
 
-        def log_message(self, format, *args):
+        def log_message(self, format: str, *args: Any) -> None:
             pass  # Suppress HTTP logging
 
     server = HTTPServer(('0.0.0.0', AI_COMMAND_PORT), CommandHandler)
@@ -1821,8 +2300,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     # Start budget HTTP server
-    from budget_server import start_budget_server
-    start_budget_server(port=8001)
+    from .budget_server import start_budget_server
+    _budget_server = start_budget_server(port=8001)
 
     # Command server is started inside main_loop after the event loop is ready.
 

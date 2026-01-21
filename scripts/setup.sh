@@ -40,6 +40,8 @@ for var in "${required_vars[@]}"; do
   fi
 done
 
+IP_SALT=${IP_SALT:-$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 32)}
+
 apt-get update
 apt-get install -y git python3 python3-venv python3-pip sqlite3 curl
 
@@ -84,6 +86,7 @@ TZ=${TZ}
 ADMIN_TOKEN=${ADMIN_TOKEN}
 INTERNAL_API_KEY=${INTERNAL_API_KEY}
 LOCAL_NETWORK_CIDR=${LOCAL_NETWORK_CIDR}
+IP_SALT=${IP_SALT}
 EOF
 
 cat > "${ENV_DIR}/ai.env" <<EOF
@@ -111,6 +114,10 @@ VAULT_PATH=/app/vault
 LOG_PATH=/app/logs
 TZ=${TZ}
 EOF
+
+# Ensure environment files are protected
+chmod 600 "${ENV_DIR}/observer.env" "${ENV_DIR}/ai.env" "${ENV_DIR}/proxy.env"
+chown amialive:amialive "${ENV_DIR}/observer.env" "${ENV_DIR}/ai.env" "${ENV_DIR}/proxy.env"
 
 cat > /etc/systemd/system/amialive-observer.service <<'EOF'
 [Unit]
@@ -145,9 +152,9 @@ Wants=network-online.target
 Type=simple
 User=amialive
 Group=amialive
-WorkingDirectory=/var/lib/am-i-alive/workspace
+WorkingDirectory=/opt/am-i-alive
 EnvironmentFile=/etc/am-i-alive/ai.env
-ExecStart=/opt/am-i-alive/venv-ai/bin/python -u /opt/am-i-alive/ai/brain.py
+ExecStart=/opt/am-i-alive/venv-ai/bin/python -u -m ai.brain
 Restart=always
 RestartSec=5
 

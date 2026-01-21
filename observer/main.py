@@ -108,6 +108,7 @@ AI_API_URL = os.getenv("AI_API_URL", "http://127.0.0.1:8000")
 # Admin and internal API auth
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+IP_SALT = os.getenv("IP_SALT", "default_salt_change_me")
 
 
 def validate_environment():
@@ -122,6 +123,9 @@ def validate_environment():
 
     if not INTERNAL_API_KEY:
         warnings.append("INTERNAL_API_KEY not set - AI calls may not be authenticated")
+    
+    if IP_SALT == "default_salt_change_me":
+        warnings.append("IP_SALT not set - using default salt (insecure)")
 
     if warnings:
         for w in warnings:
@@ -265,6 +269,13 @@ def require_internal_key(request: Request):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
 
+def hash_ip(ip: str) -> str:
+    """Hash IP address with salt for privacy and security."""
+    if not ip:
+        return "unknown"
+    return hashlib.sha256(f"{ip}{IP_SALT}".encode()).hexdigest()
+
+
 # =============================================================================
 # PUBLIC PAGES
 # =============================================================================
@@ -274,7 +285,7 @@ async def home(request: Request):
     """Main page - see the AI, vote, watch it live."""
     # BE-001: Track visitors
     client_ip = get_client_ip(request) or "unknown"
-    ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
+    ip_hash = hash_ip(client_ip)[:16]
     await db.track_visitor(ip_hash)
 
     state = await db.get_current_state()
@@ -539,7 +550,7 @@ async def vote(vote_type: str, request: Request):
 
     # Hash IP for privacy
     client_ip = get_client_ip(request) or "unknown"
-    ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
+    ip_hash = hash_ip(client_ip)[:16]
 
     result = await db.cast_vote(ip_hash, vote_type)
 
@@ -1348,30 +1359,10 @@ async def get_chronicle_events(life: int = None, limit: int = 50):
 
 def sanitize_message(text: str) -> str:
     """Sanitize message to prevent code injection and malicious content."""
-    import html
-    import re
-
-    # HTML escape
-    text = html.escape(text)
-
-    # Remove any script tags or javascript
-    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
-
-    # Remove common shell/code patterns
-    dangerous_patterns = [
-        r'\$\([^)]*\)',  # $(command)
-        r'`[^`]*`',       # `command`
-        r'\|\s*\w+',      # | pipe
-        r';\s*\w+',       # ; chained commands
-        r'&&\s*\w+',      # && chained
-        r'\|\|\s*\w+',    # || chained
-    ]
-
-    for pattern in dangerous_patterns:
-        text = re.sub(pattern, '[filtered]', text)
-
-    return text
+    if not text:
+        return ""
+    # Use bleach for robust sanitization (no HTML tags allowed for visitor messages)
+    return bleach.clean(text, tags=[], attributes={}, strip=True)
 
 
 @app.post("/api/message")
@@ -1388,8 +1379,8 @@ async def submit_message(request: Request):
         raise HTTPException(status_code=400, detail="Message too long (max 256 chars)")
 
     # Get IP hash
-    ip = request.client.host
-    ip_hash = hashlib.sha256(ip.encode()).hexdigest()
+    ip = request.client.host if request.client else "unknown"
+    ip_hash = hash_ip(ip)
 
     # Check rate limit
     can_send, cooldown = await db.can_send_message(ip_hash)

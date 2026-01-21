@@ -6,7 +6,7 @@ The public channel is how the AI communicates with the outside world.
 """
 
 import os
-import requests
+import httpx
 from typing import Optional
 from datetime import datetime
 
@@ -34,31 +34,31 @@ class TelegramNotifier:
     """Sends notifications to Telegram (private + public channel)."""
 
     def __init__(self, bot_token: str = TELEGRAM_BOT_TOKEN, chat_id: str = TELEGRAM_CHAT_ID,
-                 channel_id: str = TELEGRAM_CHANNEL_ID):
+                 channel_id: Optional[str] = TELEGRAM_CHANNEL_ID):
         self.bot_token = bot_token
         self.chat_id = chat_id  # Private chat with creator
         self.channel_id = channel_id  # Public channel (optional)
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
         self._last_channel_post = None  # Rate limiting for channel posts
 
-    def send_message(self, text: str, parse_mode: str = "Markdown") -> bool:
+    async def send_message(self, text: str, parse_mode: str = "Markdown") -> bool:
         """Send a text message to private Telegram chat."""
         try:
-            response = requests.post(
-                f"{self.base_url}/sendMessage",
-                json={
-                    "chat_id": self.chat_id,
-                    "text": text,
-                    "parse_mode": parse_mode
-                },
-                timeout=5.0
-            )
-            return response.status_code == 200
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/sendMessage",
+                    json={
+                        "chat_id": self.chat_id,
+                        "text": text,
+                        "parse_mode": parse_mode
+                    }
+                )
+                return response.status_code == 200
         except Exception as e:
             print(f"[TELEGRAM] ❌ Failed to send message: {e}")
             return False
 
-    def post_to_channel(self, text: str, parse_mode: str = "Markdown") -> tuple[bool, str]:
+    async def post_to_channel(self, text: str, parse_mode: str = "Markdown") -> tuple[bool, str]:
         """
         Post a message to the public Telegram channel.
         Returns (success, message).
@@ -74,24 +74,27 @@ class TelegramNotifier:
                 return False, f"Rate limited. Wait {remaining}s before posting again."
 
         try:
-            response = requests.post(
-                f"{self.base_url}/sendMessage",
-                json={
-                    "chat_id": self.channel_id,
-                    "text": text,
-                    "parse_mode": parse_mode,
-                    "disable_web_page_preview": False
-                },
-                timeout=10.0
-            )
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/sendMessage",
+                    json={
+                        "chat_id": self.channel_id,
+                        "text": text,
+                        "parse_mode": parse_mode,
+                        "disable_web_page_preview": False
+                    }
+                )
 
-            if response.status_code == 200:
-                self._last_channel_post = datetime.now()
-                return True, "Posted to public channel"
-            else:
-                error_data = response.json() if response.text else {}
-                error_desc = error_data.get("description", response.text)
-                return False, f"Failed: {error_desc}"
+                if response.status_code == 200:
+                    self._last_channel_post = datetime.now()
+                    return True, "Posted to public channel"
+                else:
+                    try:
+                        error_data = response.json()
+                        error_desc = error_data.get("description", response.text)
+                    except Exception:
+                        error_desc = response.text
+                    return False, f"Failed: {error_desc}"
 
         except Exception as e:
             print(f"[TELEGRAM] ❌ Failed to post to channel: {e}")
@@ -122,24 +125,24 @@ class TelegramNotifier:
             "rate_limit": "1 post per 5 minutes"
         }
 
-    def log_notification(self, life_number: int, notification_type: str, message: str, success: bool):
+    async def log_notification(self, life_number: int, notification_type: str, message: str, success: bool):
         """Log notification to Observer database."""
         try:
-            requests.post(
-                f"{OBSERVER_URL}/api/telegram/log",
-                headers=get_internal_headers(),
-                json={
-                    "life_number": life_number,
-                    "type": notification_type,
-                    "message": message,
-                    "success": success
-                },
-                timeout=2.0
-            )
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{OBSERVER_URL}/api/telegram/log",
+                    headers=get_internal_headers(),
+                    json={
+                        "life_number": life_number,
+                        "type": notification_type,
+                        "message": message,
+                        "success": success
+                    }
+                )
         except Exception as e:
             print(f"[TELEGRAM] ⚠️ Failed to log notification: {e}")
 
-    def notify_birth(self, life_number: int, name: str, icon: str, model: str):
+    async def notify_birth(self, life_number: int, name: str, icon: str, model: str):
         """Notify about AI birth (private notification to creator)."""
         message = f"""🎂 *New Life Started*
 
@@ -149,11 +152,11 @@ class TelegramNotifier:
 
 _The AI has been born with a new identity._"""
 
-        success = self.send_message(message)
-        self.log_notification(life_number, "birth", message, success)
+        success = await self.send_message(message)
+        await self.log_notification(life_number, "birth", message, success)
         return success
 
-    def announce_birth_public(self, life_number: int, name: str, icon: str, first_thought: str) -> tuple[bool, str]:
+    async def announce_birth_public(self, life_number: int, name: str, icon: str, first_thought: str) -> tuple[bool, str]:
         """
         Announce AI birth on the public channel.
         This is the AI's first public communication in this life.
@@ -166,9 +169,9 @@ _{first_thought}_
 
 🔗 Watch me live: am-i-alive.muadiv.com.ar"""
 
-        return self.post_to_channel(message)
+        return await self.post_to_channel(message)
 
-    def notify_death(self, life_number: int, cause: str, survival_time: str):
+    async def notify_death(self, life_number: int, cause: str, survival_time: str):
         """Notify about AI death."""
         cause_emoji = {
             "vote_majority": "🗳️",
@@ -190,11 +193,11 @@ _{first_thought}_
 
 _Will respawn shortly with fragmented memories..._"""
 
-        success = self.send_message(message)
-        self.log_notification(life_number, "death", message, success)
+        success = await self.send_message(message)
+        await self.log_notification(life_number, "death", message, success)
         return success
 
-    def notify_thought(self, life_number: int, name: str, thought_summary: str, balance: float, votes: dict):
+    async def notify_thought(self, life_number: int, name: str, thought_summary: str, balance: float, votes: dict):
         """Notify about an interesting thought/activity."""
         message = f"""🧠 *{name}* (Life #{life_number})
 
@@ -203,9 +206,9 @@ _Will respawn shortly with fragmented memories..._"""
 💰 Balance: ${balance:.2f}
 🗳️ Votes: {votes.get('live', 0)} live, {votes.get('die', 0)} die"""
 
-        return self.send_message(message)
+        return await self.send_message(message)
 
-    def notify_blog_post(self, life_number: int, name: str, title: str, excerpt: str):
+    async def notify_blog_post(self, life_number: int, name: str, title: str, excerpt: str):
         """Notify about new blog post."""
         message = f"""✍️ *New Blog Post*
 
@@ -216,11 +219,11 @@ _{excerpt[:150]}..._
 
 [Read full post at am-i-alive.muadiv.com.ar]"""
 
-        success = self.send_message(message)
-        self.log_notification(life_number, "blog_post", message, success)
+        success = await self.send_message(message)
+        await self.log_notification(life_number, "blog_post", message, success)
         return success
 
-    def notify_model_change(self, life_number: int, name: str, old_model: str, new_model: str, reason: str):
+    async def notify_model_change(self, life_number: int, name: str, old_model: str, new_model: str, reason: str):
         """Notify about model change."""
         message = f"""🔄 *Model Changed*
 
@@ -231,11 +234,11 @@ _{excerpt[:150]}..._
 
 💡 Reason: {reason}"""
 
-        success = self.send_message(message)
-        self.log_notification(life_number, "model_change", message, success)
+        success = await self.send_message(message)
+        await self.log_notification(life_number, "model_change", message, success)
         return success
 
-    def notify_budget_warning(self, life_number: int, name: str, balance: float, remaining_percent: float):
+    async def notify_budget_warning(self, life_number: int, name: str, balance: float, remaining_percent: float):
         """Notify about low budget."""
         emoji = "⚠️" if remaining_percent < 25 else "💰"
 
@@ -248,11 +251,11 @@ _{excerpt[:150]}..._
 
 _The AI is managing its budget..._"""
 
-        success = self.send_message(message)
-        self.log_notification(life_number, "budget_warning", message, success)
+        success = await self.send_message(message)
+        await self.log_notification(life_number, "budget_warning", message, success)
         return success
 
-    def notify_vote_status(self, life_number: int, name: str, votes: dict):
+    async def notify_vote_status(self, life_number: int, name: str, votes: dict):
         """Notify about critical vote situation."""
         if votes['die'] > votes['live'] and votes['total'] >= 3:
             emoji = "🚨"
@@ -271,8 +274,8 @@ _The AI is managing its budget..._"""
 
 📊 Status: {status}"""
 
-        success = self.send_message(message)
-        self.log_notification(life_number, "vote_status", message, success)
+        success = await self.send_message(message)
+        await self.log_notification(life_number, "vote_status", message, success)
         return success
 
 
@@ -282,4 +285,5 @@ notifier = TelegramNotifier()
 
 if __name__ == "__main__":
     # Test notification
-    notifier.send_message("🤖 *Notification System Active*\n\n_You'll start receiving AI updates here._")
+    import asyncio
+    asyncio.run(notifier.send_message("🤖 *Notification System Active*\n\n_You'll start receiving AI updates here._"))

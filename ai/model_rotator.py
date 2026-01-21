@@ -9,7 +9,7 @@ import json
 import os
 import random
 from typing import Optional, List, Dict
-from model_config import MODELS, get_model_by_id, BUDGET_THRESHOLDS
+from .model_config import MODELS, get_model_by_id, BUDGET_THRESHOLDS
 
 HISTORY_FILE = "/app/workspace/model_history.json"
 HISTORY_SIZE = 10  # Don't repeat until 10 different models used

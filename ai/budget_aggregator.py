@@ -1,8 +1,31 @@
-from typing import Dict, List, Tuple
+from collections.abc import Sequence
+from typing import TypedDict
 
 
-def aggregate_usage(usage_history: List[Dict]) -> Tuple[List[Dict], Dict, int, int, float]:
-    models: Dict[str, Dict[str, float]] = {}
+class UsageEntry(TypedDict):
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+
+
+class ModelUsage(TypedDict):
+    model: str
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    cost: float
+
+
+class Totals(TypedDict):
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tokens: int
+    total_cost: float
+
+
+def aggregate_usage(usage_history: Sequence[UsageEntry]) -> tuple[list[ModelUsage], Totals, int, int, float]:
+    models: dict[str, dict[str, float]] = {}
     total_input_tokens = 0
     total_output_tokens = 0
     total_cost = 0.0
@@ -28,20 +51,22 @@ def aggregate_usage(usage_history: List[Dict]) -> Tuple[List[Dict], Dict, int, i
         total_output_tokens += output_tokens
         total_cost += cost_usd
 
-    models_list = []
+    models_list: list[ModelUsage] = []
     for model_id, stats in models.items():
-        total_tokens = stats["input_tokens"] + stats["output_tokens"]
+        input_tokens = int(stats["input_tokens"])
+        output_tokens = int(stats["output_tokens"])
+        total_tokens = input_tokens + output_tokens
         models_list.append({
             "model": model_id,
-            "input_tokens": stats["input_tokens"],
-            "output_tokens": stats["output_tokens"],
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
             "total_tokens": total_tokens,
             "cost": round(stats["cost"], 6)
         })
 
     models_list.sort(key=lambda item: item["total_tokens"], reverse=True)
 
-    totals = {
+    totals: Totals = {
         "total_input_tokens": total_input_tokens,
         "total_output_tokens": total_output_tokens,
         "total_tokens": total_input_tokens + total_output_tokens,

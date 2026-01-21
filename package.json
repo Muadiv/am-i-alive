@@ -1,0 +1,7 @@
+{
+  "name": "am-i-alive",
+  "version": "1.0.0",
+  "dependencies": {
+    "opencode-antigravity-quota": "0.1.6"
+  }
+}
