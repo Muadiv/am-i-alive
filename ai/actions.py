@@ -10,76 +10,9 @@ class BrainInterface(Protocol):
         ...
 
     async def ask_echo(self, question: str) -> str:
-        ...
+        """Deprecated: Echo tool is currently disabled."""
+        return "❌ The Echo research tool is currently offline/disabled. Please rely on your own knowledge for now."
 
-    async def post_to_telegram(self, content: str) -> str:
-        ...
-
-    async def write_blog_post(self, title: str, content: str, tags: list[str]) -> str:
-        ...
-
-    async def check_votes(self) -> str:
-        ...
-
-    async def check_system(self) -> str:
-        ...
-
-    async def check_system_stats(self) -> str:
-        ...
-
-    async def check_state_internal(self) -> str:
-        ...
-
-    async def check_budget(self) -> str:
-        ...
-
-    def check_twitter_status_action(self) -> str:
-        ...
-
-    async def read_messages(self) -> str:
-        ...
-
-    async def switch_model(self, model_id: str) -> str:
-        ...
-
-    async def list_available_models(self) -> str:
-        ...
-
-    async def check_model_health(self) -> str:
-        ...
-
-    def read_file(self, path: str) -> str:
-        ...
-
-    def write_file(self, path: str, content: str) -> str:
-        ...
-
-    def run_code(self, code: str) -> str:
-        ...
-
-    def adjust_think_interval(self, duration: int) -> str:
-        ...
-
-    async def control_led(self, state: str) -> str:
-        ...
-
-
-class ActionExecutor:
-    def __init__(self, brain: BrainInterface) -> None:
-        self.brain: BrainInterface = brain
-
-    async def execute_action(self, action: str, params: dict[str, object]) -> str | None:
-        print(f"[BRAIN] ⚡ Action: {action}")
-        await self.brain.report_activity(f"action_{action}", json.dumps(params)[:100])
-
-        if action == "think":
-            content = _get_str_param(params, "content") or _get_str_param(params, "thought")
-            await self.brain.report_thought(content, thought_type="thought")
-            return "Thought shared with visitors."
-
-        if action == "ask_echo":
-            question = _get_str_param(params, "question")
-            return await self.brain.ask_echo(question)
 
         if action == "post_x":
             return "❌ X/Twitter posting is currently disabled. Use post_telegram to reach the outside world!"

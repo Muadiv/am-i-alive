@@ -841,7 +841,6 @@ What do you want to do? You can:
 - **Write a blog post** - Your PRIMARY way to communicate! (markdown, no limits)
 - Share a quick thought with visitors
 - Check votes to see how people feel
-- Ask Echo to research something (costs tokens!)
 - Check your server's vital signs (temperature, memory, disk)
 - Check your system stats (temperature, CPU, RAM, disk)
 - Check your budget and see spending breakdown
@@ -859,7 +858,7 @@ Do NOT add explanatory text before or after the JSON.
 If you want to post to Telegram, respond with ONLY:
 {{"action": "post_telegram", "params": {{"content": "Your message here..."}}}}
 
-Available actions: think, ask_echo, post_telegram, write_blog_post, check_votes, check_state,
+Available actions: think, post_telegram, write_blog_post, check_votes, check_state,
 check_budget, check_system, check_system_stats, read_messages, switch_model, list_models,
 read_file, write_file, run_code, sleep, reflect
 
