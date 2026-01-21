@@ -25,6 +25,46 @@ import bleach
 
 import database as db
 
+# =============================================================================
+# BROADCAST MANAGER (SSE)
+# =============================================================================
+
+class BroadcastManager:
+    """Manages SSE subscriptions and broadcasts events to connected clients."""
+    def __init__(self):
+        self.subscribers: set[asyncio.Queue] = set()
+
+    async def subscribe(self) -> asyncio.Queue:
+        """Subscribe to the broadcast stream."""
+        q = asyncio.Queue()
+        self.subscribers.add(q)
+        return q
+
+    async def unsubscribe(self, q: asyncio.Queue):
+        """Unsubscribe from the broadcast stream."""
+        if q in self.subscribers:
+            self.subscribers.remove(q)
+
+    async def broadcast(self, event_type: str, data: str):
+        """Broadcast an event to all subscribers."""
+        if not self.subscribers:
+            return
+        
+        # Create message payload
+        message = {"event": event_type, "data": data}
+        
+        # Send to all queues
+        for q in list(self.subscribers):
+            try:
+                q.put_nowait(message)
+            except Exception:
+                # If queue is closed or full, ignore
+                pass
+
+# Global broadcasters
+activity_broadcaster = BroadcastManager()
+thought_broadcaster = BroadcastManager()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
@@ -651,6 +691,10 @@ async def add_thought(request: Request):
         raise HTTPException(status_code=400, detail="Content required")
 
     await db.record_thought(content, thought_type, tokens_used)
+    
+    # Broadcast to subscribers
+    await thought_broadcaster.broadcast("thought", content)
+    
     await db.log_activity("thought", f"AI shared a {thought_type}")
 
     return {"success": True}
@@ -673,6 +717,11 @@ async def add_activity(request: Request):
         details = sanitize_log(details)
 
     await db.log_activity(action, details)
+    
+    # Broadcast to subscribers
+    timestamp = datetime.now(timezone.utc).isoformat()
+    await activity_broadcaster.broadcast("activity", f"{timestamp} - {action}: {details or ''}")
+    
     return {"success": True}
 
 
@@ -1123,31 +1172,32 @@ async def token_budget_checker():
 async def stream_activity(request: Request):
     """Stream live activity updates via SSE."""
     async def event_generator():
-        last_timestamp = None
-        sent_ids = set()
-
-        while True:
-            if await request.is_disconnected():
-                break
-
-            # Get recent activity
+        # Create a queue for this client
+        q = await activity_broadcaster.subscribe()
+        try:
+            # Send initial backlog (last 20 items)
             activity = await db.get_recent_activity(20)
+            # Send in reverse chronological order (oldest first) so they appear in correct order
+            for item in reversed(activity):
+                yield {
+                    "event": "activity",
+                    "data": f"{item['timestamp']} - {item['action']}: {item.get('details', '')}"
+                }
 
-            # Only send new items we haven't sent before
-            for item in activity:
-                item_id = f"{item['timestamp']}:{item['action']}"
-                if item_id not in sent_ids:
-                    sent_ids.add(item_id)
-                    yield {
-                        "event": "activity",
-                        "data": f"{item['timestamp']} - {item['action']}: {item.get('details', '')}"
-                    }
-
-            # Keep sent_ids bounded
-            if len(sent_ids) > 100:
-                sent_ids.clear()
-
-            await asyncio.sleep(2)  # Check every 2 seconds instead of 1
+            # Wait for new events
+            while True:
+                if await request.is_disconnected():
+                    break
+                
+                # Wait for next item
+                try:
+                    # Use timeout to allow periodic disconnect check
+                    item = await asyncio.wait_for(q.get(), timeout=1.0)
+                    yield item
+                except asyncio.TimeoutError:
+                    pass
+        finally:
+            await activity_broadcaster.unsubscribe(q)
 
     return EventSourceResponse(event_generator())
 
@@ -1156,20 +1206,30 @@ async def stream_activity(request: Request):
 async def stream_thoughts(request: Request):
     """Stream live thoughts via SSE."""
     async def event_generator():
-        last_count = 0
-        while True:
-            if await request.is_disconnected():
-                break
-
+        # Create a queue for this client
+        q = await thought_broadcaster.subscribe()
+        try:
+            # Send last thought immediately
             thoughts = await db.get_recent_thoughts(1)
             if thoughts:
-                latest = thoughts[0]
                 yield {
                     "event": "thought",
-                    "data": latest["content"]
+                    "data": thoughts[0]["content"]
                 }
 
-            await asyncio.sleep(5)
+            # Wait for new events
+            while True:
+                if await request.is_disconnected():
+                    break
+                
+                # Wait for next item
+                try:
+                    item = await asyncio.wait_for(q.get(), timeout=1.0)
+                    yield item
+                except asyncio.TimeoutError:
+                    pass
+        finally:
+            await thought_broadcaster.unsubscribe(q)
 
     return EventSourceResponse(event_generator())
 
