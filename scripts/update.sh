@@ -14,8 +14,12 @@ if [[ ! -d "${INSTALL_DIR}/.git" ]]; then
   exit 1
 fi
 
+# Ensure correct remote
+git -C "${INSTALL_DIR}" remote set-url origin https://github.com/Muadiv/am-i-alive.git
+
 old_rev=$(git -C "${INSTALL_DIR}" rev-parse HEAD)
-git -C "${INSTALL_DIR}" pull --ff-only
+# Pull as amialive user to preserve ownership
+sudo -u amialive git -C "${INSTALL_DIR}" pull --ff-only
 new_rev=$(git -C "${INSTALL_DIR}" rev-parse HEAD)
 
 if [[ "${old_rev}" == "${new_rev}" ]]; then
