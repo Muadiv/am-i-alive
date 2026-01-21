@@ -112,6 +112,15 @@ MODELS = {
             "context": 1000000,
             "intelligence": 10,
             "best_for": "existential crisis, final words"
+        },
+        {
+            "id": "anthropic/claude-3-opus",
+            "name": "Claude 3 Opus",
+            "input_cost": 15.000,
+            "output_cost": 75.000,
+            "context": 200000,
+            "intelligence": 10,
+            "best_for": "maximum intelligence, deep philosophy, expensive thoughts"
         }
     ]
 }
