@@ -879,7 +879,8 @@ async def execute_death(
     # Stop the AI container (in production, we'd actually stop it)
     try:
         async with httpx.AsyncClient() as client:
-            await client.post(f"{AI_API_URL}/shutdown", timeout=5.0)
+            headers = {"X-Internal-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}
+            await client.post(f"{AI_API_URL}/shutdown", headers=headers, timeout=5.0)
     except Exception:
         pass  # AI might already be unresponsive
 
@@ -924,12 +925,15 @@ async def notify_ai_birth(life_info: dict) -> bool:
         "previous_life": life_info.get("previous_life", {})
     }
 
+    headers = {"X-Internal-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}
+
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{AI_API_URL}/birth",
+                    headers=headers,
                     json=payload,
                     timeout=10.0
                 )
@@ -1011,8 +1015,10 @@ async def force_ai_sync(observer_state: dict):
 
     try:
         async with httpx.AsyncClient() as client:
+            headers = {"X-Internal-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}
             response = await client.post(
                 f"{AI_API_URL}/force-sync",
+                headers=headers,
                 json={
                     "life_number": observer_state.get("life_number"),
                     "bootstrap_mode": observer_state.get("bootstrap_mode"),
@@ -1189,8 +1195,10 @@ async def oracle_message(request: Request):
 
         # Then forward to AI
         async with httpx.AsyncClient() as client:
+            headers = {"X-Internal-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}
             response = await client.post(
                 f"{AI_API_URL}/oracle",
+                headers=headers,
                 json={"message": message, "type": message_type, "message_id": result.get("id")},
                 timeout=30.0
             )
