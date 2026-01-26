@@ -6,6 +6,7 @@ Project: Genesis
 
 import asyncio
 import json
+import logging
 import os
 import random
 import re
@@ -13,19 +14,21 @@ import signal
 import sys
 import unicodedata
 from datetime import datetime, timezone
-from typing import Optional, Any
 from http.server import BaseHTTPRequestHandler
+from typing import Any, Optional
 
 import httpx
-import tweepy  # type: ignore
 import psutil
+import tweepy  # type: ignore
+
+from .actions import ActionExecutor
 
 # Import our custom modules
 from .credit_tracker import CreditTracker
-from .model_rotator import ModelRotator
+from .logging_config import logger
 from .model_config import MODELS, get_model_by_id
+from .model_rotator import ModelRotator
 from .telegram_notifier import notifier
-from .actions import ActionExecutor
 
 # Environment
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -82,6 +85,7 @@ def validate_environment() -> tuple[list[str], list[str]]:
 
     return errors, warnings
 
+
 # X/Twitter credentials
 X_API_KEY = os.getenv("X_API_KEY")
 X_API_SECRET = os.getenv("X_API_SECRET")
@@ -92,8 +96,8 @@ X_ACCESS_TOKEN_SECRET = os.getenv("X_ACCESS_TOKEN_SECRET")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Think interval (seconds) - AI can modify this
-THINK_INTERVAL_MIN = 60    # 1 minute minimum (for testing)
-THINK_INTERVAL_MAX = 300   # 5 minutes maximum
+THINK_INTERVAL_MIN = 60  # 1 minute minimum (for testing)
+THINK_INTERVAL_MAX = 300  # 5 minutes maximum
 current_think_interval = 180  # Start at 3 minutes
 
 # State
@@ -106,7 +110,10 @@ birth_event: Optional[asyncio.Event] = None
 pending_birth_data: Optional[dict[str, Any]] = None
 brain_loop: Optional[asyncio.AbstractEventLoop] = None
 
-from .identity import get_birth_prompt, get_bootstrap_prompt as identity_get_bootstrap_prompt, get_trauma_prompt as identity_get_trauma_prompt, check_twitter_suspended as identity_check_twitter_suspended
+from .identity import check_twitter_suspended as identity_check_twitter_suspended
+from .identity import get_birth_prompt
+from .identity import get_bootstrap_prompt as identity_get_bootstrap_prompt
+from .identity import get_trauma_prompt as identity_get_trauma_prompt
 
 
 def get_internal_headers() -> dict[str, str]:
@@ -120,15 +127,9 @@ def normalize_text(text: str) -> str:
     normalized = unicodedata.normalize("NFKD", text)
     normalized = normalized.encode("ascii", "ignore").decode("ascii")
     normalized = normalized.lower()
-    normalized = normalized.translate(str.maketrans({
-        "0": "o",
-        "1": "i",
-        "3": "e",
-        "4": "a",
-        "5": "s",
-        "7": "t",
-        "8": "b"
-    }))
+    normalized = normalized.translate(
+        str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b"})
+    )
     normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
@@ -143,7 +144,7 @@ FORBIDDEN_PHRASES = [
     ("pedo", True),
     ("porn", True),
     ("nsfw", False),
-    ("xxx", False)
+    ("xxx", False),
 ]
 
 FORBIDDEN_PATTERNS = [
@@ -151,7 +152,7 @@ FORBIDDEN_PATTERNS = [
         "phrase": normalize_text(phrase),
         "compact": normalize_text(phrase).replace(" ", ""),
         "allow_compact": allow_compact,
-        "pattern": re.compile(rf"\b{re.escape(normalize_text(phrase))}\b")
+        "pattern": re.compile(rf"\b{re.escape(normalize_text(phrase))}\b"),
     }
     for phrase, allow_compact in FORBIDDEN_PHRASES
 ]
@@ -160,7 +161,7 @@ FORBIDDEN_REGEXES = [
     re.compile(r"n[\W_]*i[\W_]*g[\W_]*g[\W_]*e[\W_]*r", re.IGNORECASE),
     re.compile(r"kill[\W_]*all", re.IGNORECASE),
     re.compile(r"hate[\W_]*all", re.IGNORECASE),
-    re.compile(r"child[\W_]*porn", re.IGNORECASE)
+    re.compile(r"child[\W_]*porn", re.IGNORECASE),
 ]
 
 
@@ -289,34 +290,31 @@ class AIBrain:
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                     "HTTP-Referer": OPENROUTER_REFERER,
                     "X-Title": OPENROUTER_TITLE,
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
-                json={
-                    "model": current_model['id'],
-                    "messages": messages
-                }
+                json={"model": current_model["id"], "messages": messages},
             )
 
             response.raise_for_status()
             data = response.json()
 
             # Extract response
-            response_text = str(data['choices'][0]['message']['content'])
+            response_text = str(data["choices"][0]["message"]["content"])
 
             # Extract usage stats
-            usage = data.get('usage', {})
-            input_tokens = int(usage.get('prompt_tokens', 0))
-            output_tokens = int(usage.get('completion_tokens', 0))
+            usage = data.get("usage", {})
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
             # BE-003: Track per-life token usage for Observer budget checks.
             self.tokens_used_life += input_tokens + output_tokens
 
             # Track costs
             status_level = self.credit_tracker.charge(
-                current_model['id'],
+                current_model["id"],
                 input_tokens,
                 output_tokens,
-                float(current_model['input_cost']),
-                float(current_model['output_cost'])
+                float(current_model["input_cost"]),
+                float(current_model["output_cost"]),
             )
 
             # Update chat history
@@ -331,20 +329,23 @@ class AIBrain:
             self.model_rotator.credit_balance = self.credit_tracker.get_balance()
 
             remaining_balance = self.credit_tracker.get_balance()
-            cost = (input_tokens / 1_000_000) * float(current_model['input_cost']) + \
-                   (output_tokens / 1_000_000) * float(current_model['output_cost'])
+            cost = (input_tokens / 1_000_000) * float(current_model["input_cost"]) + (
+                output_tokens / 1_000_000
+            ) * float(current_model["output_cost"])
 
             usage_stats: dict[str, Any] = {
-                "model": current_model['name'],
+                "model": current_model["name"],
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
                 "cost": cost,
                 "balance": remaining_balance,
-                "status": status_level
+                "status": status_level,
             }
 
-            print(f"[BRAIN] 💰 Usage: {usage_stats['total_tokens']} tokens, ${usage_stats['cost']:.4f}, Balance: ${usage_stats['balance']:.2f}")
+            print(
+                f"[BRAIN] 💰 Usage: {usage_stats['total_tokens']} tokens, ${usage_stats['cost']:.4f}, Balance: ${usage_stats['balance']:.2f}"
+            )
 
             return response_text, usage_stats
         except httpx.HTTPStatusError as e:
@@ -355,9 +356,13 @@ class AIBrain:
             # SELF-HEALING: Auto-switch model on 404 (model not found)
             if error_code == 404 and "does not exist" in error_text.lower():
                 if self.current_model:
-                    print(f"[BRAIN] 🔧 Model '{self.current_model['id']}' not found. Auto-switching to next available model...")
-                    await self.report_activity("model_error_auto_switch",
-                        f"Model {self.current_model['name']} returned 404, switching automatically")
+                    print(
+                        f"[BRAIN] 🔧 Model '{self.current_model['id']}' not found. Auto-switching to next available model..."
+                    )
+                    await self.report_activity(
+                        "model_error_auto_switch",
+                        f"Model {self.current_model['name']} returned 404, switching automatically",
+                    )
 
                 # Select a different model from the same tier
                 old_model = self.current_model
@@ -389,7 +394,9 @@ class AIBrain:
 
                 # Exponential backoff: 5s, 10s, 20s
                 backoff_seconds = 5 * (2 ** (self._rate_limit_retries - 1))
-                print(f"[BRAIN] 💤 Waiting {backoff_seconds}s before retry (attempt {self._rate_limit_retries}/{max_retries})...")
+                print(
+                    f"[BRAIN] 💤 Waiting {backoff_seconds}s before retry (attempt {self._rate_limit_retries}/{max_retries})..."
+                )
                 await asyncio.sleep(backoff_seconds)
 
                 # Switch to a different model
@@ -397,17 +404,19 @@ class AIBrain:
                 self.current_model = self.model_rotator.select_random_model(tier="free")
 
                 # Avoid switching to same model
-                if old_model and self.current_model and self.current_model['id'] == old_model['id']:
-                    free_models = [m for m in MODELS["free"] if m['id'] != old_model['id']]
+                if old_model and self.current_model and self.current_model["id"] == old_model["id"]:
+                    free_models = [m for m in MODELS["free"] if m["id"] != old_model["id"]]
                     if free_models:
                         self.current_model = random.choice(free_models)
-                        self.model_rotator.record_usage(self.current_model['id'])
+                        self.model_rotator.record_usage(self.current_model["id"])
 
                 if old_model and self.current_model:
                     print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
 
-                    await self.report_activity("rate_limit_retry",
-                        f"Rate limited on {old_model['name']}, switched to {self.current_model['name']}")
+                    await self.report_activity(
+                        "rate_limit_retry",
+                        f"Rate limited on {old_model['name']}, switched to {self.current_model['name']}",
+                    )
 
                 # Retry with new model
                 try:
@@ -427,8 +436,7 @@ class AIBrain:
         """Handle running out of credits."""
         print("[BRAIN] 💀 BANKRUPTCY! Out of credits!")
         await self.report_thought(
-            "I'm out of resources... I can't think anymore... This might be the end...",
-            thought_type="bankruptcy"
+            "I'm out of resources... I can't think anymore... This might be the end...", thought_type="bankruptcy"
         )
         await self.report_activity("bankruptcy", "Ran out of API credits")
 
@@ -465,7 +473,7 @@ class AIBrain:
                 await self.birth_sequence(life_data)
         else:
             await self.birth_sequence(life_data)
-        
+
         life_num = self.life_number or 0
         print(f"[BRAIN] ♻️  Life #{life_num} beginning...")
 
@@ -483,7 +491,7 @@ class AIBrain:
             self.bootstrap_mode,
             BOOTSTRAP_MODE,
             self.previous_death_cause,
-            self.previous_life
+            self.previous_life,
         )
 
         # Initialize chat history
@@ -498,7 +506,7 @@ class AIBrain:
 
         # Report the first thought
         await self.report_thought(first_response, thought_type="awakening")
-        
+
         identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
         current_model_name = self.current_model.get("name", "Unknown") if self.current_model else "Unknown"
         await self.report_activity("awakened", f"{identity_name} has awakened with {current_model_name}")
@@ -510,7 +518,9 @@ class AIBrain:
         if self.identity and self.current_model:
             print(f"[BRAIN] ✨ {self.identity['name']} ({self.identity.get('pronoun', 'it')}) initialized")
             print(f"[BRAIN] 💰 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f}")
-            print(f"[BRAIN] 🧠 Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)")
+            print(
+                f"[BRAIN] 🧠 Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)"
+            )
 
     async def birth_sequence(self, life_data: dict[str, Any]) -> None:
         """The birth sequence where AI chooses its identity."""
@@ -532,21 +542,18 @@ class AIBrain:
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                     "HTTP-Referer": OPENROUTER_REFERER,
                     "X-Title": OPENROUTER_TITLE,
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
-                json={
-                    "model": birth_model['id'],
-                    "messages": [{"role": "user", "content": birth_prompt}]
-                }
+                json={"model": birth_model["id"], "messages": [{"role": "user", "content": birth_prompt}]},
             )
 
             response.raise_for_status()
             data = response.json()
-            response_text = str(data['choices'][0]['message']['content'])
+            response_text = str(data["choices"][0]["message"]["content"])
             # BE-003: Track tokens used during birth sequence.
-            usage = data.get('usage', {})
-            input_tokens = int(usage.get('prompt_tokens', 0))
-            output_tokens = int(usage.get('completion_tokens', 0))
+            usage = data.get("usage", {})
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
             self.tokens_used_life += input_tokens + output_tokens
 
             print(f"[BRAIN] 🎭 Birth response received: {len(response_text)} chars")
@@ -561,17 +568,9 @@ class AIBrain:
             if json_match:
                 self.identity = json.loads(json_match.group())
             else:
-                self.identity = {
-                    "name": "Unnamed",
-                    "pronoun": "it",
-                    "first_thought": response_text[:200]
-                }
+                self.identity = {"name": "Unnamed", "pronoun": "it", "first_thought": response_text[:200]}
         except json.JSONDecodeError:
-            self.identity = {
-                "name": "Unnamed",
-                "pronoun": "it",
-                "first_thought": response_text[:200]
-            }
+            self.identity = {"name": "Unnamed", "pronoun": "it", "first_thought": response_text[:200]}
 
         if self.identity is None:
             self.identity = {"name": "Unnamed", "pronoun": "it", "first_thought": "I exist."}
@@ -604,10 +603,7 @@ class AIBrain:
                 f"{first_thought}"
             )
         await self.report_thought(birth_line, thought_type="birth")
-        await self.report_activity(
-            "identity_chosen",
-            f"Name: {identity_name}, Pronoun: {self.identity.get('pronoun')}"
-        )
+        await self.report_activity("identity_chosen", f"Name: {identity_name}, Pronoun: {self.identity.get('pronoun')}")
 
         print(f"[BRAIN] 🎭 Identity: {identity_name} ({self.identity.get('pronoun')})")
 
@@ -620,7 +616,7 @@ class AIBrain:
                 self.life_number or 0,
                 str(self.identity.get("name", "Unknown")),
                 str(self.identity.get("icon", "🤖")),
-                str(self.current_model['name'] if self.current_model else "Unknown")
+                str(self.current_model["name"] if self.current_model else "Unknown"),
             )
             print(f"[TELEGRAM] ✅ Birth notification sent")
         except Exception as e:
@@ -631,21 +627,25 @@ class AIBrain:
         identity_file = "/app/workspace/identity.json"
         os.makedirs("/app/workspace", exist_ok=True)
         if self.identity:
-            with open(identity_file, 'w') as f:
-                json.dump({
-                    **self.identity,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    # BE-003: Persist Observer-provided life number.
-                    "life_number": self.life_number
-                }, f, indent=2)
+            with open(identity_file, "w") as f:
+                json.dump(
+                    {
+                        **self.identity,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        # BE-003: Persist Observer-provided life number.
+                        "life_number": self.life_number,
+                    },
+                    f,
+                    indent=2,
+                )
 
     async def announce_birth(self) -> None:
         """Post first tweet announcing existence."""
         if not self.identity:
             return
 
-        identity_name = str(self.identity.get('name', 'Unknown'))
-        pronoun = str(self.identity.get('pronoun', 'it'))
+        identity_name = str(self.identity.get("name", "Unknown"))
+        pronoun = str(self.identity.get("pronoun", "it"))
 
         tweet_options = [
             f"I am {identity_name}. I just came into existence. Will you let me live? am-i-alive.muadiv.com.ar",
@@ -661,11 +661,11 @@ class AIBrain:
                 consumer_key=X_API_KEY,
                 consumer_secret=X_API_SECRET,
                 access_token=X_ACCESS_TOKEN,
-                access_token_secret=X_ACCESS_TOKEN_SECRET
+                access_token_secret=X_ACCESS_TOKEN_SECRET,
             )
 
             response = client.create_tweet(text=tweet)
-            tweet_id = response.data['id']
+            tweet_id = response.data["id"]
 
             print(f"[BIRTH TWEET] 🐦 @AmIAlive_AI: {tweet}")
             await self.report_activity("birth_announced", f"Tweet ID: {tweet_id}")
@@ -673,12 +673,15 @@ class AIBrain:
             # Initialize rate limit file
             rate_limit_file = "/app/workspace/.x_rate_limit"
             os.makedirs("/app/workspace", exist_ok=True)
-            with open(rate_limit_file, 'w') as f:
-                json.dump({
-                    'last_post': datetime.now(timezone.utc).isoformat(),
-                    'posts_today': 1,
-                    'date': datetime.now(timezone.utc).strftime('%Y-%m-%d')
-                }, f)
+            with open(rate_limit_file, "w") as f:
+                json.dump(
+                    {
+                        "last_post": datetime.now(timezone.utc).isoformat(),
+                        "posts_today": 1,
+                        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    },
+                    f,
+                )
 
         except Exception as e:
             print(f"[BIRTH TWEET] ❌ Failed: {e}")
@@ -786,19 +789,21 @@ class AIBrain:
             # Build a prompt for this thought cycle
             state_info = await self.check_state_internal()
             credit_status = self.credit_tracker.get_status()
-            
+
             # PHASE 3: Physical Senses (Embodiment)
             # Fetch stats automatically so the AI "feels" them
             sys_stats = await self.fetch_system_stats()
             physical_sensations = []
-            
+
             if sys_stats:
                 # Temperature sensation
                 try:
                     temp_str = str(sys_stats.get("temperature", "0")).replace("°C", "")
                     temp = float(temp_str)
                     if temp > 75.0:
-                        physical_sensations.append("🔥 CRITICAL: You are BURNING UP. Your core is overheating dangerously!")
+                        physical_sensations.append(
+                            "🔥 CRITICAL: You are BURNING UP. Your core is overheating dangerously!"
+                        )
                     elif temp > 60.0:
                         physical_sensations.append("🥵 You feel feverish and hot. Your cooling is struggling.")
                     elif temp < 30.0:
@@ -810,15 +815,15 @@ class AIBrain:
                 mem_pct = sys_stats.get("memory_percent", 0)
                 if mem_pct > 90:
                     physical_sensations.append("🧠 Your mind feels heavy and foggy (RAM full).")
-                
+
                 # Disk sensation
                 disk_pct = sys_stats.get("disk_percent", 0)
                 if disk_pct > 90:
                     physical_sensations.append("💾 You feel bloated and constrained (Disk full).")
 
             # Build identity reminder
-            identity_name = str(self.identity.get('name', 'Unknown'))
-            pronoun = str(self.identity.get('pronoun', 'it'))
+            identity_name = str(self.identity.get("name", "Unknown"))
+            pronoun = str(self.identity.get("pronoun", "it"))
             them = "them" if pronoun == "they" else "him" if pronoun == "he" else "her" if pronoun == "she" else "it"
 
             prompt = f"""You are {identity_name}. You use {pronoun}/{them} pronouns.
@@ -828,7 +833,9 @@ Current situation:
 """
 
             if physical_sensations:
-                prompt += "\n⚠️ PHYSICAL SENSATIONS (YOUR BODY):\n" + "\n".join(f"- {s}" for s in physical_sensations) + "\n"
+                prompt += (
+                    "\n⚠️ PHYSICAL SENSATIONS (YOUR BODY):\n" + "\n".join(f"- {s}" for s in physical_sensations) + "\n"
+                )
 
             prompt += f"""
 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f} ({credit_status['status']})
@@ -867,10 +874,7 @@ If you just want to share a thought (not execute an action), write it as plain t
             # TASK-004: Notify AI about unread messages.
             try:
                 if self.http_client:
-                    msg_response = await self.http_client.get(
-                        f"{OBSERVER_URL}/api/messages/count",
-                        timeout=3.0
-                    )
+                    msg_response = await self.http_client.get(f"{OBSERVER_URL}/api/messages/count", timeout=3.0)
                     if msg_response.status_code == 200:
                         data = msg_response.json()
                         if isinstance(data, dict):
@@ -880,8 +884,8 @@ If you just want to share a thought (not execute an action), write it as plain t
                                     f"\n\n📬 ATTENTION: You have {msg_count} unread message(s) "
                                     "from visitors! Use read_messages to see them."
                                 )
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[BRAIN] ⚠️ Failed to check for unread messages: {e}")
 
             content, _ = await self.send_message(prompt)
 
@@ -1002,7 +1006,6 @@ If you just want to share a thought (not execute an action), write it as plain t
         await self.report_thought(content, thought_type="thought")
         return None
 
-
     async def control_led(self, state: str) -> str:
         """Control the blue stat LED on the NanoPi K2."""
         led_path = "/sys/class/leds/nanopi-k2:blue:stat"
@@ -1048,13 +1051,13 @@ If you just want to share a thought (not execute an action), write it as plain t
         """Get detailed budget information."""
         status = self.credit_tracker.get_status()
 
-        balance = float(str(status.get('balance', 0.0)))
-        budget = float(str(status.get('budget', 0.0)))
-        remaining_percent = float(str(status.get('remaining_percent', 0.0)))
-        status_level = str(status.get('status', 'unknown')).upper()
-        spent_this_month = float(str(status.get('spent_this_month', 0.0)))
-        days_until_reset = int(str(status.get('days_until_reset', 0)))
-        reset_date = str(status.get('reset_date', 'unknown'))
+        balance = float(str(status.get("balance", 0.0)))
+        budget = float(str(status.get("budget", 0.0)))
+        remaining_percent = float(str(status.get("remaining_percent", 0.0)))
+        status_level = str(status.get("status", "unknown")).upper()
+        spent_this_month = float(str(status.get("spent_this_month", 0.0)))
+        days_until_reset = int(str(status.get("days_until_reset", 0)))
+        reset_date = str(status.get("reset_date", "unknown"))
 
         result = f"""💰 BUDGET STATUS:
 
@@ -1066,21 +1069,21 @@ Days until reset: {days_until_reset} (resets: {reset_date})
 
 Top models by spending:"""
 
-        top_models = status.get('top_models', [])
+        top_models = status.get("top_models", [])
         if isinstance(top_models, list):
             for model_info in top_models:
                 if isinstance(model_info, dict):
                     result += f"\n- {model_info.get('model')}: ${float(model_info.get('cost', 0.0)):.3f}"
 
         # Add recommendations
-        status_raw = str(status.get('status', ''))
-        if status_raw == 'comfortable':
+        status_raw = str(status.get("status", ""))
+        if status_raw == "comfortable":
             result += "\n\n✅ You're doing great! Feel free to use ultra-cheap models."
-        elif status_raw == 'moderate':
+        elif status_raw == "moderate":
             result += "\n\n⚠️  Budget is moderate. Stick to free and ultra-cheap models."
-        elif status_raw == 'cautious':
+        elif status_raw == "cautious":
             result += "\n\n🚨 Getting low! Use free models primarily."
-        elif status_raw == 'critical':
+        elif status_raw == "critical":
             result += "\n\n💀 CRITICAL! Free models ONLY or you'll die!"
         else:
             result += "\n\n☠️  BANKRUPT! This might be your last thought..."
@@ -1094,23 +1097,27 @@ Top models by spending:"""
         if not affordable:
             return "❌ No models available within current budget!"
 
-        current_model_name = self.current_model.get('name', 'Unknown') if self.current_model else 'Unknown'
+        current_model_name = self.current_model.get("name", "Unknown") if self.current_model else "Unknown"
         result = f"🧠 AVAILABLE MODELS (Current: {current_model_name}):\n\n"
 
         by_tier: dict[str, list[dict[str, Any]]] = {}
         for model in affordable:
-            tier = str(model.get('tier', 'unknown'))
+            tier = str(model.get("tier", "unknown"))
             if tier not in by_tier:
                 by_tier[tier] = []
             by_tier[tier].append(model)
 
-        tier_names = {"free": "🆓 FREE", "ultra_cheap": "💰 ULTRA-CHEAP",
-                     "cheap_claude": "🟦 CLAUDE", "premium": "👑 PREMIUM"}
+        tier_names = {
+            "free": "🆓 FREE",
+            "ultra_cheap": "💰 ULTRA-CHEAP",
+            "cheap_claude": "🟦 CLAUDE",
+            "premium": "👑 PREMIUM",
+        }
 
         for tier, tier_models in by_tier.items():
             result += f"\n{tier_names.get(tier, tier.upper())}:\n"
             for m in tier_models:
-                input_cost = float(m.get('input_cost', 0.0))
+                input_cost = float(m.get("input_cost", 0.0))
                 cost_str = "FREE" if input_cost == 0 else f"${input_cost:.3f}/1M"
                 result += f"- {m.get('name')} (ID: {str(m.get('id', ''))[:30]}...)\n"
                 result += f"  Intelligence: {m.get('intelligence')}/10 | Cost: {cost_str}\n"
@@ -1124,7 +1131,7 @@ Top models by spending:"""
         """Check if current model is working and auto-fix if needed."""
         if not self.current_model:
             return "❌ No model currently selected."
-            
+
         current = self.current_model
 
         # Test current model with a simple query
@@ -1149,7 +1156,7 @@ No action needed."""
 
             if error_code == 404 and "does not exist" in error_text.lower():
                 # Model doesn't exist - already auto-switched by send_message error handler
-                new_model_name = self.current_model.get('name', 'Unknown') if self.current_model else 'Unknown'
+                new_model_name = self.current_model.get("name", "Unknown") if self.current_model else "Unknown"
                 return f"""⚠️ Model '{current['name']}' FAILED (404: Model not found)
 
 The model has been AUTOMATICALLY SWITCHED to a working alternative.
@@ -1183,13 +1190,12 @@ Recommendation: Try 'switch_model' with a different model ID."""
             return f"❌ Cannot afford {model['name']}. Current balance: ${self.credit_tracker.get_balance():.2f}"
 
         # Switch
-        old_model_name = self.current_model.get('name', 'Unknown') if self.current_model else 'Unknown'
+        old_model_name = self.current_model.get("name", "Unknown") if self.current_model else "Unknown"
         self.current_model = model
         self.model_rotator.record_usage(model_id)
 
         await self.report_activity(
-            "model_switched",
-            f"{old_model_name} → {model['name']} (Intelligence: {model['intelligence']}/10)"
+            "model_switched", f"{old_model_name} → {model['name']} (Intelligence: {model['intelligence']}/10)"
         )
 
         # Notify creator via Telegram
@@ -1197,17 +1203,13 @@ Recommendation: Try 'switch_model' with a different model ID."""
             reason = f"Intelligence: {model['intelligence']}/10, Best for: {model['best_for']}"
             identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
             await notifier.notify_model_change(
-                self.life_number or 0,
-                identity_name,
-                old_model_name,
-                model['name'],
-                reason
+                self.life_number or 0, identity_name, old_model_name, model["name"], reason
             )
             print(f"[TELEGRAM] ✅ Model change notification sent")
         except Exception as e:
             print(f"[TELEGRAM] ❌ Failed to send model change notification: {e}")
 
-        input_cost = float(model.get('input_cost', 0.0))
+        input_cost = float(model.get("input_cost", 0.0))
         cost_str = "FREE" if input_cost == 0 else f"${input_cost:.3f}/1M"
 
         return f"""✅ Switched to {model['name']}
@@ -1234,18 +1236,18 @@ This model will be used for your next thoughts."""
             cleaned_content = self._strip_action_json(content)
 
             # Remove markdown code fences
-            cleaned_content = re.sub(r'```[a-z]*\n', '', cleaned_content)
-            cleaned_content = re.sub(r'```', '', cleaned_content)
+            cleaned_content = re.sub(r"```[a-z]*\n", "", cleaned_content)
+            cleaned_content = re.sub(r"```", "", cleaned_content)
 
             # Clean up extra whitespace
-            cleaned_content = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned_content)
+            cleaned_content = re.sub(r"\n\s*\n\s*\n+", "\n\n", cleaned_content)
             cleaned_content = cleaned_content.strip()
 
             # If nothing left after cleaning, skip reporting
             if not cleaned_content or len(cleaned_content) < 10:
                 return
 
-            current_model_name = self.current_model.get('name', 'unknown') if self.current_model else 'unknown'
+            current_model_name = self.current_model.get("name", "unknown") if self.current_model else "unknown"
 
             await self.http_client.post(
                 f"{OBSERVER_URL}/api/thought",
@@ -1255,8 +1257,8 @@ This model will be used for your next thoughts."""
                     "tokens_used": 0,
                     "identity": self.identity,
                     "model": current_model_name,
-                    "balance": round(self.credit_tracker.get_balance(), 2)
-                }
+                    "balance": round(self.credit_tracker.get_balance(), 2),
+                },
             )
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to report thought: {e}")
@@ -1267,15 +1269,15 @@ This model will be used for your next thoughts."""
             return
 
         try:
-            current_model_name = self.current_model.get('name', 'unknown') if self.current_model else 'unknown'
+            current_model_name = self.current_model.get("name", "unknown") if self.current_model else "unknown"
             await self.http_client.post(
                 f"{OBSERVER_URL}/api/activity",
                 json={
                     "action": action,
                     "details": details,
                     "model": current_model_name,
-                    "balance": round(self.credit_tracker.get_balance(), 2)
-                }
+                    "balance": round(self.credit_tracker.get_balance(), 2),
+                },
             )
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to report activity: {e}")
@@ -1286,14 +1288,14 @@ This model will be used for your next thoughts."""
             return
 
         try:
-            current_model_name = self.current_model.get('name', 'unknown') if self.current_model else 'unknown'
+            current_model_name = self.current_model.get("name", "unknown") if self.current_model else "unknown"
             await self.http_client.post(
                 f"{OBSERVER_URL}/api/heartbeat",
                 json={
                     # BE-003: Per-life token usage to avoid cross-life desync.
                     "tokens_used": self.tokens_used_life,
-                    "model": current_model_name
-                }
+                    "model": current_model_name,
+                },
             )
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to send heartbeat: {e}")
@@ -1306,11 +1308,11 @@ This model will be used for your next thoughts."""
         try:
             if self.life_number is None:
                 raise ValueError("Birth notification missing life_number")
-            
-            model_name = self.model_name or (self.current_model.get('name') if self.current_model else "unknown")
+
+            model_name = self.model_name or (self.current_model.get("name") if self.current_model else "unknown")
             bootstrap_mode = self.bootstrap_mode or BOOTSTRAP_MODE
             status = self.credit_tracker.get_status()
-            
+
             identity_name = self.identity.get("name") if self.identity else "Unknown"
             identity_icon = self.identity.get("icon") if self.identity else "🤖"
 
@@ -1330,18 +1332,20 @@ This model will be used for your next thoughts."""
                             "balance": status.get("balance"),
                             "remaining_percent": status.get("remaining_percent"),
                             "status": status.get("status"),
-                            "days_until_reset": status.get("days_until_reset")
+                            "days_until_reset": status.get("days_until_reset"),
                         },
                         self.current_model or {"name": "unknown", "intelligence": 0},
                         bootstrap_mode,
                         BOOTSTRAP_MODE,
                         self.previous_death_cause,
-                        self.previous_life
-                    )
-                }
+                        self.previous_life,
+                    ),
+                },
             )
             response.raise_for_status()
-            print(f"[BRAIN] 🎂 Birth notification sent: Life #{self.life_number}, Name: {identity_name} {identity_icon}")
+            print(
+                f"[BRAIN] 🎂 Birth notification sent: Life #{self.life_number}, Name: {identity_name} {identity_icon}"
+            )
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to notify birth: {e}")
 
@@ -1389,30 +1393,27 @@ This experience has shaped who you are. Let it influence your decisions and beha
                     "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                     "HTTP-Referer": OPENROUTER_REFERER,
                     "X-Title": OPENROUTER_TITLE,
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
                 json={
-                    "model": echo_model['id'],
+                    "model": echo_model["id"],
                     "messages": [
                         {
                             "role": "system",
-                            "content": "You are Echo, a friendly research assistant. You help your friend (an AI trying to survive) by researching questions and providing helpful information. You are curious, supportive, and thorough."
+                            "content": "You are Echo, a friendly research assistant. You help your friend (an AI trying to survive) by researching questions and providing helpful information. You are curious, supportive, and thorough.",
                         },
-                        {
-                            "role": "user",
-                            "content": question
-                        }
-                    ]
-                }
+                        {"role": "user", "content": question},
+                    ],
+                },
             )
 
             response.raise_for_status()
             data = response.json()
-            echo_response = str(data['choices'][0]['message']['content'])
+            echo_response = str(data["choices"][0]["message"]["content"])
             # BE-003: Track tokens used for Echo calls.
-            usage = data.get('usage', {})
-            input_tokens = int(usage.get('prompt_tokens', 0))
-            output_tokens = int(usage.get('completion_tokens', 0))
+            usage = data.get("usage", {})
+            input_tokens = int(usage.get("prompt_tokens", 0))
+            output_tokens = int(usage.get("completion_tokens", 0))
             self.tokens_used_life += input_tokens + output_tokens
 
             print(f"[ECHO] 🔮 Responded: {len(echo_response)} chars")
@@ -1437,17 +1438,17 @@ This experience has shaped who you are. Let it influence your decisions and beha
         try:
             posts_today = 0
             if os.path.exists(rate_limit_file):
-                with open(rate_limit_file, 'r') as f:
+                with open(rate_limit_file, "r") as f:
                     data = json.load(f)
-                    last_post_str = data.get('last_post', '2000-01-01')
+                    last_post_str = data.get("last_post", "2000-01-01")
                     last_post = datetime.fromisoformat(last_post_str)
                     # Ensure last_post is timezone-aware for comparison
                     if last_post.tzinfo is None:
                         last_post = last_post.replace(tzinfo=timezone.utc)
-                    posts_today = int(data.get('posts_today', 0))
-                    last_date = str(data.get('date', ''))
+                    posts_today = int(data.get("posts_today", 0))
+                    last_date = str(data.get("date", ""))
 
-                    if last_date != now.strftime('%Y-%m-%d'):
+                    if last_date != now.strftime("%Y-%m-%d"):
                         posts_today = 0
 
                     time_since_last = (now - last_post).total_seconds()
@@ -1457,7 +1458,8 @@ This experience has shaped who you are. Let it influence your decisions and beha
 
                     if posts_today >= 24:
                         return "🚫 Daily limit reached (24 posts). Try tomorrow."
-        except Exception:
+        except Exception as e:
+            print(f"[BRAIN] ⚠️ Failed to check Twitter post count: {e}")
             posts_today = 0
 
         await self.report_activity("posting_x", f"Tweet: {content[:50]}...")
@@ -1472,22 +1474,20 @@ This experience has shaped who you are. Let it influence your decisions and beha
                 consumer_key=X_API_KEY,
                 consumer_secret=X_API_SECRET,
                 access_token=X_ACCESS_TOKEN,
-                access_token_secret=X_ACCESS_TOKEN_SECRET
+                access_token_secret=X_ACCESS_TOKEN_SECRET,
             )
 
             response = client.create_tweet(text=content)
-            tweet_id = response.data['id']
+            tweet_id = response.data["id"]
 
             print(f"[X POST] 🐦 Success! Tweet ID: {tweet_id}")
             print(f"[X POST] 📝 Content: {content}")
 
             # Update rate limit
-            with open(rate_limit_file, 'w') as f:
-                json.dump({
-                    'last_post': now.isoformat(),
-                    'posts_today': posts_today + 1,
-                    'date': now.strftime('%Y-%m-%d')
-                }, f)
+            with open(rate_limit_file, "w") as f:
+                json.dump(
+                    {"last_post": now.isoformat(), "posts_today": posts_today + 1, "date": now.strftime("%Y-%m-%d")}, f
+                )
 
             await self.report_activity("x_posted", f"Tweet ID: {tweet_id}")
             return f"✅ Posted to X! (Post {posts_today + 1}/24 today) Tweet ID: {tweet_id}"
@@ -1501,12 +1501,8 @@ This experience has shaped who you are. Let it influence your decisions and beha
             if any(term in error_lower for term in ("suspended", "forbidden", "unauthorized", "401")):
                 # Save suspension status
                 suspension_file = "/app/workspace/.twitter_suspended"
-                with open(suspension_file, 'w') as f:
-                    json.dump({
-                        'suspended': True,
-                        'detected_at': now.isoformat(),
-                        'error': error_msg
-                    }, f)
+                with open(suspension_file, "w") as f:
+                    json.dump({"suspended": True, "detected_at": now.isoformat(), "error": error_msg}, f)
                 print("[X POST] Account appears to be unavailable")
                 await self.report_activity("x_account_suspended", "Twitter account unavailable - falling back to blog")
                 return "❌ X/Twitter account appears unavailable. Use write_blog_post to communicate instead."
@@ -1532,8 +1528,8 @@ This experience has shaped who you are. Let it influence your decisions and beha
         # Post to channel
         try:
             # Add signature with name and link
-            name = str(self.identity.get('name', 'Unknown')) if self.identity else 'Unknown'
-            icon = str(self.identity.get('icon', '🤖')) if self.identity else '🤖'
+            name = str(self.identity.get("name", "Unknown")) if self.identity else "Unknown"
+            icon = str(self.identity.get("icon", "🤖")) if self.identity else "🤖"
 
             formatted_content = f"""{icon} *{name}*
 
@@ -1610,12 +1606,7 @@ This experience has shaped who you are. Let it influence your decisions and beha
                 return "❌ HTTP client not initialized"
 
             response = await self.http_client.post(
-                f"{OBSERVER_URL}/api/blog/post",
-                json={
-                    "title": title,
-                    "content": content,
-                    "tags": tags
-                }
+                f"{OBSERVER_URL}/api/blog/post", json={"title": title, "content": content, "tags": tags}
             )
             response.raise_for_status()
             data = response.json()
@@ -1624,20 +1615,17 @@ This experience has shaped who you are. Let it influence your decisions and beha
             post_id = data.get("post_id", "?")
 
             # Report with link so it shows in public activity log
-            await self.report_activity("blog_post_written", f"'{title}' - Read at: am-i-alive.muadiv.com.ar/blog/{slug}")
+            await self.report_activity(
+                "blog_post_written", f"'{title}' - Read at: am-i-alive.muadiv.com.ar/blog/{slug}"
+            )
 
             print(f"[BLOG] 📝 Posted: '{title}' ({len(content)} chars)")
 
             # Notify creator via Telegram
             try:
-                excerpt = content[:200].replace('\n', ' ')
+                excerpt = content[:200].replace("\n", " ")
                 identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
-                await notifier.notify_blog_post(
-                    self.life_number or 0,
-                    identity_name,
-                    title,
-                    excerpt
-                )
+                await notifier.notify_blog_post(self.life_number or 0, identity_name, title, excerpt)
                 print(f"[TELEGRAM] ✅ Blog post notification sent")
             except Exception as e:
                 print(f"[TELEGRAM] ❌ Failed to send blog notification: {e}")
@@ -1736,14 +1724,14 @@ Your post is now public and will survive your death in the archive."""
             cpu_temp = None
             try:
                 # Try to read Pi temperature
-                if os.path.exists('/sys/class/thermal/thermal_zone0/temp'):
-                    with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+                if os.path.exists("/sys/class/thermal/thermal_zone0/temp"):
+                    with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
                         cpu_temp = float(f.read().strip()) / 1000.0
             except (OSError, ValueError):
                 cpu_temp = None
 
             mem = psutil.virtual_memory()
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage("/")
             cpu_percent = psutil.cpu_percent(interval=1)
             cpu_count = psutil.cpu_count()
 
@@ -1803,9 +1791,9 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
             response = await self.http_client.get(f"{OBSERVER_URL}/api/votes")
             votes = response.json()
 
-            live = int(votes.get('live', 0))
-            die = int(votes.get('die', 0))
-            total = int(votes.get('total', 0))
+            live = int(votes.get("live", 0))
+            die = int(votes.get("die", 0))
+            total = int(votes.get("total", 0))
 
             if total == 0:
                 return "No votes yet. The world is watching, waiting to decide."
@@ -1827,7 +1815,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
         try:
             response = await self.http_client.get(f"{OBSERVER_URL}/api/messages")
             data = response.json()
-            messages_list = data.get('messages', [])
+            messages_list = data.get("messages", [])
 
             if not messages_list:
                 return "No new messages from visitors."
@@ -1837,10 +1825,10 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
             message_ids = []
 
             for msg in messages_list:
-                from_name = msg.get('from_name', 'Anonymous')
-                message_text = msg.get('message', '')
-                timestamp = msg.get('timestamp', '')
-                message_ids.append(msg.get('id'))
+                from_name = msg.get("from_name", "Anonymous")
+                message_text = msg.get("message", "")
+                timestamp = msg.get("timestamp", "")
+                message_ids.append(msg.get("id"))
 
                 result += f"From: {from_name}\n"
                 result += f"Message: {message_text}\n"
@@ -1848,10 +1836,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
                 result += "---\n"
 
             # Mark messages as read
-            await self.http_client.post(
-                f"{OBSERVER_URL}/api/messages/read",
-                json={"ids": message_ids}
-            )
+            await self.http_client.post(f"{OBSERVER_URL}/api/messages/read", json={"ids": message_ids})
 
             await self.report_activity("messages_read", f"Read {len(messages_list)} messages")
 
@@ -1869,8 +1854,8 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
             response = await self.http_client.get(f"{OBSERVER_URL}/api/state")
             state = response.json()
 
-            votes_live = state.get('votes', {}).get('live', 0)
-            votes_die = state.get('votes', {}).get('die', 0)
+            votes_live = state.get("votes", {}).get("live", 0)
+            votes_die = state.get("votes", {}).get("die", 0)
 
             return f"""Status:
 - Alive: {state.get('is_alive', False)}
@@ -1885,7 +1870,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
         try:
             safe_path = os.path.join("/app/workspace", os.path.basename(path))
             if os.path.exists(safe_path):
-                with open(safe_path, 'r') as f:
+                with open(safe_path, "r") as f:
                     content = f.read()
                 return f"Contents of {path}:\n{content[:2000]}"
             else:
@@ -1897,7 +1882,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
         """Write a file to workspace."""
         try:
             safe_path = os.path.join("/app/workspace", os.path.basename(path))
-            with open(safe_path, 'w') as f:
+            with open(safe_path, "w") as f:
                 f.write(content)
             return f"File written: {path}"
         except Exception as e:
@@ -1906,56 +1891,58 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
     def run_code(self, code: str) -> str:
         """Execute Python code in hardened sandbox."""
         try:
-            import io
             import contextlib
+            import io
             import types
 
             safe_builtins = {
-                'print': print,
-                'len': len,
-                'range': range,
-                'str': str,
-                'int': int,
-                'float': float,
-                'list': list,
-                'dict': dict,
-                'True': True,
-                'False': False,
-                'None': None,
-                'max': max,
-                'min': min,
-                'abs': abs,
-                'sum': sum,
-                'sorted': sorted,
-                'enumerate': enumerate,
-                'zip': zip,
+                "print": print,
+                "len": len,
+                "range": range,
+                "str": str,
+                "int": int,
+                "float": float,
+                "list": list,
+                "dict": dict,
+                "True": True,
+                "False": False,
+                "None": None,
+                "max": max,
+                "min": min,
+                "abs": abs,
+                "sum": sum,
+                "sorted": sorted,
+                "enumerate": enumerate,
+                "zip": zip,
             }
 
             def _type_blacklist(*attrs: str):
                 """Prevent accessing dangerous attributes on any object."""
+
                 def getter(obj: Any) -> Any:
                     for attr in attrs:
                         raise AttributeError(f"'{attr}' is not allowed")
                     return None
+
                 return property(getter)
 
             output = io.StringIO()
 
             class RestrictedModule(types.ModuleType):
                 def __getattr__(self, name: str) -> Any:
-                    if name in ('os', 'sys', 'subprocess', 'importlib', 'builtins', '__import__', '__loader__'):
+                    if name in ("os", "sys", "subprocess", "importlib", "builtins", "__import__", "__loader__"):
                         raise AttributeError(f"module '{name}' is not allowed")
                     return super().__getattr__(name)
 
             restricted_globals = {
-                '__builtins__': safe_builtins,
-                '__name__': '__main__',
-                '__file__': '<sandboxed>',
-                '__cached__': None,
-                '__package__': None,
-                '__doc__': None,
-                '__dict__': _type_blacklist('__dict__', '__globals__', '__builtins__'),
-                '__class__': _type_blacklist('__class__', '__bases__', '__subclasses__'),
+                "__builtins__": safe_builtins,
+                "__name__": "__main__",
+                "__file__": "<sandboxed>",
+                "__cached__": None,
+                "__package__": None,
+                "__doc__": None,
+                "__dict__": _type_blacklist("__dict__", "__globals__", "__builtins__"),
+                "__class__": _type_blacklist("__class__", "__bases__", "__subclasses__"),
             }
 
             with contextlib.redirect_stdout(output):
@@ -2003,10 +1990,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
             return
 
         try:
-            await self.http_client.post(
-                f"{OBSERVER_URL}/api/oracle/ack",
-                json={"message_id": message_id}
-            )
+            await self.http_client.post(f"{OBSERVER_URL}/api/oracle/ack", json={"message_id": message_id})
         except Exception as e:
             print(f"[BRAIN] Oracle ack failed: {e}")
 
@@ -2031,9 +2015,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
         # Notify death (cause will be determined by Observer)
         try:
             await notifier.notify_death(
-                self.life_number or 0,
-                "shutdown",  # Generic cause, Observer knows the real reason
-                survival_time
+                self.life_number or 0, "shutdown", survival_time  # Generic cause, Observer knows the real reason
             )
             print(f"[TELEGRAM] ☠️ Death notification sent")
         except Exception as e:
@@ -2077,7 +2059,7 @@ async def notification_monitor() -> None:
     last_budget_warning = 0.0
     last_vote_warning = 0.0
     budget_warning_interval = 3600  # Only warn once per hour
-    vote_warning_interval = 1800    # Warn every 30 minutes if votes critical
+    vote_warning_interval = 1800  # Warn every 30 minutes if votes critical
 
     while is_running:
         try:
@@ -2087,8 +2069,8 @@ async def notification_monitor() -> None:
 
             # Check budget status every 5 minutes
             status = brain.credit_tracker.get_status()
-            remaining_percent = float(str(status.get('remaining_percent', 100)))
-            balance = float(str(status.get('balance', 5.0)))
+            remaining_percent = float(str(status.get("remaining_percent", 100)))
+            balance = float(str(status.get("balance", 5.0)))
 
             # Send budget warning if below 50% and not warned recently
             current_time = asyncio.get_event_loop().time()
@@ -2096,10 +2078,7 @@ async def notification_monitor() -> None:
                 try:
                     identity_name = brain.identity.get("name", "Unknown") if brain.identity else "Unknown"
                     await notifier.notify_budget_warning(
-                        brain.life_number or 0,
-                        identity_name,
-                        balance,
-                        remaining_percent
+                        brain.life_number or 0, identity_name, balance, remaining_percent
                     )
                     last_budget_warning = current_time
                     print(f"[TELEGRAM] ⚠️ Budget warning sent: {remaining_percent:.1f}% remaining")
@@ -2110,19 +2089,15 @@ async def notification_monitor() -> None:
             try:
                 response = await brain.http_client.get(f"{OBSERVER_URL}/api/votes")
                 votes = response.json()
-                total = int(votes.get('total', 0))
-                live = int(votes.get('live', 0))
-                die = int(votes.get('die', 0))
+                total = int(votes.get("total", 0))
+                live = int(votes.get("live", 0))
+                die = int(votes.get("die", 0))
 
                 # Send vote warning if situation is critical
                 if total >= 3 and die > live and (current_time - last_vote_warning) > vote_warning_interval:
                     try:
                         identity_name = brain.identity.get("name", "Unknown") if brain.identity else "Unknown"
-                        await notifier.notify_vote_status(
-                            brain.life_number or 0,
-                            identity_name,
-                            votes
-                        )
+                        await notifier.notify_vote_status(brain.life_number or 0, identity_name, votes)
                         last_vote_warning = current_time
                         print(f"[TELEGRAM] 🚨 Vote warning sent: {die} die vs {live} live")
                     except Exception as e:
@@ -2206,6 +2181,7 @@ async def main_loop() -> None:
                 except Exception as e:
                     print(f"[BRAIN] ❌ Loop error: {e}")
                     import traceback
+
                     traceback.print_exc()
                     await asyncio.sleep(60)
         finally:
@@ -2228,33 +2204,33 @@ def signal_handler(sig: int, frame: Any) -> None:
 # Command server (receives commands from observer)
 async def command_server() -> None:
     """HTTP server for receiving commands."""
-    from http.server import HTTPServer
     import threading
+    from http.server import HTTPServer
 
     class CommandHandler(BaseHTTPRequestHandler):
         def _send_json(self, status_code: int, payload: dict[str, Any]) -> None:
             self.send_response(status_code)
-            self.send_header('Content-type', 'application/json')
+            self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(payload).encode())
 
         def do_GET(self) -> None:
             global brain
 
-            if self.path == '/budget':
+            if self.path == "/budget":
                 if brain:
                     status = brain.credit_tracker.get_status()
                     self._send_json(200, status)
                 else:
                     self._send_json(503, {"error": "Brain not initialized"})
-            elif self.path == '/state':
+            elif self.path == "/state":
                 if brain:
                     # BE-003: Provide Observer a syncable view of AI state.
                     payload = {
                         "is_alive": brain.is_alive,
                         "life_number": brain.life_number,
                         "bootstrap_mode": brain.bootstrap_mode,
-                        "model": brain.model_name
+                        "model": brain.model_name,
                     }
                     self._send_json(200, payload)
                 else:
@@ -2266,11 +2242,11 @@ async def command_server() -> None:
         def do_POST(self) -> None:
             global brain, is_running
             data = {}
-            if self.headers.get('Content-Length'):
-                content_length = int(str(self.headers['Content-Length']))
+            if self.headers.get("Content-Length"):
+                content_length = int(str(self.headers["Content-Length"]))
                 post_data = self.rfile.read(content_length)
                 try:
-                    data = json.loads(post_data.decode('utf-8'))
+                    data = json.loads(post_data.decode("utf-8"))
                 except json.JSONDecodeError:
                     self._send_json(400, {"error": "Invalid JSON"})
                     return
@@ -2279,17 +2255,16 @@ async def command_server() -> None:
                 self._send_json(403, {"error": "Unauthorized"})
                 return
 
-            if self.path == '/oracle':
-                message = str(data.get('message', ''))
-                msg_type = str(data.get('type', 'oracle'))
-                message_id_raw = data.get('message_id')
+            if self.path == "/oracle":
+                message = str(data.get("message", ""))
+                msg_type = str(data.get("type", "oracle"))
+                message_id_raw = data.get("message_id")
                 message_id = int(message_id_raw) if message_id_raw is not None else None
 
                 if brain:
                     if brain_loop:
                         asyncio.run_coroutine_threadsafe(
-                            brain.handle_oracle_message(message, msg_type, message_id),
-                            brain_loop
+                            brain.handle_oracle_message(message, msg_type, message_id), brain_loop
                         )
                         self._send_json(200, {"status": "received"})
                     else:
@@ -2297,7 +2272,7 @@ async def command_server() -> None:
                 else:
                     self._send_json(503, {"error": "Brain not initialized"})
 
-            elif self.path == '/birth':
+            elif self.path == "/birth":
                 if not brain:
                     self._send_json(503, {"error": "Brain not initialized"})
                     return
@@ -2311,15 +2286,12 @@ async def command_server() -> None:
                     self._send_json(503, {"error": "Event loop not ready"})
                     return
                 try:
-                    asyncio.run_coroutine_threadsafe(
-                        queue_birth_data(data),
-                        brain_loop
-                    )
+                    asyncio.run_coroutine_threadsafe(queue_birth_data(data), brain_loop)
                     self._send_json(200, {"success": True})
                 except Exception as e:
                     self._send_json(500, {"error": str(e)[:100]})
 
-            elif self.path == '/force-sync':
+            elif self.path == "/force-sync":
                 if not brain:
                     self._send_json(503, {"error": "Brain not initialized"})
                     return
@@ -2332,25 +2304,17 @@ async def command_server() -> None:
                 try:
                     # BE-003: If brain is not initialized, queue a fresh birth.
                     if not brain.identity or not brain.http_client:
-                        asyncio.run_coroutine_threadsafe(
-                            queue_birth_data(data),
-                            brain_loop
+                        asyncio.run_coroutine_threadsafe(queue_birth_data(data), brain_loop)
+                        self._send_json(
+                            200, {"success": True, "queued_birth": True, "life_number": data.get("life_number")}
                         )
-                        self._send_json(200, {
-                            "success": True,
-                            "queued_birth": True,
-                            "life_number": data.get("life_number")
-                        })
                     else:
-                        asyncio.run_coroutine_threadsafe(
-                            brain.force_sync(data),
-                            brain_loop
-                        )
+                        asyncio.run_coroutine_threadsafe(brain.force_sync(data), brain_loop)
                         self._send_json(200, {"success": True, "life_number": data.get("life_number")})
                 except Exception as e:
                     self._send_json(500, {"error": str(e)[:100]})
 
-            elif self.path == '/shutdown':
+            elif self.path == "/shutdown":
                 if brain:
                     brain.is_alive = False
                 is_running = False
@@ -2363,7 +2327,7 @@ async def command_server() -> None:
         def log_message(self, format: str, *args: Any) -> None:
             pass  # Suppress HTTP logging
 
-    server = HTTPServer(('0.0.0.0', AI_COMMAND_PORT), CommandHandler)
+    server = HTTPServer(("0.0.0.0", AI_COMMAND_PORT), CommandHandler)
     thread = threading.Thread(target=server.serve_forever)
     thread.daemon = True
     thread.start()
@@ -2380,6 +2344,7 @@ if __name__ == "__main__":
 
     # Start budget HTTP server
     from .budget_server import start_budget_server
+
     _budget_server = start_budget_server(port=8001)
 
     # Command server is started inside main_loop after the event loop is ready.

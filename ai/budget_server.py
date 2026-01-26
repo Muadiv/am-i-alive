@@ -1,13 +1,14 @@
+import logging
 import threading
 import time
 from datetime import datetime, timezone
 
-from fastapi import FastAPI
 import uvicorn
+from fastapi import FastAPI
 
-from .credit_tracker import CreditTracker  # type: ignore
 from .budget_aggregator import aggregate_usage  # type: ignore
-
+from .credit_tracker import CreditTracker  # type: ignore
+from .logging_config import logger
 
 _cache_lock = threading.Lock()
 _cached_payload: dict[str, object] | None = None
@@ -68,11 +69,24 @@ async def budget():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Health check endpoint for the budget server."""
+    try:
+        # Check if credit tracker is accessible
+        status = _credit_tracker.get_status()
+        return {
+            "status": "ok",
+            "service": "budget-server",
+            "balance": status.get("balance"),
+            "remaining_percent": status.get("remaining_percent"),
+            "days_until_reset": status.get("days_until_reset"),
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {"status": "error", "service": "budget-server", "error": str(e)}, 500
 
 
 def start_budget_server(port: int = 8000) -> uvicorn.Server:
-    server_config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")
+    server_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(server_config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()

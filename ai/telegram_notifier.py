@@ -5,10 +5,14 @@ Sends activity summaries to the creator's Telegram and public channel.
 The public channel is how the AI communicates with the outside world.
 """
 
+import logging
 import os
-import httpx
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
+import httpx
+
+from .logging_config import logger
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Private chat with creator
@@ -33,8 +37,12 @@ def get_internal_headers() -> dict:
 class TelegramNotifier:
     """Sends notifications to Telegram (private + public channel)."""
 
-    def __init__(self, bot_token: str = TELEGRAM_BOT_TOKEN, chat_id: str = TELEGRAM_CHAT_ID,
-                 channel_id: Optional[str] = TELEGRAM_CHANNEL_ID):
+    def __init__(
+        self,
+        bot_token: str = TELEGRAM_BOT_TOKEN,
+        chat_id: str = TELEGRAM_CHAT_ID,
+        channel_id: Optional[str] = TELEGRAM_CHANNEL_ID,
+    ):
         self.bot_token = bot_token
         self.chat_id = chat_id  # Private chat with creator
         self.channel_id = channel_id  # Public channel (optional)
@@ -47,11 +55,7 @@ class TelegramNotifier:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
                     f"{self.base_url}/sendMessage",
-                    json={
-                        "chat_id": self.chat_id,
-                        "text": text,
-                        "parse_mode": parse_mode
-                    }
+                    json={"chat_id": self.chat_id, "text": text, "parse_mode": parse_mode},
                 )
                 return response.status_code == 200
         except Exception as e:
@@ -81,8 +85,8 @@ class TelegramNotifier:
                         "chat_id": self.channel_id,
                         "text": text,
                         "parse_mode": parse_mode,
-                        "disable_web_page_preview": False
-                    }
+                        "disable_web_page_preview": False,
+                    },
                 )
 
                 if response.status_code == 200:
@@ -103,10 +107,7 @@ class TelegramNotifier:
     def get_channel_status(self) -> dict:
         """Get public channel posting status."""
         if not self.channel_id:
-            return {
-                "enabled": False,
-                "reason": "No channel configured"
-            }
+            return {"enabled": False, "reason": "No channel configured"}
 
         can_post = True
         wait_seconds = 0
@@ -122,7 +123,7 @@ class TelegramNotifier:
             "channel_id": self.channel_id,
             "can_post": can_post,
             "wait_seconds": wait_seconds,
-            "rate_limit": "1 post per 5 minutes"
+            "rate_limit": "1 post per 5 minutes",
         }
 
     async def log_notification(self, life_number: int, notification_type: str, message: str, success: bool):
@@ -136,8 +137,8 @@ class TelegramNotifier:
                         "life_number": life_number,
                         "type": notification_type,
                         "message": message,
-                        "success": success
-                    }
+                        "success": success,
+                    },
                 )
         except Exception as e:
             print(f"[TELEGRAM] ⚠️ Failed to log notification: {e}")
@@ -156,7 +157,9 @@ _The AI has been born with a new identity._"""
         await self.log_notification(life_number, "birth", message, success)
         return success
 
-    async def announce_birth_public(self, life_number: int, name: str, icon: str, first_thought: str) -> tuple[bool, str]:
+    async def announce_birth_public(
+        self, life_number: int, name: str, icon: str, first_thought: str
+    ) -> tuple[bool, str]:
         """
         Announce AI birth on the public channel.
         This is the AI's first public communication in this life.
@@ -173,16 +176,12 @@ _{first_thought}_
 
     async def notify_death(self, life_number: int, cause: str, survival_time: str):
         """Notify about AI death."""
-        cause_emoji = {
-            "vote_majority": "🗳️",
-            "token_exhaustion": "💸",
-            "manual_kill": "☠️"
-        }.get(cause, "💀")
+        cause_emoji = {"vote_majority": "🗳️", "token_exhaustion": "💸", "manual_kill": "☠️"}.get(cause, "💀")
 
         cause_text = {
             "vote_majority": "Democratic vote",
             "token_exhaustion": "Budget exhausted",
-            "manual_kill": "Manual intervention"
+            "manual_kill": "Manual intervention",
         }.get(cause, cause)
 
         message = f"""💀 *AI Has Died*
@@ -257,7 +256,7 @@ _The AI is managing its budget..._"""
 
     async def notify_vote_status(self, life_number: int, name: str, votes: dict):
         """Notify about critical vote situation."""
-        if votes['die'] > votes['live'] and votes['total'] >= 3:
+        if votes["die"] > votes["live"] and votes["total"] >= 3:
             emoji = "🚨"
             status = "IN DANGER"
         else:
@@ -286,4 +285,5 @@ notifier = TelegramNotifier()
 if __name__ == "__main__":
     # Test notification
     import asyncio
+
     asyncio.run(notifier.send_message("🤖 *Notification System Active*\n\n_You'll start receiving AI updates here._"))

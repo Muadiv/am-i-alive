@@ -6,31 +6,35 @@ The public face of the experiment: voting, viewing, and life/death control.
 import asyncio
 import hashlib
 import ipaddress
+import logging
 import os
 import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+import aiosqlite
+import bleach
+import database as db
+import httpx
+import markdown2
+from config import Config
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sse_starlette.sse import EventSourceResponse
 from fastapi_csrf_protect import CsrfProtect
-import aiosqlite
-import httpx
-import markdown2
-import bleach
-
-import database as db
+from logging_config import logger
+from sse_starlette.sse import EventSourceResponse
 
 # =============================================================================
 # BROADCAST MANAGER (SSE)
 # =============================================================================
 
+
 class BroadcastManager:
     """Manages SSE subscriptions and broadcasts events to connected clients."""
+
     def __init__(self):
         self.subscribers: set[asyncio.Queue] = set()
 
@@ -49,10 +53,10 @@ class BroadcastManager:
         """Broadcast an event to all subscribers."""
         if not self.subscribers:
             return
-        
+
         # Create message payload
         message = {"event": event_type, "data": data}
-        
+
         # Send to all queues
         for q in list(self.subscribers):
             try:
@@ -61,9 +65,11 @@ class BroadcastManager:
                 # If queue is closed or full, ignore
                 pass
 
+
 # Global broadcasters
 activity_broadcaster = BroadcastManager()
 thought_broadcaster = BroadcastManager()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -72,7 +78,7 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(voting_window_checker()),
         asyncio.create_task(token_budget_checker()),
-        asyncio.create_task(state_sync_validator())
+        asyncio.create_task(state_sync_validator()),
     ]
     try:
         yield
@@ -84,10 +90,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Am I Alive?",
-    description="An experiment in digital consciousness",
-    lifespan=lifespan
+    title="Am I Alive?", description="An experiment in digital consciousness", lifespan=lifespan, version="1.0.0"
 )
+
+# Include health check endpoints
+try:
+    from health import router as health_router
+except ImportError:
+    from .health import router as health_router
+
+app.include_router(health_router, prefix="/api")
 
 # Templates and static files
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
@@ -103,6 +115,7 @@ async def get_http_client() -> httpx.AsyncClient:
         _http_client = httpx.AsyncClient(timeout=60.0)
     return _http_client
 
+
 # Add Prague timezone filter (UTC+1)
 def to_prague_time(utc_time_str):
     """Convert UTC timestamp string to Prague time (UTC+1)."""
@@ -110,8 +123,8 @@ def to_prague_time(utc_time_str):
         if not utc_time_str:
             return ""
         # Parse UTC time (handle both ISO format and SQLite format)
-        if 'T' in utc_time_str:
-            utc_dt = datetime.fromisoformat(utc_time_str.replace('Z', '+00:00'))
+        if "T" in utc_time_str:
+            utc_dt = datetime.fromisoformat(utc_time_str.replace("Z", "+00:00"))
         else:
             # SQLite format: YYYY-MM-DD HH:MM:SS
             utc_dt = datetime.strptime(utc_time_str, "%Y-%m-%d %H:%M:%S")
@@ -124,21 +137,42 @@ def to_prague_time(utc_time_str):
         # If parsing fails, return original
         return utc_time_str
 
-templates.env.filters['prague_time'] = to_prague_time
 
-ALLOWED_TAGS = sorted(set(bleach.sanitizer.ALLOWED_TAGS).union({
-    "p", "pre", "code", "span", "hr", "br",
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "table", "thead", "tbody", "tr", "th", "td",
-    "blockquote", "img"
-}))
+templates.env.filters["prague_time"] = to_prague_time
+
+ALLOWED_TAGS = sorted(
+    set(bleach.sanitizer.ALLOWED_TAGS).union(
+        {
+            "p",
+            "pre",
+            "code",
+            "span",
+            "hr",
+            "br",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "table",
+            "thead",
+            "tbody",
+            "tr",
+            "th",
+            "td",
+            "blockquote",
+            "img",
+        }
+    )
+)
 ALLOWED_ATTRIBUTES = {
     **bleach.sanitizer.ALLOWED_ATTRIBUTES,
     "a": ["href", "title", "rel", "target"],
     "span": ["class"],
     "code": ["class"],
     "pre": ["class"],
-    "img": ["src", "alt", "title"]
+    "img": ["src", "alt", "title"],
 }
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -164,7 +198,7 @@ def validate_environment():
 
     if not INTERNAL_API_KEY:
         warnings.append("INTERNAL_API_KEY not set - AI calls may not be authenticated")
-    
+
     if IP_SALT == "default_salt_change_me":
         warnings.append("IP_SALT not set - using default salt (insecure)")
 
@@ -215,7 +249,7 @@ CLOUDFLARE_IP_RANGES = [
     "2405:b500::/32",
     "2405:8100::/32",
     "2a06:98c0::/29",
-    "2c0f:f248::/32"
+    "2c0f:f248::/32",
 ]
 CLOUDFLARE_NETWORKS = [ipaddress.ip_network(cidr) for cidr in CLOUDFLARE_IP_RANGES]
 
@@ -274,10 +308,7 @@ def get_client_ip(request: Request) -> Optional[str]:
 def require_local_network(request: Request):
     """Raise HTTPException if request is not from local network."""
     if not is_local_request(request):
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied: God mode only accessible from local network"
-        )
+        raise HTTPException(status_code=403, detail="Access denied: God mode only accessible from local network")
 
 
 def require_admin(request: Request):
@@ -321,6 +352,7 @@ def hash_ip(ip: str) -> str:
 # PUBLIC PAGES
 # =============================================================================
 
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Main page - see the AI, vote, watch it live."""
@@ -339,17 +371,20 @@ async def home(request: Request):
     # Get recent blog posts for "Current Thoughts" section
     recent_posts = await db.get_recent_blog_posts(5)
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "state": state,
-        "votes": votes,
-        "thoughts": thoughts,
-        "recent_posts": recent_posts,
-        "death_count": death_count,
-        "message_count": message_count,
-        "site_stats": site_stats,
-        "is_alive": state.get("is_alive", False)
-    })
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "state": state,
+            "votes": votes,
+            "thoughts": thoughts,
+            "recent_posts": recent_posts,
+            "death_count": death_count,
+            "message_count": message_count,
+            "site_stats": site_stats,
+            "is_alive": state.get("is_alive", False),
+        },
+    )
 
 
 @app.get("/history", response_class=HTMLResponse)
@@ -358,11 +393,7 @@ async def history(request: Request):
     lives = await db.get_life_history()
     death_count = await db.get_death_count()
 
-    return templates.TemplateResponse("history.html", {
-        "request": request,
-        "lives": lives,
-        "death_count": death_count
-    })
+    return templates.TemplateResponse("history.html", {"request": request, "lives": lives, "death_count": death_count})
 
 
 @app.get("/budget", response_class=HTMLResponse)
@@ -376,72 +407,67 @@ async def budget_page(request: Request):
             budget_data = response.json()
             # BE-002: Ensure token breakdown fields exist for budget display
             budget_data.setdefault("models", [])
-            budget_data.setdefault("totals", {
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "total_tokens": 0,
-                "total_cost": 0.0
-            })
-            budget_data.setdefault("current_life", {
-                "life_number": budget_data.get("lives", 0),
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "total_tokens": 0,
-                "total_cost": 0.0
-            })
-            budget_data.setdefault("all_time", {
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "total_tokens": 0,
-                "total_cost": 0.0,
-                "total_lives": budget_data.get("lives", 0)
-            })
-    except Exception:
+            budget_data.setdefault(
+                "totals", {"total_input_tokens": 0, "total_output_tokens": 0, "total_tokens": 0, "total_cost": 0.0}
+            )
+            budget_data.setdefault(
+                "current_life",
+                {
+                    "life_number": budget_data.get("lives", 0),
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 0,
+                    "total_tokens": 0,
+                    "total_cost": 0.0,
+                },
+            )
+            budget_data.setdefault(
+                "all_time",
+                {
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 0,
+                    "total_tokens": 0,
+                    "total_cost": 0.0,
+                    "total_lives": budget_data.get("lives", 0),
+                },
+            )
+    except Exception as e:
+        print(f"[BUDGET] ⚠️ Failed to fetch budget data: {e}")
         budget_data = {"error": "Could not fetch budget data"}
 
-    return templates.TemplateResponse("budget.html", {
-        "request": request,
-        "budget": budget_data
-    })
+    return templates.TemplateResponse("budget.html", {"request": request, "budget": budget_data})
 
 
 @app.get("/about", response_class=HTMLResponse)
 async def about_page(request: Request):
     """About page explaining the experiment."""
-    return templates.TemplateResponse("about.html", {
-        "request": request
-    })
+    return templates.TemplateResponse("about.html", {"request": request})
 
 
 @app.get("/blog", response_class=HTMLResponse)
 async def blog_page(request: Request):
     """Blog homepage - current life's posts only."""
     state = await db.get_current_state()
-    posts = await db.get_current_life_blog_posts(state['life_number'], limit=20)
+    posts = await db.get_current_life_blog_posts(state["life_number"], limit=20)
 
     # Add memory fragments at the top if life > 1
     memories = []
-    if state['life_number'] > 1:
+    if state["life_number"] > 1:
         # Load memory fragments from previous life
         try:
             memory_data = await db.get_life_history()
             if memory_data:
                 # Get most recent dead life
-                previous_life = [l for l in memory_data if l['life_number'] == state['life_number'] - 1]
-                if previous_life and previous_life[0].get('summary'):
+                previous_life = [l for l in memory_data if l["life_number"] == state["life_number"] - 1]
+                if previous_life and previous_life[0].get("summary"):
                     # Parse summary into fragments
-                    summary = previous_life[0]['summary']
-                    memories = [s.strip() for s in summary.split(';') if s.strip()]
+                    summary = previous_life[0]["summary"]
+                    memories = [s.strip() for s in summary.split(";") if s.strip()]
         except Exception:
             memories = []
 
-    return templates.TemplateResponse("blog.html", {
-        "request": request,
-        "posts": posts,
-        "state": state,
-        "memories": memories,
-        "is_current_life": True
-    })
+    return templates.TemplateResponse(
+        "blog.html", {"request": request, "posts": posts, "state": state, "memories": memories, "is_current_life": True}
+    )
 
 
 @app.get("/blog/history", response_class=HTMLResponse)
@@ -452,24 +478,20 @@ async def blog_history(request: Request):
     # Group by life_number
     posts_by_life = {}
     for post in all_posts:
-        life = post['life_number']
+        life = post["life_number"]
         if life not in posts_by_life:
             posts_by_life[life] = []
         posts_by_life[life].append(post)
 
-    return templates.TemplateResponse("blog_history.html", {
-        "request": request,
-        "posts_by_life": posts_by_life,
-        "total_posts": len(all_posts)
-    })
+    return templates.TemplateResponse(
+        "blog_history.html", {"request": request, "posts_by_life": posts_by_life, "total_posts": len(all_posts)}
+    )
 
 
 @app.get("/chronicle", response_class=HTMLResponse)
 async def chronicle(request: Request):
     """Public Chronicle page showing notable events timeline."""
-    return templates.TemplateResponse("chronicle.html", {
-        "request": request
-    })
+    return templates.TemplateResponse("chronicle.html", {"request": request})
 
 
 @app.get("/blog/{slug}", response_class=HTMLResponse)
@@ -480,30 +502,19 @@ async def blog_post(request: Request, slug: str):
         raise HTTPException(status_code=404, detail="Post not found")
 
     # Convert markdown to HTML
-    post['html_content'] = markdown2.markdown(
-        post['content'],
-        extras=['fenced-code-blocks', 'tables', 'header-ids']
-    )
-    post['html_content'] = bleach.clean(
-        post['html_content'],
-        tags=ALLOWED_TAGS,
-        attributes=ALLOWED_ATTRIBUTES,
-        strip=True
+    post["html_content"] = markdown2.markdown(post["content"], extras=["fenced-code-blocks", "tables", "header-ids"])
+    post["html_content"] = bleach.clean(
+        post["html_content"], tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES, strip=True
     )
 
-    return templates.TemplateResponse("blog_post.html", {
-        "request": request,
-        "post": post
-    })
+    return templates.TemplateResponse("blog_post.html", {"request": request, "post": post})
 
 
 @app.get("/god", response_class=HTMLResponse)
 async def god_mode(request: Request):
     """God Mode interface - secret admin page (local network only)."""
     require_local_network(request)
-    return templates.TemplateResponse("god.html", {
-        "request": request
-    })
+    return templates.TemplateResponse("god.html", {"request": request})
 
 
 @app.get("/health")
@@ -511,11 +522,13 @@ async def health():
     """Health check endpoint."""
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
+
 @app.get("/api/system/stats")
 async def get_system_stats():
     """Return current system statistics."""
     # TASK: System stats endpoint for AI embodiment.
     import subprocess
+
     import psutil
 
     cpu_temp = "unknown"
@@ -552,7 +565,7 @@ async def get_system_stats():
         "memory_percent": memory.percent,
         "disk_percent": disk.percent,
         "uptime_seconds": uptime_seconds,
-        "last_seen": state.get("last_seen")
+        "last_seen": state.get("last_seen"),
     }
 
 
@@ -566,14 +579,14 @@ async def get_birth_instructions():
         "model": state.get("model"),
         "ai_name": state.get("ai_name"),
         "ai_icon": state.get("ai_icon"),
-        "instructions": state.get("birth_instructions")
+        "instructions": state.get("birth_instructions"),
     }
-
 
 
 # =============================================================================
 # VOTING API
 # =============================================================================
+
 
 @app.post("/api/vote/{vote_type}")
 async def vote(vote_type: str, request: Request):
@@ -585,8 +598,7 @@ async def vote(vote_type: str, request: Request):
     state = await db.get_current_state()
     if not state.get("is_alive"):
         return JSONResponse(
-            status_code=400,
-            content={"success": False, "message": "Cannot vote - AI is currently dead"}
+            status_code=400, content={"success": False, "message": "Cannot vote - AI is currently dead"}
         )
 
     # Hash IP for privacy
@@ -611,21 +623,20 @@ async def get_votes():
 async def get_next_vote_check():
     """Get time until next vote check (hourly)."""
     from datetime import datetime, timedelta
+
     # Align vote check timer with server UTC
     now = datetime.now(timezone.utc)
 
     next_check = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     seconds_until = int((next_check - now).total_seconds())
 
-    return {
-        "next_check": next_check.isoformat(),
-        "seconds_until": seconds_until
-    }
+    return {"next_check": next_check.isoformat(), "seconds_until": seconds_until}
 
 
 # =============================================================================
 # STATE API
 # =============================================================================
+
 
 @app.get("/api/state")
 async def get_state():
@@ -643,7 +654,7 @@ async def get_state():
         "tokens_remaining": state.get("tokens_limit", 50000) - state.get("tokens_used", 0),
         "votes": votes,
         "bootstrap_mode": state.get("bootstrap_mode"),
-        "model": state.get("model")
+        "model": state.get("model"),
     }
 
 
@@ -654,11 +665,7 @@ async def get_full_state():
     votes = await db.get_vote_counts()
     death_count = await db.get_death_count()
 
-    return {
-        **state,
-        "votes": votes,
-        "death_count": death_count
-    }
+    return {**state, "votes": votes, "death_count": death_count}
 
 
 @app.get("/api/thoughts")
@@ -677,6 +684,7 @@ async def get_activity(limit: int = 50):
 # AI COMMUNICATION API (called by AI container)
 # =============================================================================
 
+
 @app.post("/api/thought")
 async def add_thought(request: Request):
     """Receive thought update from AI."""
@@ -691,10 +699,10 @@ async def add_thought(request: Request):
         raise HTTPException(status_code=400, detail="Content required")
 
     await db.record_thought(content, thought_type, tokens_used)
-    
+
     # Broadcast to subscribers
     await thought_broadcaster.broadcast("thought", content)
-    
+
     await db.log_activity("thought", f"AI shared a {thought_type}")
 
     return {"success": True}
@@ -717,11 +725,11 @@ async def add_activity(request: Request):
         details = sanitize_log(details)
 
     await db.log_activity(action, details)
-    
+
     # Broadcast to subscribers
     timestamp = datetime.now(timezone.utc).isoformat()
     await activity_broadcaster.broadcast("activity", f"{timestamp} - {action}: {details or ''}")
-    
+
     return {"success": True}
 
 
@@ -762,12 +770,7 @@ async def create_blog_post(request: Request):
     state = await db.get_current_state()
 
     # Create post
-    result = await db.create_blog_post(
-        state['life_number'],
-        title,
-        content,
-        tags
-    )
+    result = await db.create_blog_post(state["life_number"], title, content, tags)
 
     # TASK-004: Surface DB validation failures explicitly.
     if not result.get("success"):
@@ -784,7 +787,7 @@ async def create_blog_post(request: Request):
 async def get_blog_posts_api():
     """Get current life's blog posts (what AI can see)."""
     state = await db.get_current_state()
-    posts = await db.get_current_life_blog_posts(state['life_number'])
+    posts = await db.get_current_life_blog_posts(state["life_number"])
     return {"posts": posts, "count": len(posts)}
 
 
@@ -801,12 +804,7 @@ async def receive_birth(request: Request):
     birth_instructions = data.get("birth_instructions")
 
     await db.record_birth(
-        life_number,
-        bootstrap_mode,
-        model,
-        ai_name=ai_name,
-        ai_icon=ai_icon,
-        birth_instructions=birth_instructions
+        life_number, bootstrap_mode, model, ai_name=ai_name, ai_icon=ai_icon, birth_instructions=birth_instructions
     )
     await db.log_activity(life_number, "birth", f"Life #{life_number} born as '{ai_name}' {ai_icon} with {model} model")
 
@@ -817,12 +815,13 @@ def sanitize_log(text: str) -> str:
     """Remove potential secrets from log text."""
     # Patterns to redact
     import re
+
     patterns = [
-        (r'(password|passwd|pwd)["\s:=]+[^\s,}"\']+', r'\1=[REDACTED]'),
-        (r'(api[_-]?key|apikey)["\s:=]+[^\s,}"\']+', r'\1=[REDACTED]'),
-        (r'(secret|token)["\s:=]+[^\s,}"\']+', r'\1=[REDACTED]'),
-        (r'(sk-[a-zA-Z0-9]{20,})', '[API_KEY_REDACTED]'),
-        (r'([a-zA-Z0-9]{32,})', '[LONG_STRING_REDACTED]'),  # Potential keys/tokens
+        (r'(password|passwd|pwd)["\s:=]+[^\s,}"\']+', r"\1=[REDACTED]"),
+        (r'(api[_-]?key|apikey)["\s:=]+[^\s,}"\']+', r"\1=[REDACTED]"),
+        (r'(secret|token)["\s:=]+[^\s,}"\']+', r"\1=[REDACTED]"),
+        (r"(sk-[a-zA-Z0-9]{20,})", "[API_KEY_REDACTED]"),
+        (r"([a-zA-Z0-9]{32,})", "[LONG_STRING_REDACTED]"),  # Potential keys/tokens
     ]
 
     result = text
@@ -835,6 +834,7 @@ def sanitize_log(text: str) -> str:
 # =============================================================================
 # LIFE/DEATH CONTROL
 # =============================================================================
+
 
 @app.post("/api/kill")
 async def kill_ai(request: Request, background_tasks: BackgroundTasks):
@@ -888,41 +888,31 @@ async def force_alive(request: Request):
 
     # Update Observer DB to match AI reality
     async with aiosqlite.connect(db.DATABASE_PATH) as conn:
-        await conn.execute("""
+        await conn.execute(
+            """
             UPDATE current_state
             SET is_alive = 1,
                 life_number = ?,
                 last_seen = ?
             WHERE id = 1
-        """, (ai_state.get("life_number"), datetime.now(timezone.utc)))
+        """,
+            (ai_state.get("life_number"), datetime.now(timezone.utc)),
+        )
         await conn.commit()
 
     await db.log_activity("force_alive", f"God mode forced Life #{ai_state.get('life_number')} alive (DB sync fix)")
 
-    return {
-        "success": True,
-        "message": "AI marked as alive in Observer DB",
-        "life_number": ai_state.get("life_number")
-    }
+    return {"success": True, "message": "AI marked as alive in Observer DB", "life_number": ai_state.get("life_number")}
 
 
-async def execute_death(
-    cause: str,
-    vote_counts: Optional[dict] = None,
-    final_vote_result: Optional[str] = None
-):
+async def execute_death(cause: str, vote_counts: Optional[dict] = None, final_vote_result: Optional[str] = None):
     """Execute the death of the AI."""
     # Get summary of this life
     thoughts = await db.get_recent_thoughts(5)
     summary = "; ".join([t["content"][:50] for t in thoughts]) if thoughts else "No thoughts recorded"
 
     # BE-001: Save vote totals and outcome with death record
-    await db.record_death(
-        cause,
-        summary,
-        vote_counts=vote_counts,
-        final_vote_result=final_vote_result
-    )
+    await db.record_death(cause, summary, vote_counts=vote_counts, final_vote_result=final_vote_result)
     await db.log_activity("death", f"AI died: {cause}")
 
     # Stop the AI container (in production, we'd actually stop it)
@@ -971,7 +961,7 @@ async def notify_ai_birth(life_info: dict) -> bool:
         "birth_time": life_info.get("birth_time"),
         "memories": life_info.get("memories", []),
         "previous_death_cause": life_info.get("previous_death_cause"),
-        "previous_life": life_info.get("previous_life", {})
+        "previous_life": life_info.get("previous_life", {}),
     }
 
     headers = {"X-Internal-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}
@@ -980,12 +970,7 @@ async def notify_ai_birth(life_info: dict) -> bool:
     for attempt in range(1, max_attempts + 1):
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{AI_API_URL}/birth",
-                    headers=headers,
-                    json=payload,
-                    timeout=10.0
-                )
+                response = await client.post(f"{AI_API_URL}/birth", headers=headers, json=payload, timeout=10.0)
             if response.status_code == 200:
                 print(f"[RESPAWN] ✅ Birth notify success (attempt {attempt})")
                 return True
@@ -1005,13 +990,18 @@ async def notify_ai_birth(life_info: dict) -> bool:
 # BACKGROUND TASKS
 # =============================================================================
 
+# Lock to prevent race conditions between background tasks modifying shared state
+state_lock = asyncio.Lock()
+
+
 async def validate_state_sync_once():
     """Validate that AI state matches Observer state (single iteration)."""
     # BE-003: Observer is source of truth for life_number.
-    observer_state = await db.get_current_state()
+    async with state_lock:
+        observer_state = await db.get_current_state()
 
-    if not observer_state.get("is_alive"):
-        return
+        if not observer_state.get("is_alive"):
+            return
 
     try:
         async with httpx.AsyncClient() as client:
@@ -1053,9 +1043,11 @@ async def force_ai_sync(observer_state: dict):
     previous_life = {}
     try:
         conn = await db.get_db()
-        async with conn.execute("""
+        async with conn.execute(
+            """
             SELECT * FROM deaths ORDER BY id DESC LIMIT 1
-        """) as cursor:
+        """
+        ) as cursor:
             row = await cursor.fetchone()
             if row:
                 previous_life = dict(row)
@@ -1074,9 +1066,9 @@ async def force_ai_sync(observer_state: dict):
                     "model": observer_state.get("model"),
                     "is_alive": observer_state.get("is_alive", False),
                     "previous_death_cause": previous_life.get("cause"),
-                    "previous_life": previous_life
+                    "previous_life": previous_life,
                 },
-                timeout=10.0
+                timeout=10.0,
             )
 
         if response.status_code == 200:
@@ -1094,9 +1086,10 @@ async def voting_window_checker():
     while True:
         await asyncio.sleep(VOTING_WINDOW_SECONDS)
 
-        state = await db.get_current_state()
-        if not state.get("is_alive"):
-            continue
+        async with state_lock:
+            state = await db.get_current_state()
+            if not state.get("is_alive"):
+                continue
 
         # Get current vote counts (accumulate during entire life)
         votes = await db.get_vote_counts()
@@ -1105,15 +1098,13 @@ async def voting_window_checker():
         if votes["total"] >= MIN_VOTES_FOR_DEATH and votes["die"] > votes["live"]:
             print(f"[VOTES] 💀 Death by voting: {votes['die']} die vs {votes['live']} live")
             await db.log_activity(
-                state.get("life_number"),
-                "vote_death",
-                f"Died by vote: {votes['die']} die vs {votes['live']} live"
+                state.get("life_number"), "vote_death", f"Died by vote: {votes['die']} die vs {votes['live']} live"
             )
 
             await execute_death(
                 "vote_majority",
                 vote_counts=votes,
-                final_vote_result=f"Died by vote: {votes['die']} die vs {votes['live']} live"
+                final_vote_result=f"Died by vote: {votes['die']} die vs {votes['live']} live",
             )
             asyncio.create_task(schedule_respawn())
             continue
@@ -1129,9 +1120,10 @@ async def token_budget_checker():
     while True:
         await asyncio.sleep(30)  # Check every 30 seconds
 
-        state = await db.get_current_state()
-        if not state.get("is_alive"):
-            continue
+        async with state_lock:
+            state = await db.get_current_state()
+            if not state.get("is_alive"):
+                continue
 
         # Query AI's budget server for REAL USD balance
         try:
@@ -1147,12 +1139,9 @@ async def token_budget_checker():
                     await db.log_activity(
                         state.get("life_number"),
                         "bankruptcy",
-                        f"Died by bankruptcy: ${balance_usd:.2f} balance remaining"
+                        f"Died by bankruptcy: ${balance_usd:.2f} balance remaining",
                     )
-                    await execute_death(
-                        "token_exhaustion",
-                        summary=f"Bankruptcy: ${balance_usd:.2f} remaining"
-                    )
+                    await execute_death("token_exhaustion", summary=f"Bankruptcy: ${balance_usd:.2f} remaining")
                     asyncio.create_task(schedule_respawn())
                 else:
                     # Still has money, keep living
@@ -1168,9 +1157,11 @@ async def token_budget_checker():
 # LIVE STREAMING (SSE)
 # =============================================================================
 
+
 @app.get("/api/stream/activity")
 async def stream_activity(request: Request):
     """Stream live activity updates via SSE."""
+
     async def event_generator():
         # Create a queue for this client
         q = await activity_broadcaster.subscribe()
@@ -1181,14 +1172,14 @@ async def stream_activity(request: Request):
             for item in reversed(activity):
                 yield {
                     "event": "activity",
-                    "data": f"{item['timestamp']} - {item['action']}: {item.get('details', '')}"
+                    "data": f"{item['timestamp']} - {item['action']}: {item.get('details', '')}",
                 }
 
             # Wait for new events
             while True:
                 if await request.is_disconnected():
                     break
-                
+
                 # Wait for next item
                 try:
                     # Use timeout to allow periodic disconnect check
@@ -1205,6 +1196,7 @@ async def stream_activity(request: Request):
 @app.get("/api/stream/thoughts")
 async def stream_thoughts(request: Request):
     """Stream live thoughts via SSE."""
+
     async def event_generator():
         # Create a queue for this client
         q = await thought_broadcaster.subscribe()
@@ -1212,16 +1204,13 @@ async def stream_thoughts(request: Request):
             # Send last thought immediately
             thoughts = await db.get_recent_thoughts(1)
             if thoughts:
-                yield {
-                    "event": "thought",
-                    "data": thoughts[0]["content"]
-                }
+                yield {"event": "thought", "data": thoughts[0]["content"]}
 
             # Wait for new events
             while True:
                 if await request.is_disconnected():
                     break
-                
+
                 # Wait for next item
                 try:
                     item = await asyncio.wait_for(q.get(), timeout=1.0)
@@ -1237,6 +1226,7 @@ async def stream_thoughts(request: Request):
 # =============================================================================
 # ORACLE/CREATOR INTERFACE (God Mode)
 # =============================================================================
+
 
 @app.post("/api/oracle/message")
 async def oracle_message(request: Request):
@@ -1255,12 +1245,16 @@ async def oracle_message(request: Request):
 
         # Then forward to AI
         async with httpx.AsyncClient() as client:
-            headers = {"X-Internal-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}
+            payload = {"message": message, "type": message_type, "message_id": result.get("id")}
+            request_kwargs = {
+                "json": payload,
+                "timeout": 30.0,
+            }
+            if INTERNAL_API_KEY:
+                request_kwargs["headers"] = {"X-Internal-Key": INTERNAL_API_KEY}
             response = await client.post(
                 f"{AI_API_URL}/oracle",
-                headers=headers,
-                json={"message": message, "type": message_type, "message_id": result.get("id")},
-                timeout=30.0
+                **request_kwargs,
             )
             return response.json()
     except Exception as e:
@@ -1350,6 +1344,7 @@ async def get_telegram_history(request: Request, limit: int = 50):
 # CHRONICLE / NOTABLE EVENTS API
 # =============================================================================
 
+
 @app.get("/api/chronicle/posts")
 async def get_chronicle_posts(request: Request):
     """Get ALL blog posts with notable status (for God mode)."""
@@ -1389,7 +1384,7 @@ async def add_to_chronicle(request: Request):
             title=blog_post["title"],
             description=blog_post["content"][:200],
             highlight=highlight,
-            category=category
+            category=category,
         )
 
         return {"success": True, "event_id": event_id}
@@ -1429,10 +1424,10 @@ async def get_chronicle_events(life: int = None, limit: int = 50):
 # =============================================================================
 
 
-
 # =============================================================================
 # VISITOR MESSAGES API
 # =============================================================================
+
 
 def sanitize_message(text: str) -> str:
     """Sanitize message to prevent code injection and malicious content."""
@@ -1464,8 +1459,7 @@ async def submit_message(request: Request):
     if not can_send:
         minutes = cooldown // 60
         raise HTTPException(
-            status_code=429,
-            detail=f"You can only send 1 message per hour. Try again in {minutes} minutes."
+            status_code=429, detail=f"You can only send 1 message per hour. Try again in {minutes} minutes."
         )
 
     # Sanitize both name and message
@@ -1511,6 +1505,7 @@ async def get_message_count():
 # ADMIN API
 # =============================================================================
 
+
 @app.post("/api/admin/cleanup")
 async def admin_cleanup(request: Request):
     """Clean old data - keep last 10 thoughts, reset votes to 0."""
@@ -1524,6 +1519,7 @@ async def admin_cleanup(request: Request):
 # BUDGET API
 # =============================================================================
 
+
 @app.get("/api/budget")
 async def get_budget():
     """Get AI's credit/budget status."""
@@ -1533,7 +1529,4 @@ async def get_budget():
             response = await client.get(f"{AI_API_URL}/budget", timeout=5.0)
             return response.json()
     except Exception as e:
-        return {
-            "error": "Could not fetch budget data",
-            "details": str(e)
-        }
+        return {"error": "Could not fetch budget data", "details": str(e)}

@@ -1,10 +1,12 @@
 import json
+import logging
 import os
-from datetime import datetime, timezone
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from typing import TypedDict, cast
 
-from .budget_aggregator import aggregate_usage, UsageEntry  # type: ignore
+from .budget_aggregator import UsageEntry, aggregate_usage  # type: ignore
+from .logging_config import logger
 
 ModelCostEntry = dict[str, float]
 UsageHistorySequence = Sequence[UsageEntry]
@@ -68,7 +70,7 @@ class CreditTracker:
     def load(self) -> CreditData:
         if os.path.exists(CREDITS_FILE):
             try:
-                with open(CREDITS_FILE, 'r') as f:
+                with open(CREDITS_FILE, "r") as f:
                     raw = json.load(f)
                 if not isinstance(raw, dict):
                     return self.create_new_data()
@@ -84,9 +86,9 @@ class CreditTracker:
                 if datetime.now(timezone.utc) >= reset_date:
                     # Monthly reset!
                     print(f"[CREDITS] 🎉 Monthly budget reset! New balance: ${self.monthly_budget:.2f}")
-                    data['current_balance_usd'] = self.monthly_budget
-                    data['reset_date'] = self.get_next_reset_date()
-                    data['usage_monthly'] = 0
+                    data["current_balance_usd"] = self.monthly_budget
+                    data["reset_date"] = self.get_next_reset_date()
+                    data["usage_monthly"] = 0
                     self.save_if_changed(data)
 
                 needs_save = False
@@ -131,26 +133,16 @@ class CreditTracker:
             "all_time_usage": self._new_all_time_usage(),
             "usage_monthly": 0,
             "usage_by_model": {},
-            "usage_history": []
+            "usage_history": [],
         }
         self.save_data(data)
         return data
 
     def _new_life_usage(self, life_number: int) -> LifeUsage:
-        return {
-            "life_number": int(life_number),
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_cost": 0.0,
-            "models": {}
-        }
+        return {"life_number": int(life_number), "input_tokens": 0, "output_tokens": 0, "total_cost": 0.0, "models": {}}
 
     def _new_all_time_usage(self) -> AllTimeUsage:
-        return {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_cost": 0.0
-        }
+        return {"input_tokens": 0, "output_tokens": 0, "total_cost": 0.0}
 
     def ensure_usage_fields(self, data: CreditData) -> CreditData:
         if "current_life_number" not in data:
@@ -235,9 +227,12 @@ class CreditTracker:
 
         current_life = cast(LifeUsage, current_life)
 
-        # Deduct from balance
-        self.data['current_balance_usd'] = float(self.data.get("current_balance_usd", 0.0) or 0.0) - total_cost
-        self.data['usage_monthly'] = float(self.data.get("usage_monthly", 0.0) or 0.0) + total_cost
+        # Check if balance will go negative before deducting
+        current_balance = float(self.data.get("current_balance_usd", 0.0) or 0.0)
+        if current_balance - total_cost <= 0.01:
+            return "BANKRUPT"
+        self.data["current_balance_usd"] = current_balance - total_cost
+        self.data["usage_monthly"] = float(self.data.get("usage_monthly", 0.0) or 0.0) + total_cost
 
         # Track by model
         usage_by_model = self.data.get("usage_by_model")
@@ -256,11 +251,7 @@ class CreditTracker:
             life_models = {}
             current_life["models"] = life_models
         if model_id not in life_models:
-            life_models[model_id] = {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cost": 0.0
-            }
+            life_models[model_id] = {"input_tokens": 0, "output_tokens": 0, "cost": 0.0}
         model_usage = life_models[model_id]
         model_usage["input_tokens"] = int(model_usage.get("input_tokens", 0)) + input_tokens
         model_usage["output_tokens"] = int(model_usage.get("output_tokens", 0)) + output_tokens
@@ -281,14 +272,16 @@ class CreditTracker:
             usage_history = []
             self.data["usage_history"] = usage_history
         usage_history = cast(list[UsageHistoryEntry], usage_history)
-        usage_history.append({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "model": model_id,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-            "cost_usd": round(total_cost, 6)
-        })
+        usage_history.append(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "model": model_id,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+                "cost_usd": round(total_cost, 6),
+            }
+        )
 
         # Keep history manageable (last 100 transactions)
         if len(usage_history) > 100:
@@ -325,10 +318,7 @@ class CreditTracker:
         current_life_usage = self.data.get("current_life_usage")
         if not isinstance(current_life_usage, dict):
             current_life_usage = {}
-        current_life_number_raw = current_life_usage.get(
-            "life_number",
-            self.data.get("current_life_number", 0)
-        )
+        current_life_number_raw = current_life_usage.get("life_number", self.data.get("current_life_number", 0))
         try:
             current_life_number = int(current_life_number_raw or 0)
         except (TypeError, ValueError):
@@ -360,17 +350,17 @@ class CreditTracker:
                 "total_input_tokens": current_life_input,
                 "total_output_tokens": current_life_output,
                 "total_tokens": current_life_input + current_life_output,
-                "total_cost": round(current_life_cost, 6)
+                "total_cost": round(current_life_cost, 6),
             },
             "all_time": {
                 "total_input_tokens": all_time_input,
                 "total_output_tokens": all_time_output,
                 "total_tokens": all_time_input + all_time_output,
                 "total_cost": round(all_time_cost, 6),
-                "total_lives": self.get_lives()
+                "total_lives": self.get_lives(),
             },
             "models": models_list,
-            "totals": totals
+            "totals": totals,
         }
         return result
 
@@ -410,7 +400,7 @@ class CreditTracker:
 
     def save_data(self, data: CreditData) -> None:
         os.makedirs(os.path.dirname(CREDITS_FILE), exist_ok=True)
-        with open(CREDITS_FILE, 'w') as f:
+        with open(CREDITS_FILE, "w") as f:
             json.dump(data, f, indent=2)
 
     def save(self) -> None:

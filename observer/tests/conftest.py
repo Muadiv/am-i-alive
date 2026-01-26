@@ -1,7 +1,6 @@
 # TEST-001: pytest fixtures for observer tests
 import importlib
 import os
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -20,10 +19,14 @@ async def test_db(tmp_path, monkeypatch):
     monkeypatch.setenv("MEMORIES_PATH", str(memories_path))
 
     import database as db
+
     importlib.reload(db)
     await db.init_db()
 
-    yield db
+    try:
+        yield db
+    finally:
+        await db.close_db()
 
 
 @pytest.fixture
@@ -34,9 +37,15 @@ async def main_module(test_db, monkeypatch):
     os.chdir(OBSERVER_DIR)
     try:
         import main as main_module
+
         main_module = importlib.reload(main_module)
         monkeypatch.setattr(main_module, "db", test_db)
-        return main_module
+        try:
+            yield main_module
+        finally:
+            http_client = getattr(main_module, "_http_client", None)
+            if http_client is not None and not http_client.is_closed:
+                await http_client.aclose()
     finally:
         os.chdir(original_dir)
 
@@ -44,6 +53,7 @@ async def main_module(test_db, monkeypatch):
 @pytest.fixture
 def mock_request():
     """Mock FastAPI Request object."""
+
     class MockClient:
         host = "127.0.0.1"
 
@@ -65,5 +75,5 @@ def sample_votes():
             {"ip_hash": "ghi789", "vote": "die"},
             {"ip_hash": "jkl012", "vote": "die"},
             {"ip_hash": "mno345", "vote": "die"},
-        ]
+        ],
     }

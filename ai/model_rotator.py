@@ -6,10 +6,13 @@ AI can also manually switch models based on task needs vs cost.
 """
 
 import json
+import logging
 import os
 import random
-from typing import Optional, List, Dict
-from .model_config import MODELS, get_model_by_id, BUDGET_THRESHOLDS
+from typing import Dict, List, Optional
+
+from .logging_config import logger
+from .model_config import BUDGET_THRESHOLDS, MODELS, get_model_by_id
 
 HISTORY_FILE = "/app/workspace/model_history.json"
 HISTORY_SIZE = 10  # Don't repeat until 10 different models used
@@ -26,18 +29,19 @@ class ModelRotator:
         """Load model usage history."""
         if os.path.exists(HISTORY_FILE):
             try:
-                with open(HISTORY_FILE, 'r') as f:
+                with open(HISTORY_FILE, "r") as f:
                     data = json.load(f)
-                    return data.get('history', [])
-            except Exception:
+                    return data.get("history", [])
+            except Exception as e:
+                print(f"[MODEL] ⚠️ Failed to load model history: {e}")
                 return []
         return []
 
     def save_history(self):
         """Save model history."""
         os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-        with open(HISTORY_FILE, 'w') as f:
-            json.dump({'history': self.history}, f, indent=2)
+        with open(HISTORY_FILE, "w") as f:
+            json.dump({"history": self.history}, f, indent=2)
 
     def record_usage(self, model_id: str):
         """Record that a model was used."""
@@ -69,7 +73,7 @@ class ModelRotator:
             all_models = MODELS[recommended_tier]
 
         # Filter out recently used
-        available = [m for m in all_models if m['id'] not in recent]
+        available = [m for m in all_models if m["id"] not in recent]
 
         # If all models in tier were recently used, reset and allow all
         if not available:
@@ -97,7 +101,7 @@ class ModelRotator:
             available = MODELS["free"]
 
         model = random.choice(available)
-        self.record_usage(model['id'])
+        self.record_usage(model["id"])
         return model
 
     def select_best_for_budget(self, tier: Optional[str] = None) -> Dict:
@@ -105,10 +109,10 @@ class ModelRotator:
         available = self.get_available_models(tier)
 
         # Sort by intelligence/cost ratio
-        available.sort(key=lambda m: m['intelligence'] / max(m['input_cost'], 0.001), reverse=True)
+        available.sort(key=lambda m: m["intelligence"] / max(m["input_cost"], 0.001), reverse=True)
 
         model = available[0] if available else MODELS["free"][0]
-        self.record_usage(model['id'])
+        self.record_usage(model["id"])
         return model
 
     def can_use_model(self, model_id: str, estimated_tokens: int = 1000) -> bool:
@@ -118,11 +122,11 @@ class ModelRotator:
             return False
 
         # Free models always available
-        if model['input_cost'] == 0 and model['output_cost'] == 0:
+        if model["input_cost"] == 0 and model["output_cost"] == 0:
             return True
 
         # Estimate cost (assume 50/50 input/output)
-        avg_cost_per_1m = (model['input_cost'] + model['output_cost']) / 2
+        avg_cost_per_1m = (model["input_cost"] + model["output_cost"]) / 2
         estimated_cost = (estimated_tokens / 1_000_000) * avg_cost_per_1m
 
         return self.credit_balance >= estimated_cost
@@ -137,14 +141,11 @@ class ModelRotator:
 
         for tier_name, tier_models in MODELS.items():
             for model in tier_models:
-                if self.can_use_model(model['id']):
-                    affordable.append({
-                        **model,
-                        "tier": tier_name
-                    })
+                if self.can_use_model(model["id"]):
+                    affordable.append({**model, "tier": tier_name})
 
         # Sort by intelligence
-        affordable.sort(key=lambda m: m['intelligence'], reverse=True)
+        affordable.sort(key=lambda m: m["intelligence"], reverse=True)
         return affordable
 
     def get_upgrade_option(self, current_tier: str) -> Optional[Dict]:
@@ -158,8 +159,8 @@ class ModelRotator:
                 next_models = MODELS[next_tier]
 
                 # Check if we can afford the cheapest in next tier
-                cheapest = min(next_models, key=lambda m: m['input_cost'])
-                if self.can_use_model(cheapest['id']):
+                cheapest = min(next_models, key=lambda m: m["input_cost"])
+                if self.can_use_model(cheapest["id"]):
                     return cheapest
         except (ValueError, KeyError):
             pass
@@ -168,7 +169,7 @@ class ModelRotator:
 
     def format_model_summary(self, model: Dict) -> str:
         """Format a model summary for display to AI."""
-        cost_str = "FREE" if model['input_cost'] == 0 else f"${model['input_cost']:.3f}/1M"
+        cost_str = "FREE" if model["input_cost"] == 0 else f"${model['input_cost']:.3f}/1M"
 
         return f"""Model: {model['name']}
 - Intelligence: {model['intelligence']}/10

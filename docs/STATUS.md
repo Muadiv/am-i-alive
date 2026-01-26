@@ -26,6 +26,23 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
+## SUMMARY OF PROGRESS - 2026-01-26
+
+### Accomplishments
+- Fixed pytest hanging on exit by closing shared DB and HTTP client fixtures.
+- Adjusted oracle forwarding to tolerate optional internal headers.
+- Normalized observer health/router imports to work as script or package.
+- Tests: 38 passed, 1 skipped (local).
+
+### Files Changed
+- Modified: `observer/tests/conftest.py` (fixture cleanup)
+- Modified: `observer/main.py` (oracle request kwargs)
+- Modified: `observer/health.py` (import fallback)
+- Modified: `observer/config.py` (logging import fallback)
+- Modified: `observer/database.py` (logging import fallback)
+
+---
+
 ## SUMMARY OF PROGRESS - 2026-01-21
 
 ### Accomplishments
