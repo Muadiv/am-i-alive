@@ -21,7 +21,10 @@ import httpx
 import psutil
 import tweepy  # type: ignore
 
-from .actions import ActionExecutor
+try:
+    from .actions import ActionExecutor
+except ImportError:
+    from actions import ActionExecutor
 
 # Import our custom modules
 from .credit_tracker import CreditTracker
