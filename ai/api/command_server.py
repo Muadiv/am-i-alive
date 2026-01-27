@@ -87,7 +87,7 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         data = json.loads(self.rfile.read(length))
 
-        logger.info(f"Birth notification received: {data}")
+        logger.debug(f"Birth notification received: {data}")
 
         # Signal to birth sequence
         _pending_birth_data = data
@@ -107,7 +107,7 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         data = json.loads(self.rfile.read(length))
 
-        logger.info(f"Force sync request received: {data}")
+        logger.debug(f"Force sync request received: {data}")
 
         _pending_birth_data = data
         if _birth_event:
@@ -146,7 +146,7 @@ async def start_command_server(port: int, brain: AIBrain, birth_event: asyncio.E
     _brain = brain
     _birth_event = birth_event
 
-    logger.info(f"Starting command server on :{port}")
+    logger.debug(f"Starting command server on :{port}")
 
     def run_server():
         with HTTPServer(("", port), CommandRequestHandler) as httpd:
