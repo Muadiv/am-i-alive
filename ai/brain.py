@@ -1276,6 +1276,7 @@ async def queue_birth_data(life_data: dict[str, Any]) -> None:
     """Queue Observer-provided birth data for initialization."""
     global pending_birth_data
     pending_birth_data = life_data
+    print("[BRAIN] 📥 Birth data queued")
     if birth_event:
         birth_event.set()
 
