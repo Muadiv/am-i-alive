@@ -91,22 +91,24 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
         logger.debug(f"Birth notification received: {data}")
 
         print("[BRAIN] 📥 Birth request received", flush=True)
+        print(f"[BRAIN] 📎 brain_loop={brain_module.brain_loop}", flush=True)
 
         # Signal to birth sequence on the main loop thread
         if brain_module.brain_loop:
-            logger.error(f"[DEBUG] brain_loop={brain_module.brain_loop}")
             future = asyncio.run_coroutine_threadsafe(
                 brain_module.queue_birth_data(data),
                 brain_module.brain_loop,
             )
             try:
-                future.result(timeout=1)
+                future.result(timeout=2)
+                print("[BRAIN] ✅ Birth data queued from command server", flush=True)
             except Exception as exc:
-                logger.error(f"Birth queue failed: {exc}")
+                print(f"[BRAIN] ❌ Birth queue failed: {exc}", flush=True)
         else:
             _pending_birth_data = data
             if _birth_event:
                 _birth_event.set()
+            print("[BRAIN] ⚠️ Used fallback birth queue path", flush=True)
 
         self._send_response(200, '{"status": "ok"}')
 
