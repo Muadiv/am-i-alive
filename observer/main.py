@@ -6,7 +6,6 @@ The public face of the experiment: voting, viewing, and life/death control.
 import asyncio
 import hashlib
 import ipaddress
-import logging
 import os
 import random
 from contextlib import asynccontextmanager
@@ -18,53 +17,12 @@ import bleach
 import database as db
 import httpx
 import markdown2
-from config import Config
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi_csrf_protect import CsrfProtect
-from logging_config import logger
+from services.broadcast import BroadcastManager
 from sse_starlette.sse import EventSourceResponse
-
-# =============================================================================
-# BROADCAST MANAGER (SSE)
-# =============================================================================
-
-
-class BroadcastManager:
-    """Manages SSE subscriptions and broadcasts events to connected clients."""
-
-    def __init__(self):
-        self.subscribers: set[asyncio.Queue] = set()
-
-    async def subscribe(self) -> asyncio.Queue:
-        """Subscribe to the broadcast stream."""
-        q = asyncio.Queue()
-        self.subscribers.add(q)
-        return q
-
-    async def unsubscribe(self, q: asyncio.Queue):
-        """Unsubscribe from the broadcast stream."""
-        if q in self.subscribers:
-            self.subscribers.remove(q)
-
-    async def broadcast(self, event_type: str, data: str):
-        """Broadcast an event to all subscribers."""
-        if not self.subscribers:
-            return
-
-        # Create message payload
-        message = {"event": event_type, "data": data}
-
-        # Send to all queues
-        for q in list(self.subscribers):
-            try:
-                q.put_nowait(message)
-            except Exception:
-                # If queue is closed or full, ignore
-                pass
-
 
 # Global broadcasters
 activity_broadcaster = BroadcastManager()
@@ -133,7 +91,7 @@ def to_prague_time(utc_time_str):
         prague_dt = utc_dt + timedelta(hours=1)
         # Format as readable string
         return prague_dt.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception as e:
+    except Exception:
         # If parsing fails, return original
         return utc_time_str
 
@@ -457,7 +415,7 @@ async def blog_page(request: Request):
             memory_data = await db.get_life_history()
             if memory_data:
                 # Get most recent dead life
-                previous_life = [l for l in memory_data if l["life_number"] == state["life_number"] - 1]
+                previous_life = [life for life in memory_data if life["life_number"] == state["life_number"] - 1]
                 if previous_life and previous_life[0].get("summary"):
                     # Parse summary into fragments
                     summary = previous_life[0]["summary"]
@@ -806,7 +764,7 @@ async def receive_birth(request: Request):
     await db.record_birth(
         life_number, bootstrap_mode, model, ai_name=ai_name, ai_icon=ai_icon, birth_instructions=birth_instructions
     )
-    await db.log_activity(life_number, "birth", f"Life #{life_number} born as '{ai_name}' {ai_icon} with {model} model")
+    await db.log_activity("birth", f"Life #{life_number} born as '{ai_name}' {ai_icon} with {model} model")
 
     return {"success": True, "life_number": life_number}
 
@@ -1097,9 +1055,7 @@ async def voting_window_checker():
         # Death condition: At least MIN_VOTES_FOR_DEATH total votes AND die > live
         if votes["total"] >= MIN_VOTES_FOR_DEATH and votes["die"] > votes["live"]:
             print(f"[VOTES] 💀 Death by voting: {votes['die']} die vs {votes['live']} live")
-            await db.log_activity(
-                state.get("life_number"), "vote_death", f"Died by vote: {votes['die']} die vs {votes['live']} live"
-            )
+            await db.log_activity("vote_death", f"Died by vote: {votes['die']} die vs {votes['live']} live")
 
             await execute_death(
                 "vote_majority",
@@ -1137,11 +1093,10 @@ async def token_budget_checker():
                 if balance_usd <= 0.01:
                     print(f"[BUDGET] 💀 Bankruptcy detected: ${balance_usd:.2f} remaining")
                     await db.log_activity(
-                        state.get("life_number"),
                         "bankruptcy",
                         f"Died by bankruptcy: ${balance_usd:.2f} balance remaining",
                     )
-                    await execute_death("token_exhaustion", summary=f"Bankruptcy: ${balance_usd:.2f} remaining")
+                    await execute_death("token_exhaustion")
                     asyncio.create_task(schedule_respawn())
                 else:
                     # Still has money, keep living
@@ -1410,10 +1365,10 @@ async def remove_from_chronicle(request: Request, event_id: int):
 
 
 @app.get("/api/chronicle/events")
-async def get_chronicle_events(life: int = None, limit: int = 50):
+async def get_chronicle_events(life: int | None = None, limit: int = 50):
     """Get notable events for the public chronicle page."""
     try:
-        events = await db.get_notable_events(life_number=life, limit=limit)
+        events = await db.get_notable_events(life_number=life or 0, limit=limit)
         return events
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1457,7 +1412,7 @@ async def submit_message(request: Request):
     # Check rate limit
     can_send, cooldown = await db.can_send_message(ip_hash)
     if not can_send:
-        minutes = cooldown // 60
+        minutes = (cooldown or 0) // 60
         raise HTTPException(
             status_code=429, detail=f"You can only send 1 message per hour. Try again in {minutes} minutes."
         )

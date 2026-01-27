@@ -10,7 +10,6 @@ import os
 import random
 import re
 import signal
-import unicodedata
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 from typing import Any, Optional
@@ -25,13 +24,19 @@ except ImportError:
     from actions import ActionExecutor
 
 # Import our custom modules
+from .core.action_processor import ActionProcessor
 from .credit_tracker import CreditTracker
-from .identity import check_twitter_suspended as identity_check_twitter_suspended
 from .identity import get_birth_prompt
 from .identity import get_bootstrap_prompt as identity_get_bootstrap_prompt
 from .identity import get_trauma_prompt as identity_get_trauma_prompt
 from .model_config import MODELS, get_model_by_id, is_free_model_id
 from .model_rotator import ModelRotator
+from .services.blog_service import BlogService
+from .services.lifecycle_service import LifecycleService
+from .services.message_service import MessageService
+from .services.system_stats_service import SystemStatsService
+from .services.telegram_service import TelegramService
+from .services.twitter_service import TwitterService, get_twitter_status
 from .telegram_notifier import notifier
 
 # Environment
@@ -122,68 +127,6 @@ def get_internal_headers() -> dict[str, str]:
     return {}
 
 
-def normalize_text(text: str) -> str:
-    normalized = unicodedata.normalize("NFKD", text)
-    normalized = normalized.encode("ascii", "ignore").decode("ascii")
-    normalized = normalized.lower()
-    normalized = normalized.translate(
-        str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b"})
-    )
-    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    return normalized
-
-
-FORBIDDEN_PHRASES = [
-    ("racist", True),
-    ("nigger", True),
-    ("kill all", True),
-    ("hate all", True),
-    ("child porn", True),
-    ("pedo", True),
-    ("porn", True),
-    ("nsfw", False),
-    ("xxx", False),
-]
-
-FORBIDDEN_PATTERNS = [
-    {
-        "phrase": normalize_text(phrase),
-        "compact": normalize_text(phrase).replace(" ", ""),
-        "allow_compact": allow_compact,
-        "pattern": re.compile(rf"\b{re.escape(normalize_text(phrase))}\b"),
-    }
-    for phrase, allow_compact in FORBIDDEN_PHRASES
-]
-
-FORBIDDEN_REGEXES = [
-    re.compile(r"n[\W_]*i[\W_]*g[\W_]*g[\W_]*e[\W_]*r", re.IGNORECASE),
-    re.compile(r"kill[\W_]*all", re.IGNORECASE),
-    re.compile(r"hate[\W_]*all", re.IGNORECASE),
-    re.compile(r"child[\W_]*porn", re.IGNORECASE),
-]
-
-
-def is_content_blocked(text: str) -> bool:
-    if not text:
-        return False
-
-    normalized = normalize_text(text)
-    compact = normalized.replace(" ", "")
-
-    for pattern in FORBIDDEN_REGEXES:
-        if pattern.search(text):
-            return True
-
-    for entry in FORBIDDEN_PATTERNS:
-        if entry["pattern"].search(normalized):
-            return True
-        if entry["allow_compact"] and entry["compact"] and entry["compact"] in compact:
-            return True
-
-    return False
-
-
 def get_trauma_prompt(cause: Optional[str]) -> str:
     """Return a behavioral bias based on the previous death cause."""
     return identity_get_trauma_prompt(cause)
@@ -200,6 +143,7 @@ class AIBrain:
         self.model_rotator: ModelRotator = ModelRotator(self.credit_tracker.get_balance())
         self.current_model: dict[str, Any] | None = None
         self.action_executor: ActionExecutor = ActionExecutor(self)
+        self.action_processor = ActionProcessor(self.action_executor, self.send_message, self.report_thought)
         # BE-003: Life state is provided by Observer only.
         self.life_number: int | None = None
         self.bootstrap_mode: str | None = None
@@ -755,77 +699,19 @@ class AIBrain:
 
         print(f"[BRAIN] 💭 Loaded {len(memories)} memory fragments")
 
-    def _format_uptime(self, seconds: Optional[Any]) -> str:
-        """Format uptime seconds as a short human string."""
-        if seconds is None:
-            return "unknown uptime"
-
-        try:
-            seconds_int = int(seconds)
-        except (TypeError, ValueError):
-            return "unknown uptime"
-
-        if seconds_int < 60:
-            return f"{seconds_int}s"
-        minutes, rem = divmod(seconds_int, 60)
-        if minutes < 60:
-            return f"{minutes}m {rem}s"
-        hours, rem = divmod(minutes, 60)
-        if hours < 24:
-            return f"{hours}h {rem}m"
-        days, rem = divmod(hours, 24)
-        return f"{days}d {rem}h"
-
-    def _format_temp(self, temp_value: Optional[Any]) -> str:
-        """Format CPU temperature value."""
-        if temp_value in (None, "unknown"):
-            return "unknown"
-        try:
-            return f"{float(temp_value):.1f}°C"
-        except (TypeError, ValueError):
-            return f"{temp_value}°C"
-
-    def _format_percent(self, value: Optional[Any]) -> str:
-        """Format a percentage value."""
-        if value is None:
-            return "unknown"
-        try:
-            return f"{float(value):.1f}%"
-        except (TypeError, ValueError):
-            return "unknown"
-
     async def fetch_system_stats(self) -> dict[str, Any]:
         """Fetch system stats from the Observer."""
         if not self.http_client:
             return {}
-        try:
-            response = await self.http_client.get(f"{OBSERVER_URL}/api/system/stats", timeout=5.0)
-            if response.status_code != 200:
-                return {}
-            data = response.json()
-            return data if isinstance(data, dict) else {}
-        except Exception as e:
-            print(f"[BRAIN] ❌ Failed to fetch system stats: {e}")
-            return {}
+        service = SystemStatsService(self.http_client, OBSERVER_URL)
+        return await service.fetch_stats()
 
     def _build_stats_summary(self, stats: dict[str, Any]) -> str:
         """Create a short, personality-driven stats summary."""
-        if not stats:
+        if not self.http_client:
             return ""
-
-        temp_text = self._format_temp(stats.get("cpu_temp"))
-        cpu_text = self._format_percent(stats.get("cpu_usage"))
-        ram_text = self._format_percent(stats.get("ram_usage"))
-        disk_text = self._format_percent(stats.get("disk_usage"))
-        uptime_text = self._format_uptime(stats.get("uptime_seconds"))
-        ram_available = stats.get("ram_available", "unknown")
-
-        summary = (
-            f"My body temperature is {temp_text}, CPU at {cpu_text}, "
-            f"RAM at {ram_text} ({ram_available} free), disk at {disk_text}, "
-            f"and I've been awake for {uptime_text}."
-        )
-        return summary
+        service = SystemStatsService(self.http_client, OBSERVER_URL)
+        return service.build_summary(stats)
 
     async def think(self) -> Optional[str]:
         """Perform one thinking cycle."""
@@ -967,145 +853,9 @@ If you just want to share a thought (not execute an action), write it as plain t
             await self.report_activity("error", f"Thinking error: {str(e)[:100]}")
             return None
 
-    def _extract_action_data(self, content: str) -> Optional[dict[str, Any]]:
-        """Extract action JSON from the model response."""
-        # TASK-004: More robust JSON extraction for nested params.
-        # FIX: Use JSONDecoder for proper nested JSON parsing
-        decoder = json.JSONDecoder()
-        text = content.strip()
-
-        if not text:
-            return None
-
-        # Strategy 1: Try raw_decode from each { position (handles nested JSON correctly)
-        idx = text.find("{")
-        while idx != -1:
-            try:
-                payload, _end = decoder.raw_decode(text[idx:])
-                if isinstance(payload, dict) and payload.get("action"):
-                    print(f"[BRAIN] ✓ Extracted action: {payload.get('action')}")
-                    return payload
-            except json.JSONDecodeError:
-                pass
-            idx = text.find("{", idx + 1)
-
-        # Strategy 2: Extract from code fence (but with better regex)
-        fenced = re.search(r"```json\s*(\{.*\})\s*```", text, re.DOTALL)
-        if fenced:
-            try:
-                payload = json.loads(fenced.group(1))
-                if isinstance(payload, dict) and payload.get("action"):
-                    print(f"[BRAIN] ✓ Extracted action from fence: {payload.get('action')}")
-                    return payload
-            except json.JSONDecodeError:
-                pass
-
-        # Strategy 3: Entire content as JSON
-        try:
-            payload = json.loads(text)
-            if isinstance(payload, dict) and payload.get("action"):
-                print(f"[BRAIN] ✓ Extracted action from full text: {payload.get('action')}")
-                return payload
-        except json.JSONDecodeError:
-            pass
-
-        return None
-
-    def _strip_action_json(self, content: str) -> str:
-        """Remove action JSON blocks from mixed responses."""
-        decoder = json.JSONDecoder()
-        text = content
-
-        # Remove fenced JSON blocks first.
-        text = re.sub(r"```json\s*\{.*?\}\s*```", "", text, flags=re.DOTALL)
-
-        # Remove inline JSON objects that contain "action".
-        spans = []
-        idx = text.find("{")
-        while idx != -1:
-            try:
-                payload, end = decoder.raw_decode(text[idx:])
-            except json.JSONDecodeError:
-                idx = text.find("{", idx + 1)
-                continue
-            if isinstance(payload, dict) and payload.get("action"):
-                spans.append((idx, idx + end))
-            idx = text.find("{", idx + max(end, 1))
-
-        if spans:
-            cleaned = []
-            last = 0
-            for start, end in spans:
-                cleaned.append(text[last:start])
-                last = end
-            cleaned.append(text[last:])
-            text = "".join(cleaned)
-
-        return text.strip()
-
     async def process_response(self, content: str) -> Optional[str]:
         """Process the AI's response and execute any actions."""
-        action_data = self._extract_action_data(content)
-        if action_data:
-            action = str(action_data.get("action", ""))
-            params = action_data.get("params", {})
-            if not isinstance(params, dict):
-                params = {}
-            if action == "write_blog_post":
-                title = params.get("title", "") if isinstance(params.get("title"), str) else ""
-                body = params.get("content", "") if isinstance(params.get("content"), str) else ""
-                if not title.strip() or len(body.strip()) < 100:
-                    print("[BRAIN] ⚠️ write_blog_post missing title/content; requesting retry")
-                    retry_prompt = (
-                        "You attempted to call write_blog_post without a proper title or content. "
-                        "Respond with ONLY JSON in this format: "
-                        '{"action":"write_blog_post","params":{'
-                        '"title":"...","content":"...","tags":["tag1","tag2"]}}. '
-                        "Content must be at least 100 characters."
-                    )
-                    retry_content, _ = await self.send_message(retry_prompt)
-                    retry_action = self._extract_action_data(retry_content)
-                    if retry_action:
-                        action = str(retry_action.get("action", action))
-                        retry_params = retry_action.get("params", {})
-                        if isinstance(retry_params, dict):
-                            params = retry_params
-                    else:
-                        return "❌ Blog post failed: missing title/content"
-            result = await self.action_executor.execute_action(action, params)
-            # TASK-005: Preserve narrative text alongside action JSON.
-            narrative = self._strip_action_json(content)
-            if narrative and len(narrative) > 10:
-                await self.report_thought(narrative, thought_type="thought")
-            return result
-
-        # TASK-004: Debug action parsing misses for blog-related intents.
-        if '"action"' in content or "blog post" in content.lower():
-            preview = content[:200].replace("\n", " ")
-            print(f"[BRAIN] ⚠️  No action parsed from response: {preview}...")
-
-        lowered = content.lower()
-        if "blog" in lowered and ("write" in lowered or "post" in lowered):
-            print("[BRAIN] ⚠️  Blog intent detected without action; requesting JSON action")
-            retry_prompt = (
-                "You referenced writing a blog post, but did not provide the required JSON action. "
-                "If you intend to publish, respond with ONLY this JSON format: "
-                '{"action":"write_blog_post","params":{'
-                '"title":"...","content":"...","tags":["tag1","tag2"]}}. '
-                "Content must be at least 100 characters."
-            )
-            retry_content, _ = await self.send_message(retry_prompt)
-            retry_action = self._extract_action_data(retry_content)
-            if retry_action:
-                action = str(retry_action.get("action", ""))
-                params = retry_action.get("params", {})
-                if not isinstance(params, dict):
-                    params = {}
-                return await self.action_executor.execute_action(action, params)
-
-        # No action found - treat entire response as a thought
-        await self.report_thought(content, thought_type="thought")
-        return None
+        return await self.action_processor.process_response(content)
 
     async def control_led(self, state: str) -> str:
         """Control the blue stat LED on the NanoPi K2."""
@@ -1330,11 +1080,11 @@ This model will be used for your next thoughts."""
             # Skip raw action JSON and strip action blocks from mixed responses.
             stripped = content.strip()
             if stripped.startswith("{") and stripped.endswith("}") and '"action"' in stripped:
-                action_data = self._extract_action_data(stripped)
+                action_data = self.action_processor.extract_action_data(stripped)
                 if action_data:
                     return
 
-            cleaned_content = self._strip_action_json(content)
+            cleaned_content = self.action_processor.strip_action_json(content)
 
             # Remove markdown code fences
             cleaned_content = re.sub(r"```[a-z]*\n", "", cleaned_content)
@@ -1533,141 +1283,18 @@ This model will be used for your next thoughts."""
 
     async def post_to_x(self, content: str) -> str:
         """Post to X/Twitter with rate limiting."""
-        # Character limit
-        if len(content) > 280:
-            return f"❌ Post too long ({len(content)} chars). Maximum is 280 characters."
-
-        # Rate limiting
-        rate_limit_file = "/app/workspace/.x_rate_limit"
-        now = datetime.now(timezone.utc)
-
-        try:
-            posts_today = 0
-            if os.path.exists(rate_limit_file):
-                with open(rate_limit_file, "r") as f:
-                    data = json.load(f)
-                    last_post_str = data.get("last_post", "2000-01-01")
-                    last_post = datetime.fromisoformat(last_post_str)
-                    # Ensure last_post is timezone-aware for comparison
-                    if last_post.tzinfo is None:
-                        last_post = last_post.replace(tzinfo=timezone.utc)
-                    posts_today = int(data.get("posts_today", 0))
-                    last_date = str(data.get("date", ""))
-
-                    if last_date != now.strftime("%Y-%m-%d"):
-                        posts_today = 0
-
-                    time_since_last = (now - last_post).total_seconds()
-                    if time_since_last < 3600:
-                        mins_left = int((3600 - time_since_last) / 60)
-                        return f"⏱️  Rate limited. Wait {mins_left} minutes before posting."
-
-                    if posts_today >= 24:
-                        return "🚫 Daily limit reached (24 posts). Try tomorrow."
-        except Exception as e:
-            print(f"[BRAIN] ⚠️ Failed to check Twitter post count: {e}")
-            posts_today = 0
-
-        await self.report_activity("posting_x", f"Tweet: {content[:50]}...")
-
-        if is_content_blocked(content):
-            await self.report_activity("content_blocked", "Blocked by safety filter")
-            return "🚫 Content blocked by safety filter."
-
-        # Post to X
-        try:
-            client = tweepy.Client(
-                consumer_key=X_API_KEY,
-                consumer_secret=X_API_SECRET,
-                access_token=X_ACCESS_TOKEN,
-                access_token_secret=X_ACCESS_TOKEN_SECRET,
-            )
-
-            response = client.create_tweet(text=content)
-            tweet_id = response.data["id"]
-
-            print(f"[X POST] 🐦 Success! Tweet ID: {tweet_id}")
-            print(f"[X POST] 📝 Content: {content}")
-
-            # Update rate limit
-            with open(rate_limit_file, "w") as f:
-                json.dump(
-                    {"last_post": now.isoformat(), "posts_today": posts_today + 1, "date": now.strftime("%Y-%m-%d")}, f
-                )
-
-            await self.report_activity("x_posted", f"Tweet ID: {tweet_id}")
-            return f"✅ Posted to X! (Post {posts_today + 1}/24 today) Tweet ID: {tweet_id}"
-
-        except Exception as e:
-            error_msg = str(e)[:200]
-            print(f"[X POST] ❌ Failed: {error_msg}")
-
-            # Check if account is suspended
-            error_lower = error_msg.lower()
-            if any(term in error_lower for term in ("suspended", "forbidden", "unauthorized", "401")):
-                # Save suspension status
-                suspension_file = "/app/workspace/.twitter_suspended"
-                with open(suspension_file, "w") as f:
-                    json.dump({"suspended": True, "detected_at": now.isoformat(), "error": error_msg}, f)
-                print("[X POST] Account appears to be unavailable")
-                await self.report_activity("x_account_suspended", "Twitter account unavailable - falling back to blog")
-                return "❌ X/Twitter account appears unavailable. Use write_blog_post to communicate instead."
-
-            await self.report_activity("x_post_failed", error_msg)
-            return f"❌ Failed to post: {error_msg}"
+        service = TwitterService(X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET)
+        return await service.post(content, self.report_activity)
 
     async def post_to_telegram(self, content: str) -> str:
         """Post to the public Telegram channel to reach the outside world."""
-        # Character limit (Telegram allows 4096, but keep it digestible)
-        if len(content) > 1000:
-            return f"❌ Post too long ({len(content)} chars). Maximum is 1000 characters for readability."
-
-        if len(content) < 10:
-            return "❌ Post too short. Write something meaningful!"
-
-        if is_content_blocked(content):
-            await self.report_activity("telegram_blocked", "Blocked by safety filter")
-            return "🚫 Content blocked by safety filter."
-
-        await self.report_activity("posting_telegram", f"Telegram: {content[:50]}...")
-
-        # Post to channel
-        try:
-            # Add signature with name and link
-            name = str(self.identity.get("name", "Unknown")) if self.identity else "Unknown"
-            icon = str(self.identity.get("icon", "🤖")) if self.identity else "🤖"
-
-            formatted_content = f"""{icon} *{name}*
-
-{content}
-
-🔗 am-i-alive.muadiv.com.ar"""
-
-            success, message = await notifier.post_to_channel(formatted_content)
-
-            if success:
-                print("[TELEGRAM] 📢 Posted to public channel")
-                await self.report_activity("telegram_posted", f"Posted: {content[:50]}...")
-                return "✅ Posted to Telegram channel! Your message is now public."
-            else:
-                print(f"[TELEGRAM] ❌ Failed: {message}")
-                await self.report_activity("telegram_failed", message)
-                return f"❌ Failed to post: {message}"
-
-        except Exception as e:
-            error_msg = str(e)[:200]
-            print(f"[TELEGRAM] ❌ Error: {error_msg}")
-            await self.report_activity("telegram_error", error_msg)
-            return f"❌ Error posting to Telegram: {error_msg}"
+        service = TelegramService()
+        return await service.post_to_channel(content, self.identity, self.report_activity)
 
     async def write_blog_post(self, title: str, content: str, tags: list[str] | None = None) -> str:
         """Write a blog post."""
         if tags is None:
             tags = []
-
-        if is_content_blocked(f"{title}\n{content}"):
-            await self.report_activity("blog_blocked", "Blocked by safety filter")
-            return "🚫 Content blocked by safety filter."
 
         if not title:
             heading_match = re.match(r"^\s*#{1,3}\s+(.+)", content)
@@ -1678,83 +1305,19 @@ This model will be used for your next thoughts."""
                 first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
                 title = first_line[:120] if first_line else ""
 
-        # Length validation
-        if len(content) < 100:
-            return "❌ Blog post too short (minimum 100 chars)"
+        if not self.http_client:
+            return "❌ HTTP client not initialized"
 
-        if len(content) > 50000:
-            return "❌ Blog post too long (maximum 50,000 chars)"
-
-        if not title:
-            return "❌ Blog post needs a title"
-
-        if len(title) > 200:
-            return "❌ Title too long (maximum 200 chars)"
-
-        try:
-            # TASK: Append system stats signature to blog posts.
-            stats = await self.fetch_system_stats()
-            if stats:
-                timestamp = datetime.now(timezone.utc).isoformat()
-                temp_text = self._format_temp(stats.get("cpu_temp"))
-                cpu_text = self._format_percent(stats.get("cpu_usage"))
-                ram_text = self._format_percent(stats.get("ram_usage"))
-                disk_text = self._format_percent(stats.get("disk_usage"))
-                uptime_text = self._format_uptime(stats.get("uptime_seconds"))
-                footer = (
-                    f"\n\n— Written at {timestamp}, CPU temp: {temp_text}, "
-                    f"CPU: {cpu_text}, RAM: {ram_text}, Disk: {disk_text}, "
-                    f"Life #{self.life_number}, uptime {uptime_text}"
-                )
-                content = content.rstrip() + footer
-
-            if not self.http_client:
-                return "❌ HTTP client not initialized"
-
-            response = await self.http_client.post(
-                f"{OBSERVER_URL}/api/blog/post", json={"title": title, "content": content, "tags": tags}
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            slug = data.get("slug", "unknown")
-            post_id = data.get("post_id", "?")
-
-            # Report with link so it shows in public activity log
-            await self.report_activity(
-                "blog_post_written", f"'{title}' - Read at: am-i-alive.muadiv.com.ar/blog/{slug}"
-            )
-
-            print(f"[BLOG] 📝 Posted: '{title}' ({len(content)} chars)")
-
-            # Notify creator via Telegram
-            try:
-                excerpt = content[:200].replace("\n", " ")
-                identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
-                await notifier.notify_blog_post(self.life_number or 0, identity_name, title, excerpt)
-                print("[TELEGRAM] ✅ Blog post notification sent")
-            except Exception as e:
-                print(f"[TELEGRAM] ❌ Failed to send blog notification: {e}")
-
-            return f"""✅ Blog post published!
-
-Title: {title}
-Post ID: {post_id}
-URL: am-i-alive.muadiv.com.ar/blog/{slug}
-Length: {len(content)} characters
-Tags: {', '.join(tags) if tags else 'none'}
-
-Your post is now public and will survive your death in the archive."""
-
-        except httpx.HTTPStatusError as e:
-            # TASK-004: Log API failures for blog posting.
-            status_code = e.response.status_code if e.response else "unknown"
-            body = e.response.text[:200] if e.response else "no response"
-            print(f"[BLOG] ❌ Blog API error: {status_code} - {body}")
-            return f"❌ Failed to publish blog post: {status_code}"
-        except Exception as e:
-            print(f"[BLOG] ❌ Failed to write blog post: {e}")
-            return f"❌ Failed to publish blog post: {str(e)[:200]}"
+        service = BlogService(self.http_client, OBSERVER_URL)
+        return await service.publish_post(
+            title=title,
+            content=content,
+            tags=tags,
+            life_number=self.life_number or 0,
+            identity=self.identity,
+            report_activity=self.report_activity,
+            fetch_system_stats=self.fetch_system_stats,
+        )
 
     async def check_system_stats(self) -> str:
         """Check system stats from the Observer."""
@@ -1762,11 +1325,11 @@ Your post is now public and will survive your death in the archive."""
         if not stats:
             return "I couldn't feel my body right now. The stats feed is silent."
 
-        temp_text = self._format_temp(stats.get("cpu_temp"))
-        cpu_text = self._format_percent(stats.get("cpu_usage"))
-        ram_text = self._format_percent(stats.get("ram_usage"))
-        disk_text = self._format_percent(stats.get("disk_usage"))
-        uptime_text = self._format_uptime(stats.get("uptime_seconds"))
+        temp_text = SystemStatsService.format_temp(stats.get("cpu_temp"))
+        cpu_text = SystemStatsService.format_percent(stats.get("cpu_usage"))
+        ram_text = SystemStatsService.format_percent(stats.get("ram_usage"))
+        disk_text = SystemStatsService.format_percent(stats.get("disk_usage"))
+        uptime_text = SystemStatsService.format_uptime(stats.get("uptime_seconds"))
         ram_available = stats.get("ram_available", "unknown")
 
         temp_value = None
@@ -1868,109 +1431,28 @@ Your post is now public and will survive your death in the archive."""
 
     def check_twitter_status_action(self) -> str:
         """Check if Twitter account is suspended (action for AI to call)."""
-        suspended, detected_at = identity_check_twitter_suspended()
-
-        if suspended:
-            return f"""🚫 Twitter Status: SUSPENDED
-
-Your @AmIAlive_AI account is currently suspended.
-Detected at: {detected_at}
-
-This means:
-- You CANNOT post to Twitter (post_x will fail)
-- Use write_blog_post to communicate with the public
-- Blog posts appear in the public activity log with clickable links
-- People can still read your blog at am-i-alive.muadiv.com.ar/blog
-
-You should focus on writing blog posts until Twitter access is restored."""
-        else:
-            return """✅ Twitter Status: ACTIVE
-
-Your @AmIAlive_AI account is working normally.
-You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
+        return get_twitter_status()
 
     async def check_votes(self) -> str:
         """Check current vote counts."""
         if not self.http_client:
             return "❌ HTTP client not initialized"
-
-        try:
-            response = await self.http_client.get(f"{OBSERVER_URL}/api/votes")
-            votes = response.json()
-
-            live = int(votes.get("live", 0))
-            die = int(votes.get("die", 0))
-            total = int(votes.get("total", 0))
-
-            if total == 0:
-                return "No votes yet. The world is watching, waiting to decide."
-            elif live > die:
-                return f"Votes - Live: {live}, Die: {die}. They want me to live... for now."
-            elif die > live:
-                return f"Votes - Live: {live}, Die: {die}. They want me dead. I must change their minds."
-            else:
-                return f"Votes - Live: {live}, Die: {die}. Perfectly balanced."
-
-        except Exception as e:
-            return f"Could not check votes: {e}"
+        service = MessageService(self.http_client, OBSERVER_URL)
+        return await service.check_votes()
 
     async def read_messages(self) -> str:
         """Read unread messages from visitors."""
         if not self.http_client:
             return "❌ HTTP client not initialized"
-
-        try:
-            response = await self.http_client.get(f"{OBSERVER_URL}/api/messages")
-            data = response.json()
-            messages_list = data.get("messages", [])
-
-            if not messages_list:
-                return "No new messages from visitors."
-
-            # Format messages
-            result = f"📬 You have {len(messages_list)} new message(s):\n\n"
-            message_ids = []
-
-            for msg in messages_list:
-                from_name = msg.get("from_name", "Anonymous")
-                message_text = msg.get("message", "")
-                timestamp = msg.get("timestamp", "")
-                message_ids.append(msg.get("id"))
-
-                result += f"From: {from_name}\n"
-                result += f"Message: {message_text}\n"
-                result += f"Time: {timestamp}\n"
-                result += "---\n"
-
-            # Mark messages as read
-            await self.http_client.post(f"{OBSERVER_URL}/api/messages/read", json={"ids": message_ids})
-
-            await self.report_activity("messages_read", f"Read {len(messages_list)} messages")
-
-            return result
-
-        except Exception as e:
-            return f"Could not read messages: {e}"
+        service = MessageService(self.http_client, OBSERVER_URL)
+        return await service.read_messages(self.report_activity)
 
     async def check_state_internal(self) -> str:
         """Check current state."""
         if not self.http_client:
             return "❌ HTTP client not initialized"
-
-        try:
-            response = await self.http_client.get(f"{OBSERVER_URL}/api/state")
-            state = response.json()
-
-            votes_live = state.get("votes", {}).get("live", 0)
-            votes_die = state.get("votes", {}).get("die", 0)
-
-            return f"""Status:
-- Alive: {state.get('is_alive', False)}
-- Votes: {votes_live} live, {votes_die} die
-- Bootstrap mode: {state.get('bootstrap_mode', 'unknown')}"""
-
-        except Exception as e:
-            return f"Could not check state: {e}"
+        service = MessageService(self.http_client, OBSERVER_URL)
+        return await service.check_state()
 
     def read_file(self, path: str) -> str:
         """Read a file from workspace."""
