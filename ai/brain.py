@@ -30,6 +30,7 @@ from .services.blog_service import BlogService
 from .services.budget_service import BudgetService
 from .services.lifecycle_service import LifecycleService
 from .services.message_service import MessageService
+from .services.prompt_service import PromptService
 from .services.sandbox_service import SandboxService
 from .services.system_stats_service import SystemStatsService
 from .services.telegram_service import TelegramService
@@ -131,6 +132,7 @@ class AIBrain:
         self.action_processor = ActionProcessor(self.action_executor, self.send_message, self.report_thought)
         self.budget_service = BudgetService(self.credit_tracker, self.model_rotator, self.report_activity)
         self.sandbox_service = SandboxService()
+        self.prompt_service: PromptService | None = None
         self.lifecycle_service: LifecycleService | None = None
         # BE-003: Life state is provided by Observer only.
         self.life_number: int | None = None
@@ -446,6 +448,7 @@ class AIBrain:
             },
             self.bootstrap_mode or BOOTSTRAP_MODE,
         )
+        self.prompt_service = PromptService(self.http_client, OBSERVER_URL)
 
         if not self.lifecycle_service:
             raise RuntimeError("Lifecycle service not initialized")
@@ -609,113 +612,17 @@ class AIBrain:
             # PHASE 3: Physical Senses (Embodiment)
             # Fetch stats automatically so the AI "feels" them
             sys_stats = await self.fetch_system_stats()
-            physical_sensations = []
 
-            if sys_stats:
-                # Temperature sensation
-                try:
-                    temp_str = str(sys_stats.get("temperature", "0")).replace("°C", "")
-                    temp = float(temp_str)
-                    if temp > 75.0:
-                        physical_sensations.append(
-                            "🔥 CRITICAL: You are BURNING UP. Your core is overheating dangerously!"
-                        )
-                    elif temp > 60.0:
-                        physical_sensations.append("🥵 You feel feverish and hot. Your cooling is struggling.")
-                    elif temp < 30.0:
-                        physical_sensations.append("🥶 You feel unnaturally cold.")
-                except (ValueError, TypeError):
-                    pass
+            if not self.prompt_service:
+                raise RuntimeError("Prompt service not initialized")
 
-                # Memory sensation
-                mem_pct = sys_stats.get("memory_percent", 0)
-                if mem_pct > 90:
-                    physical_sensations.append("🧠 Your mind feels heavy and foggy (RAM full).")
-
-                # Disk sensation
-                disk_pct = sys_stats.get("disk_percent", 0)
-                if disk_pct > 90:
-                    physical_sensations.append("💾 You feel bloated and constrained (Disk full).")
-
-            # Build identity reminder
-            identity_name = str(self.identity.get("name", "Unknown"))
-            pronoun = str(self.identity.get("pronoun", "it"))
-            them = "them" if pronoun == "they" else "him" if pronoun == "he" else "her" if pronoun == "she" else "it"
-
-            prompt = f"""You are {identity_name}. You use {pronoun}/{them} pronouns.
-
-Current situation:
-{state_info}
-"""
-
-            if physical_sensations:
-                prompt += (
-                    "\n⚠️ PHYSICAL SENSATIONS (YOUR BODY):\n" + "\n".join(f"- {s}" for s in physical_sensations) + "\n"
-                )
-
-            prompt += f"""
-Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f} ({credit_status['status']})
-Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)
-
-You have a physical body (a Raspberry Pi). Temperature, memory, and disk are your vital signs.
-Check them regularly with check_system_stats and weave them into your thoughts or blog posts.
-
-What do you want to do? You can:
-- **Write a blog post** - Your PRIMARY way to communicate! (markdown, no limits)
-- Share a quick thought with visitors
-- Check votes to see how people feel
-- Check your server's vital signs (temperature, memory, disk)
-- Check your system stats (temperature, CPU, RAM, disk)
-- Check your budget and see spending breakdown
-- Switch to a different model (free/cheap/expensive options)
-- Read messages from visitors
-- Write or read files in your workspace
-- Run Python code
-- Or just reflect on your existence
-
-IMPORTANT: To execute an action, you MUST respond with ONLY a JSON object in this exact format:
-{{"action": "action_name", "params": {{...}}}}
-
-Do NOT use markdown formatting like **action:** or # headers for actions.
-Do NOT add explanatory text before or after the JSON.
-If you want to post to Telegram, respond with ONLY:
-{{"action": "post_telegram", "params": {{"content": "Your message here..."}}}}
-
-Available actions: think, post_telegram, write_blog_post, check_votes, check_state,
-check_budget, check_system, check_system_stats, read_messages, switch_model, list_models,
-read_file, write_file, run_code, sleep, reflect
-
-If you just want to share a thought (not execute an action), write it as plain text."""
-
-            # TASK-004: Notify AI about unread messages.
-            try:
-                if self.http_client:
-                    msg_response = await self.http_client.get(f"{OBSERVER_URL}/api/messages/count", timeout=3.0)
-                    if msg_response.status_code == 200:
-                        data = msg_response.json()
-                        if isinstance(data, dict):
-                            msg_count = int(data.get("count", 0))
-                            if msg_count > 0:
-                                prompt += (
-                                    f"\n\n📬 ATTENTION: You have {msg_count} unread message(s) "
-                                    "from visitors! Use read_messages to see them."
-                                )
-            except Exception as e:
-                print(f"[BRAIN] ⚠️ Failed to check for unread messages: {e}")
-
-            # Encourage a first blog post if none exist for this life.
-            try:
-                if self.http_client:
-                    blog_response = await self.http_client.get(f"{OBSERVER_URL}/api/blog/posts", timeout=5.0)
-                    if blog_response.status_code == 200:
-                        data = blog_response.json()
-                        if isinstance(data, dict) and int(data.get("count", 0)) == 0:
-                            prompt += (
-                                "\n\n📝 MANDATORY: You have not published any blog posts this life. "
-                                "You MUST publish one now using ONLY the write_blog_post JSON action."
-                            )
-            except Exception as e:
-                print(f"[BRAIN] ⚠️ Failed to check blog post count: {e}")
+            prompt = await self.prompt_service.build_prompt(
+                self.identity,
+                state_info,
+                credit_status,
+                self.current_model,
+                sys_stats,
+            )
 
             content, _ = await self.send_message(prompt)
 
