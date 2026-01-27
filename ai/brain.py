@@ -1331,6 +1331,10 @@ async def main_loop() -> None:
 
         try:
             while is_running:
+                if pending_birth_data:
+                    print("[BRAIN] 🔁 New birth data received; restarting consciousness loop.")
+                    break
+
                 try:
                     # Think
                     thought = await brain.think()
