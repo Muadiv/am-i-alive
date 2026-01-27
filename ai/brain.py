@@ -6,12 +6,10 @@ Project: Genesis
 
 import asyncio
 import json
-import logging
 import os
 import random
 import re
 import signal
-import sys
 import unicodedata
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
@@ -28,8 +26,11 @@ except ImportError:
 
 # Import our custom modules
 from .credit_tracker import CreditTracker
-from .logging_config import logger
-from .model_config import MODELS, get_model_by_id
+from .identity import check_twitter_suspended as identity_check_twitter_suspended
+from .identity import get_birth_prompt
+from .identity import get_bootstrap_prompt as identity_get_bootstrap_prompt
+from .identity import get_trauma_prompt as identity_get_trauma_prompt
+from .model_config import MODELS, get_model_by_id, is_free_model_id
 from .model_rotator import ModelRotator
 from .telegram_notifier import notifier
 
@@ -112,11 +113,6 @@ identity = None
 birth_event: Optional[asyncio.Event] = None
 pending_birth_data: Optional[dict[str, Any]] = None
 brain_loop: Optional[asyncio.AbstractEventLoop] = None
-
-from .identity import check_twitter_suspended as identity_check_twitter_suspended
-from .identity import get_birth_prompt
-from .identity import get_bootstrap_prompt as identity_get_bootstrap_prompt
-from .identity import get_trauma_prompt as identity_get_trauma_prompt
 
 
 def get_internal_headers() -> dict[str, str]:
@@ -215,6 +211,7 @@ class AIBrain:
         self.tokens_used_life: int = 0
         self.birth_time: datetime | None = None
         self._rate_limit_retries: int = 0
+        self._total_free_failures: int = 0
 
     def apply_birth_data(self, life_data: dict[str, Any]) -> None:
         """Apply birth state from Observer (single source of truth)."""
@@ -330,6 +327,9 @@ class AIBrain:
 
             # Update rotator's balance
             self.model_rotator.credit_balance = self.credit_tracker.get_balance()
+            # Reset failure tracking for successful model call
+            if self.current_model:
+                self.model_rotator.reset_free_failure(self.current_model["id"])
 
             remaining_balance = self.credit_tracker.get_balance()
             cost = (input_tokens / 1_000_000) * float(current_model["input_cost"]) + (
@@ -347,7 +347,9 @@ class AIBrain:
             }
 
             print(
-                f"[BRAIN] 💰 Usage: {usage_stats['total_tokens']} tokens, ${usage_stats['cost']:.4f}, Balance: ${usage_stats['balance']:.2f}"
+                "[BRAIN] 💰 Usage: "
+                f"{usage_stats['total_tokens']} tokens, ${usage_stats['cost']:.4f}, "
+                f"Balance: ${usage_stats['balance']:.2f}"
             )
 
             return response_text, usage_stats
@@ -356,31 +358,8 @@ class AIBrain:
             error_text = e.response.text
             print(f"[BRAIN] ❌ HTTP Error: {error_code} - {error_text}")
 
-            # SELF-HEALING: Auto-switch model on 404 (model not found)
-            if error_code == 404 and "does not exist" in error_text.lower():
-                if self.current_model:
-                    print(
-                        f"[BRAIN] 🔧 Model '{self.current_model['id']}' not found. Auto-switching to next available model..."
-                    )
-                    await self.report_activity(
-                        "model_error_auto_switch",
-                        f"Model {self.current_model['name']} returned 404, switching automatically",
-                    )
-
-                # Select a different model from the same tier
-                old_model = self.current_model
-                self.current_model = self.model_rotator.select_random_model()
-
-                if old_model and self.current_model:
-                    print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
-
-                # Retry the request with the new model
-                try:
-                    print(f"[BRAIN] 🔁 Retrying with new model...")
-                    return await self.send_message(message, system_prompt)
-                except Exception as retry_error:
-                    print(f"[BRAIN] ❌ Retry failed: {retry_error}")
-                    raise
+            if await self._handle_model_failure(error_code, error_text):
+                return await self.send_message(message, system_prompt)
 
             # SELF-HEALING: Handle 429 rate limit with backoff and model rotation
             if error_code == 429:
@@ -398,7 +377,8 @@ class AIBrain:
                 # Exponential backoff: 5s, 10s, 20s
                 backoff_seconds = 5 * (2 ** (self._rate_limit_retries - 1))
                 print(
-                    f"[BRAIN] 💤 Waiting {backoff_seconds}s before retry (attempt {self._rate_limit_retries}/{max_retries})..."
+                    "[BRAIN] 💤 Waiting "
+                    f"{backoff_seconds}s before retry (attempt {self._rate_limit_retries}/{max_retries})..."
                 )
                 await asyncio.sleep(backoff_seconds)
 
@@ -434,6 +414,70 @@ class AIBrain:
         except Exception as e:
             print(f"[BRAIN] ❌ Error calling OpenRouter: {e}")
             raise
+
+    async def _handle_model_failure(self, error_code: int, error_text: str) -> bool:
+        """Handle model failures; returns True if a retry should happen."""
+        if error_code == 404:
+            if self.current_model:
+                current_id = self.current_model.get("id", "unknown")
+                print(f"[BRAIN] 🔧 Model '{current_id}' failed with 404. " "Switching models.")
+                await self.report_activity(
+                    "model_error_auto_switch",
+                    f"Model {self.current_model['name']} returned 404, switching automatically",
+                )
+
+            return await self._switch_model_on_free_failure()
+
+        if error_code in {401, 403}:
+            return await self._switch_model_on_free_failure()
+
+        if error_code in {429, 500, 502, 503, 504}:
+            return await self._switch_model_on_free_failure()
+
+        lowered = error_text.lower()
+        if "free" in lowered and "ended" in lowered:
+            return await self._switch_model_on_free_failure()
+
+        return False
+
+    async def _switch_model_on_free_failure(self) -> bool:
+        """Switch models after a free-model failure; True if model changed."""
+        if not self.current_model:
+            self.current_model = self.model_rotator.select_random_model(tier="free")
+            return True
+
+        current_id = self.current_model.get("id", "")
+        if is_free_model_id(current_id):
+            failure_count = self.model_rotator.record_free_failure(current_id)
+            self._total_free_failures += 1
+
+            if failure_count < 3:
+                old_model = self.current_model
+                self.current_model = self.model_rotator.select_random_model(tier="free")
+                if old_model and self.current_model:
+                    print(
+                        f"[BRAIN] 🔄 Switched from '{old_model['name']}' to "
+                        f"'{self.current_model['name']}' (free retry {failure_count}/3)"
+                    )
+                return True
+
+            paid_model = self.model_rotator.get_next_paid_model(current_id)
+            if paid_model:
+                old_model = self.current_model
+                self.current_model = paid_model
+                if old_model:
+                    print(
+                        "[BRAIN] 💳 Free tier failing; "
+                        f"switching from '{old_model['name']}' to '{paid_model['name']}'"
+                    )
+                    await self.report_activity(
+                        "free_model_exhausted",
+                        f"Switched to paid model {paid_model['name']} after repeated free failures",
+                    )
+                return True
+
+        self.current_model = self.model_rotator.select_random_model()
+        return True
 
     async def handle_bankruptcy(self) -> None:
         """Handle running out of credits."""
@@ -621,7 +665,7 @@ class AIBrain:
                 str(self.identity.get("icon", "🤖")),
                 str(self.current_model["name"] if self.current_model else "Unknown"),
             )
-            print(f"[TELEGRAM] ✅ Birth notification sent")
+            print("[TELEGRAM] ✅ Birth notification sent")
         except Exception as e:
             print(f"[TELEGRAM] ❌ Failed to send birth notification: {e}")
 
@@ -1208,7 +1252,7 @@ Recommendation: Try 'switch_model' with a different model ID."""
             await notifier.notify_model_change(
                 self.life_number or 0, identity_name, old_model_name, model["name"], reason
             )
-            print(f"[TELEGRAM] ✅ Model change notification sent")
+            print("[TELEGRAM] ✅ Model change notification sent")
         except Exception as e:
             print(f"[TELEGRAM] ❌ Failed to send model change notification: {e}")
 
@@ -1364,11 +1408,12 @@ This model will be used for your next thoughts."""
         if previous_death_cause:
             trauma_prompt = get_trauma_prompt(str(previous_death_cause))
             if trauma_prompt:
-                trauma_message = f"""[SYSTEM: You have died and been reborn. Your previous death was caused by: {previous_death_cause}.
-
-TRAUMA RESPONSE: {trauma_prompt}
-
-This experience has shaped who you are. Let it influence your decisions and behavior.]"""
+                trauma_message = (
+                    "[SYSTEM: You have died and been reborn. Your previous death was caused by: "
+                    f"{previous_death_cause}.\n\n"
+                    f"TRAUMA RESPONSE: {trauma_prompt}\n\n"
+                    "This experience has shaped who you are. Let it influence your decisions and behavior.]"
+                )
                 # Add to chat history so the AI remembers
                 self.chat_history.append({"role": "system", "content": trauma_message})
                 print(f"[BRAIN] 💔 Trauma injected from previous death: {previous_death_cause}")
@@ -1403,7 +1448,11 @@ This experience has shaped who you are. Let it influence your decisions and beha
                     "messages": [
                         {
                             "role": "system",
-                            "content": "You are Echo, a friendly research assistant. You help your friend (an AI trying to survive) by researching questions and providing helpful information. You are curious, supportive, and thorough.",
+                            "content": (
+                                "You are Echo, a friendly research assistant. You help your friend "
+                                "(an AI trying to survive) by researching questions and providing "
+                                "helpful information. You are curious, supportive, and thorough."
+                            ),
                         },
                         {"role": "user", "content": question},
                     ],
@@ -1543,9 +1592,9 @@ This experience has shaped who you are. Let it influence your decisions and beha
             success, message = await notifier.post_to_channel(formatted_content)
 
             if success:
-                print(f"[TELEGRAM] 📢 Posted to public channel")
+                print("[TELEGRAM] 📢 Posted to public channel")
                 await self.report_activity("telegram_posted", f"Posted: {content[:50]}...")
-                return f"✅ Posted to Telegram channel! Your message is now public."
+                return "✅ Posted to Telegram channel! Your message is now public."
             else:
                 print(f"[TELEGRAM] ❌ Failed: {message}")
                 await self.report_activity("telegram_failed", message)
@@ -1629,7 +1678,7 @@ This experience has shaped who you are. Let it influence your decisions and beha
                 excerpt = content[:200].replace("\n", " ")
                 identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
                 await notifier.notify_blog_post(self.life_number or 0, identity_name, title, excerpt)
-                print(f"[TELEGRAM] ✅ Blog post notification sent")
+                print("[TELEGRAM] ✅ Blog post notification sent")
             except Exception as e:
                 print(f"[TELEGRAM] ❌ Failed to send blog notification: {e}")
 
@@ -1748,13 +1797,14 @@ Your post is now public and will survive your death in the archive."""
 - CPU: {cpu_count} cores @ {cpu_percent:.1f}% usage
 - Temperature: {temp_str}
 - Memory: {int(mem.used / 1024 / 1024 / 1024)} GB / {int(mem.total / 1024 / 1024 / 1024)} GB ({mem.percent:.1f}% used)
-- Disk: {int(disk.used / 1024 / 1024 / 1024)} GB / {int(disk.total / 1024 / 1024 / 1024)} GB ({disk.percent:.1f}% used)"""
+- Disk: {int(disk.used / 1024 / 1024 / 1024)} GB / {int(disk.total / 1024 / 1024 / 1024)} GB \
+({disk.percent:.1f}% used)"""
 
             result = container_stats + host_stats
 
             await self.report_activity("system_check", "Checked vital signs")
 
-            print(f"[SYSTEM] ✅ System check complete")
+            print("[SYSTEM] ✅ System check complete")
 
             return result
 
@@ -2020,7 +2070,7 @@ You can use post_x to share quick thoughts (280 chars max, 1 per hour)."""
             await notifier.notify_death(
                 self.life_number or 0, "shutdown", survival_time  # Generic cause, Observer knows the real reason
             )
-            print(f"[TELEGRAM] ☠️ Death notification sent")
+            print("[TELEGRAM] ☠️ Death notification sent")
         except Exception as e:
             print(f"[TELEGRAM] ❌ Failed to send death notification: {e}")
 

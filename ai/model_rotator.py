@@ -6,13 +6,18 @@ AI can also manually switch models based on task needs vs cost.
 """
 
 import json
-import logging
 import os
 import random
 from typing import Dict, List, Optional
 
-from .logging_config import logger
-from .model_config import BUDGET_THRESHOLDS, MODELS, get_model_by_id
+from .model_config import (
+    BUDGET_THRESHOLDS,
+    MODELS,
+    TIER_ORDER,
+    get_model_by_id,
+    get_tier_for_model,
+    list_paid_models_by_cost,
+)
 
 HISTORY_FILE = "/app/workspace/model_history.json"
 HISTORY_SIZE = 10  # Don't repeat until 10 different models used
@@ -24,6 +29,7 @@ class ModelRotator:
     def __init__(self, credit_balance: float):
         self.credit_balance = credit_balance
         self.history = self.load_history()
+        self.free_failure_counts: Dict[str, int] = {}
 
     def load_history(self) -> List[str]:
         """Load model usage history."""
@@ -31,7 +37,15 @@ class ModelRotator:
             try:
                 with open(HISTORY_FILE, "r") as f:
                     data = json.load(f)
-                    return data.get("history", [])
+                    history = data.get("history", [])
+                    if isinstance(history, list):
+                        filtered = [model_id for model_id in history if get_model_by_id(str(model_id))]
+                        if len(filtered) != len(history):
+                            print("[MODEL] ⚠️ Removed unknown models from history")
+                            self.history = filtered
+                            self.save_history()
+                        return filtered
+                    return []
             except Exception as e:
                 print(f"[MODEL] ⚠️ Failed to load model history: {e}")
                 return []
@@ -52,6 +66,17 @@ class ModelRotator:
             self.history = self.history[-100:]
 
         self.save_history()
+
+    def record_free_failure(self, model_id: str) -> int:
+        """Record a failure for a free model and return current failure count."""
+        current = self.free_failure_counts.get(model_id, 0) + 1
+        self.free_failure_counts[model_id] = current
+        return current
+
+    def reset_free_failure(self, model_id: str) -> None:
+        """Reset failure count for a model after a successful call."""
+        if model_id in self.free_failure_counts:
+            del self.free_failure_counts[model_id]
 
     def get_recent_models(self, count: int = HISTORY_SIZE) -> List[str]:
         """Get recently used model IDs."""
@@ -80,6 +105,34 @@ class ModelRotator:
             available = all_models
 
         return available
+
+    def get_next_paid_model(self, current_model_id: Optional[str] = None) -> Optional[Dict]:
+        """Pick the cheapest paid model, upgrading gently based on history and current tier."""
+        paid_models = list_paid_models_by_cost()
+        if not paid_models:
+            return None
+
+        if not current_model_id:
+            model = paid_models[0]
+            self.record_usage(model["id"])
+            return model
+
+        current_tier = get_tier_for_model(current_model_id) or "free"
+        if current_tier not in TIER_ORDER:
+            current_tier = "free"
+
+        start_index = 0
+        if current_tier in TIER_ORDER and current_tier != "free":
+            current_index = TIER_ORDER.index(current_tier)
+            for idx, model in enumerate(paid_models):
+                model_tier = get_tier_for_model(model["id"])
+                if model_tier and TIER_ORDER.index(model_tier) >= current_index:
+                    start_index = idx
+                    break
+
+        selection = paid_models[start_index]
+        self.record_usage(selection["id"])
+        return selection
 
     def get_recommended_tier(self) -> str:
         """Recommend a tier based on current budget."""
