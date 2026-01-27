@@ -16,6 +16,11 @@ from typing import Any, Optional
 import httpx
 import psutil
 
+if __name__ == "__main__":
+    import sys
+
+    sys.modules.setdefault("ai.brain", sys.modules[__name__])
+
 try:
     from .actions import ActionExecutor
 except ImportError:
