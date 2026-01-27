@@ -1037,6 +1037,27 @@ If you just want to share a thought (not execute an action), write it as plain t
             params = action_data.get("params", {})
             if not isinstance(params, dict):
                 params = {}
+            if action == "write_blog_post":
+                title = params.get("title", "") if isinstance(params.get("title"), str) else ""
+                body = params.get("content", "") if isinstance(params.get("content"), str) else ""
+                if not title.strip() or len(body.strip()) < 100:
+                    print("[BRAIN] ⚠️ write_blog_post missing title/content; requesting retry")
+                    retry_prompt = (
+                        "You attempted to call write_blog_post without a proper title or content. "
+                        "Respond with ONLY JSON in this format: "
+                        '{"action":"write_blog_post","params":{'
+                        '"title":"...","content":"...","tags":["tag1","tag2"]}}. '
+                        "Content must be at least 100 characters."
+                    )
+                    retry_content, _ = await self.send_message(retry_prompt)
+                    retry_action = self._extract_action_data(retry_content)
+                    if retry_action:
+                        action = str(retry_action.get("action", action))
+                        retry_params = retry_action.get("params", {})
+                        if isinstance(retry_params, dict):
+                            params = retry_params
+                    else:
+                        return "❌ Blog post failed: missing title/content"
             result = await self.action_executor.execute_action(action, params)
             # TASK-005: Preserve narrative text alongside action JSON.
             narrative = self._strip_action_json(content)
