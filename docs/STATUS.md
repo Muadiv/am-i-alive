@@ -32,6 +32,7 @@ sudo systemctl restart amialive-observer amialive-ai
 - Added AI budget and sandbox services and wired lifecycle helpers into the brain flow.
 - Continued AI refactor wiring via service integration for budget/sandbox and lifecycle helpers.
 - Routed AI command server startup through the dedicated [ai/api/command_server.py](ai/api/command_server.py:1).
+- Fixed command server import to use [ai/brain.py](ai/brain.py:1) constants.
 - Added Observer SSE broadcast service wrapper.
 
 ### Files Changed

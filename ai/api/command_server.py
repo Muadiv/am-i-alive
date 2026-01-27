@@ -14,7 +14,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
-from ..core.brain import AIBrain
+from ..brain import INTERNAL_API_KEY, AIBrain
 from ..logging_config import logger
 
 # Globals for command server
@@ -25,8 +25,6 @@ _pending_birth_data: dict[str, Any] | None = None
 
 def validate_internal_key(handler: BaseHTTPRequestHandler) -> bool:
     """Validate X-Internal-Key header for secure internal API access."""
-    from ..core.brain import INTERNAL_API_KEY
-
     if not INTERNAL_API_KEY:
         logger.warning("Internal API key not configured")
         return False
