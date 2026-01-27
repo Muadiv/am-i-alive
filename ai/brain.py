@@ -11,7 +11,6 @@ import random
 import re
 import signal
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler
 from typing import Any, Optional
 
 import httpx
@@ -54,13 +53,6 @@ async def get_http_client() -> httpx.AsyncClient:
     if _http_client is None or _http_client.is_closed:
         _http_client = httpx.AsyncClient(timeout=60.0)
     return _http_client
-
-
-def validate_internal_key(handler: BaseHTTPRequestHandler) -> bool:
-    """Validate X-Internal-Key header for secure internal API access."""
-    if not INTERNAL_API_KEY:
-        return False
-    return handler.headers.get("x-internal-key") == INTERNAL_API_KEY
 
 
 def validate_environment() -> tuple[list[str], list[str]]:
@@ -1390,7 +1382,9 @@ async def main_loop() -> None:
     brain = AIBrain()
 
     # BE-003: Start command server before waiting for birth.
-    await command_server()
+    from .api.command_server import start_command_server
+
+    await start_command_server(AI_COMMAND_PORT, brain, birth_event)
 
     print("[BRAIN] ⏳ Waiting for birth data from Observer...")
 
@@ -1462,134 +1456,10 @@ def signal_handler(sig: int, frame: Any) -> None:
 # Command server (receives commands from observer)
 async def command_server() -> None:
     """HTTP server for receiving commands."""
-    import threading
-    from http.server import HTTPServer
+    from .api.command_server import start_command_server
 
-    class CommandHandler(BaseHTTPRequestHandler):
-        def _send_json(self, status_code: int, payload: dict[str, Any]) -> None:
-            self.send_response(status_code)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(payload).encode())
-
-        def do_GET(self) -> None:
-            global brain
-
-            if self.path == "/budget":
-                if brain:
-                    status = brain.credit_tracker.get_status()
-                    self._send_json(200, status)
-                else:
-                    self._send_json(503, {"error": "Brain not initialized"})
-            elif self.path == "/state":
-                if brain:
-                    # BE-003: Provide Observer a syncable view of AI state.
-                    payload = {
-                        "is_alive": brain.is_alive,
-                        "life_number": brain.life_number,
-                        "bootstrap_mode": brain.bootstrap_mode,
-                        "model": brain.model_name,
-                    }
-                    self._send_json(200, payload)
-                else:
-                    self._send_json(503, {"error": "Brain not initialized"})
-            else:
-                self.send_response(404)
-                self.end_headers()
-
-        def do_POST(self) -> None:
-            global brain, is_running
-            data = {}
-            if self.headers.get("Content-Length"):
-                content_length = int(str(self.headers["Content-Length"]))
-                post_data = self.rfile.read(content_length)
-                try:
-                    data = json.loads(post_data.decode("utf-8"))
-                except json.JSONDecodeError:
-                    self._send_json(400, {"error": "Invalid JSON"})
-                    return
-
-            if not validate_internal_key(self):
-                self._send_json(403, {"error": "Unauthorized"})
-                return
-
-            if self.path == "/oracle":
-                message = str(data.get("message", ""))
-                msg_type = str(data.get("type", "oracle"))
-                message_id_raw = data.get("message_id")
-                message_id = int(message_id_raw) if message_id_raw is not None else None
-
-                if brain:
-                    if brain_loop:
-                        asyncio.run_coroutine_threadsafe(
-                            brain.handle_oracle_message(message, msg_type, message_id), brain_loop
-                        )
-                        self._send_json(200, {"status": "received"})
-                    else:
-                        self._send_json(503, {"error": "Event loop not ready"})
-                else:
-                    self._send_json(503, {"error": "Brain not initialized"})
-
-            elif self.path == "/birth":
-                if not brain:
-                    self._send_json(503, {"error": "Brain not initialized"})
-                    return
-                if brain.is_alive:
-                    self._send_json(409, {"error": "Brain already alive"})
-                    return
-                if data.get("life_number") is None:
-                    self._send_json(400, {"error": "life_number required"})
-                    return
-                if not brain_loop:
-                    self._send_json(503, {"error": "Event loop not ready"})
-                    return
-                try:
-                    asyncio.run_coroutine_threadsafe(queue_birth_data(data), brain_loop)
-                    self._send_json(200, {"success": True})
-                except Exception as e:
-                    self._send_json(500, {"error": str(e)[:100]})
-
-            elif self.path == "/force-sync":
-                if not brain:
-                    self._send_json(503, {"error": "Brain not initialized"})
-                    return
-                if data.get("life_number") is None:
-                    self._send_json(400, {"error": "life_number required"})
-                    return
-                if not brain_loop:
-                    self._send_json(503, {"error": "Event loop not ready"})
-                    return
-                try:
-                    # BE-003: If brain is not initialized, queue a fresh birth.
-                    if not brain.identity or not brain.http_client:
-                        asyncio.run_coroutine_threadsafe(queue_birth_data(data), brain_loop)
-                        self._send_json(
-                            200, {"success": True, "queued_birth": True, "life_number": data.get("life_number")}
-                        )
-                    else:
-                        asyncio.run_coroutine_threadsafe(brain.force_sync(data), brain_loop)
-                        self._send_json(200, {"success": True, "life_number": data.get("life_number")})
-                except Exception as e:
-                    self._send_json(500, {"error": str(e)[:100]})
-
-            elif self.path == "/shutdown":
-                if brain:
-                    brain.is_alive = False
-                is_running = False
-                self._send_json(200, {"success": True})
-
-            else:
-                self.send_response(404)
-                self.end_headers()
-
-        def log_message(self, format: str, *args: Any) -> None:
-            pass  # Suppress HTTP logging
-
-    server = HTTPServer(("0.0.0.0", AI_COMMAND_PORT), CommandHandler)
-    thread = threading.Thread(target=server.serve_forever)
-    thread.daemon = True
-    thread.start()
-    print(f"[BRAIN] 📡 Command server started on port {AI_COMMAND_PORT}")
+    if brain and birth_event:
+        await start_command_server(AI_COMMAND_PORT, brain, birth_event)
 
 
 if __name__ == "__main__":
