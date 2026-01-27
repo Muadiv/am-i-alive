@@ -72,6 +72,10 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
             logger.error(f"Error handling {self.path}: {e}")
             self._send_response(500, json.dumps({"error": str(e)}))
 
+    def log_message(self, format: str, *args: Any) -> None:
+        """Suppress default http.server logging to keep journalctl clean."""
+        return
+
     def _handle_birth(self):
         """Handle birth notification from Observer."""
         global _pending_birth_data, _birth_event
