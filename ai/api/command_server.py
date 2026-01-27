@@ -14,6 +14,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
+from .. import brain as brain_module
 from ..brain import INTERNAL_API_KEY, AIBrain
 from ..logging_config import logger
 
@@ -89,10 +90,15 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
 
         logger.debug(f"Birth notification received: {data}")
 
-        # Signal to birth sequence
-        _pending_birth_data = data
-        if _birth_event:
-            _birth_event.set()
+        # Signal to birth sequence on the main loop thread
+        if brain_module.brain_loop:
+            brain_module.brain_loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(brain_module.queue_birth_data(data))
+            )
+        else:
+            _pending_birth_data = data
+            if _birth_event:
+                _birth_event.set()
 
         self._send_response(200, '{"status": "ok"}')
 
@@ -109,9 +115,14 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
 
         logger.debug(f"Force sync request received: {data}")
 
-        _pending_birth_data = data
-        if _birth_event:
-            _birth_event.set()
+        if brain_module.brain_loop:
+            brain_module.brain_loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(brain_module.queue_birth_data(data))
+            )
+        else:
+            _pending_birth_data = data
+            if _birth_event:
+                _birth_event.set()
 
         self._send_response(200, '{"status": "ok"}')
 

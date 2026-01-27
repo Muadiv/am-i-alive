@@ -35,7 +35,7 @@ sudo systemctl restart amialive-observer amialive-ai
 - Fixed command server import to use [ai/brain.py](ai/brain.py:1) constants.
 - Added [ai/services/prompt_service.py](ai/services/prompt_service.py:1) and tests in [ai/tests/test_prompt_service.py](ai/tests/test_prompt_service.py:1).
 - Added Observer SSE broadcast service wrapper.
-- Tests: `python -m pytest ai/tests/test_prompt_service.py -q` (2 passed), `python -m pytest tests -q` from `observer/` (38 passed, 1 skipped).
+- Tests: `python -m pytest ai/tests/test_prompt_service.py -q` (2 passed).
 
 ### Files Changed
 - Modified: `ai/brain.py`, `observer/main.py`
