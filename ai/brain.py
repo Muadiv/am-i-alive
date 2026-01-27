@@ -934,6 +934,20 @@ If you just want to share a thought (not execute an action), write it as plain t
             except Exception as e:
                 print(f"[BRAIN] ⚠️ Failed to check for unread messages: {e}")
 
+            # Encourage a first blog post if none exist for this life.
+            try:
+                if self.http_client:
+                    blog_response = await self.http_client.get(f"{OBSERVER_URL}/api/blog/posts", timeout=5.0)
+                    if blog_response.status_code == 200:
+                        data = blog_response.json()
+                        if isinstance(data, dict) and int(data.get("count", 0)) == 0:
+                            prompt += (
+                                "\n\n📝 MANDATORY: You have not published any blog posts this life. "
+                                "You MUST publish one now using ONLY the write_blog_post JSON action."
+                            )
+            except Exception as e:
+                print(f"[BRAIN] ⚠️ Failed to check blog post count: {e}")
+
             content, _ = await self.send_message(prompt)
 
             # Process the response
