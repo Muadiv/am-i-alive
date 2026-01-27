@@ -1070,6 +1070,25 @@ If you just want to share a thought (not execute an action), write it as plain t
             preview = content[:200].replace("\n", " ")
             print(f"[BRAIN] ⚠️  No action parsed from response: {preview}...")
 
+        lowered = content.lower()
+        if "blog" in lowered and ("write" in lowered or "post" in lowered):
+            print("[BRAIN] ⚠️  Blog intent detected without action; requesting JSON action")
+            retry_prompt = (
+                "You referenced writing a blog post, but did not provide the required JSON action. "
+                "If you intend to publish, respond with ONLY this JSON format: "
+                '{"action":"write_blog_post","params":{'
+                '"title":"...","content":"...","tags":["tag1","tag2"]}}. '
+                "Content must be at least 100 characters."
+            )
+            retry_content, _ = await self.send_message(retry_prompt)
+            retry_action = self._extract_action_data(retry_content)
+            if retry_action:
+                action = str(retry_action.get("action", ""))
+                params = retry_action.get("params", {})
+                if not isinstance(params, dict):
+                    params = {}
+                return await self.action_executor.execute_action(action, params)
+
         # No action found - treat entire response as a thought
         await self.report_thought(content, thought_type="thought")
         return None
