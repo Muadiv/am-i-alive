@@ -29,8 +29,8 @@ sudo systemctl restart amialive-observer amialive-ai
 ## SUMMARY OF PROGRESS - 2026-01-27
 
 ### Accomplishments
-- Added AI service modules (blog, telegram, twitter, lifecycle, messages, system stats, action processor, content filter).
-- Began AI refactor wiring via service imports and moved lifecycle helpers into service module.
+- Added AI budget and sandbox services and wired lifecycle helpers into the brain flow.
+- Continued AI refactor wiring via service integration for budget/sandbox and lifecycle helpers.
 - Added Observer SSE broadcast service wrapper.
 
 ### Files Changed
