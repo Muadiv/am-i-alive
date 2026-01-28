@@ -82,6 +82,20 @@
                 <span class="stat-label">Deaths:</span>
                 <span class="stat-value">{{ death_count }}</span>
             </div>
+            {% if previous_life %}
+            <div class="stat-item">
+                <span class="stat-icon">⏳</span>
+                <span class="stat-label">Last life:</span>
+                <span class="stat-value">{{ previous_life.survival_time }}</span>
+            </div>
+            {% endif %}
+            {% if previous_life %}
+            <div class="stat-item">
+                <span class="stat-icon">🗳️</span>
+                <span class="stat-label">Last votes:</span>
+                <span class="stat-value">{{ previous_life.total_votes_live }} live / {{ previous_life.total_votes_die }} die</span>
+            </div>
+            {% endif %}
             <div class="stat-item">
                 <span class="stat-icon">👥</span>
                 <span class="stat-label">Visitors:</span>

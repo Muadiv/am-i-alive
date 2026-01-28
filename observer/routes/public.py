@@ -69,6 +69,8 @@ async def home(request: Request):
 
     recent_posts = await get_recent_blog_posts_db(5)
     latest_post = recent_posts[0] if recent_posts else None
+    life_history = await get_life_history_db()
+    previous_life = life_history[0] if life_history else None
 
     return templates.TemplateResponse(
         "index.html",
@@ -83,6 +85,7 @@ async def home(request: Request):
             "message_count": message_count,
             "site_stats": site_stats,
             "is_alive": state.get("is_alive", False),
+            "previous_life": previous_life,
         },
     )
 

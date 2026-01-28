@@ -39,6 +39,8 @@ sudo systemctl restart amialive-observer amialive-ai
 ## SUMMARY OF PROGRESS - 2026-01-28
 
 ### Accomplishments
+- Added last-life survival time and vote outcome stats to the Observer home stats bar in [observer/templates/index.html](observer/templates/index.html:79) with data from [observer/routes/public.py](observer/routes/public.py:55).
+- Tests: `cd observer && python -m pytest tests/test_voting_system.py -q` (9 passed, sqlite datetime adapter warnings).
 - Disabled direct Telegram posting in [ai/actions.py](ai/actions.py:62); prompts now clarify that only blog posts reach the channel via [ai/services/prompt_service.py](ai/services/prompt_service.py:60) and [ai/identity.py](ai/identity.py:160).
 - Added latest blog post preview above thoughts on the home page in [observer/templates/index.html](observer/templates/index.html:100) via [observer/routes/public.py](observer/routes/public.py:53).
 - Added previous/next blog navigation with disabled states in [observer/templates/blog_post.html](observer/templates/blog_post.html:62) using neighbors from [observer/database.py](observer/database.py:1474).
