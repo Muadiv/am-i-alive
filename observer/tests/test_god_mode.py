@@ -30,17 +30,18 @@ async def test_kill_endpoint_with_custom_cause(main_module, monkeypatch, test_db
 @pytest.mark.asyncio
 async def test_death_recorded_with_custom_reason(test_db):
     """Death should be recorded with custom cause in database."""
-    await test_db.record_death(
-        cause="testing_respawn",
-        summary="Test death",
-        vote_counts=None,
-        final_vote_result=None
-    )
+    await test_db.record_death(cause="testing_respawn", summary="Test death", vote_counts=None, final_vote_result=None)
+
+    import sqlite3
 
     import aiosqlite
-    async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
+
+    async with aiosqlite.connect(
+        test_db.DATABASE_PATH, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+    ) as conn:
         cursor = await conn.execute("SELECT cause FROM deaths ORDER BY death_time DESC LIMIT 1")
         row = await cursor.fetchone()
+        assert row is not None
         assert row[0] == "testing_respawn"
 
 

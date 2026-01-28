@@ -7,7 +7,8 @@ import json
 import logging
 import os
 import random
-from datetime import datetime, timedelta, timezone
+import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
 
 import aiosqlite
@@ -15,12 +16,26 @@ import aiosqlite
 try:
     from logging_config import logger
 except ImportError:
-    import logging
-
     logger = logging.getLogger(__name__)
 
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/observer.db")
 MEMORIES_PATH = os.getenv("MEMORIES_PATH", "/app/memories")
+
+
+def _register_sqlite_adapters() -> None:
+    sqlite3.register_adapter(datetime, lambda value: value.isoformat())
+
+    def _parse_datetime(value: bytes) -> datetime:
+        try:
+            return datetime.fromisoformat(value.decode())
+        except ValueError:
+            return datetime.fromisoformat(value.decode().replace("Z", "+00:00"))
+
+    sqlite3.register_converter("timestamp", _parse_datetime)
+    sqlite3.register_converter("datetime", _parse_datetime)
+
+
+_register_sqlite_adapters()
 
 # Global connection
 _db: Optional[aiosqlite.Connection] = None

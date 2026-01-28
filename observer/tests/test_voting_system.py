@@ -1,7 +1,8 @@
 # TEST-001: Voting system tests for BE-001
 import asyncio
+import sqlite3
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import aiosqlite
 import pytest
@@ -15,12 +16,12 @@ async def test_cast_vote_success(test_db):
 
     assert result["success"] is True
 
-    async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
-        cursor = await conn.execute(
-            "SELECT vote FROM votes WHERE ip_hash = ?",
-            (ip_hash,)
-        )
+    async with aiosqlite.connect(
+        test_db.DATABASE_PATH, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+    ) as conn:
+        cursor = await conn.execute("SELECT vote FROM votes WHERE ip_hash = ?", (ip_hash,))
         row = await cursor.fetchone()
+        assert row is not None
         assert row[0] == "live"
 
 
@@ -33,10 +34,11 @@ async def test_cast_vote_duplicate_same_window(test_db):
     # Set the vote to 10 minutes ago
     ten_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=10)
 
-    async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
+    async with aiosqlite.connect(
+        test_db.DATABASE_PATH, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+    ) as conn:
         await conn.execute(
-            "UPDATE votes SET timestamp = ? WHERE ip_hash = ?",
-            (ten_minutes_ago.strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
+            "UPDATE votes SET timestamp = ? WHERE ip_hash = ?", (ten_minutes_ago.strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
         )
         await conn.commit()
 
@@ -53,16 +55,14 @@ async def test_vote_window_closes_and_resets(test_db):
     ip_hash = "ip_reset"
     await test_db.cast_vote(ip_hash, "live")
 
-    await test_db.close_current_voting_window(
-        datetime.now(timezone.utc),
-        live_count=1,
-        die_count=0,
-        result="live"
-    )
+    await test_db.close_current_voting_window(datetime.now(timezone.utc), live_count=1, die_count=0, result="live")
 
-    async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
+    async with aiosqlite.connect(
+        test_db.DATABASE_PATH, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+    ) as conn:
         cursor = await conn.execute("SELECT COUNT(*) FROM votes")
         row = await cursor.fetchone()
+        assert row is not None
         assert row[0] == 0
 
     await test_db.start_voting_window(datetime.now(timezone.utc))
@@ -77,18 +77,16 @@ async def test_vote_counts_saved_to_history(test_db):
     # Set up birth time as 2.5 hours ago
     birth_time = datetime.now(timezone.utc) - timedelta(hours=2, minutes=30)
 
-    async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
+    async with aiosqlite.connect(
+        test_db.DATABASE_PATH, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+    ) as conn:
         await conn.execute(
-            "UPDATE current_state SET life_number = 1, is_alive = 1, birth_time = ?",
-            (birth_time.isoformat(),)
+            "UPDATE current_state SET life_number = 1, is_alive = 1, birth_time = ?", (birth_time.isoformat(),)
         )
         await conn.commit()
 
     await test_db.record_death(
-        "vote_majority",
-        summary="test summary",
-        vote_counts={"live": 2, "die": 3},
-        final_vote_result="Died by vote"
+        "vote_majority", summary="test summary", vote_counts={"live": 2, "die": 3}, final_vote_result="Died by vote"
     )
 
     history = await test_db.get_life_history()
@@ -101,10 +99,7 @@ async def test_vote_counts_saved_to_history(test_db):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "minutes_ago, expected_remaining",
-    [(30, 30), (59, 1)]
-)
+@pytest.mark.parametrize("minutes_ago, expected_remaining", [(30, 30), (59, 1)])
 async def test_time_remaining_calculation(test_db, minutes_ago, expected_remaining):
     """Ensure time remaining rounds up and never returns 0 minutes."""
     ip_hash = f"ip_time_{minutes_ago}"
@@ -113,10 +108,11 @@ async def test_time_remaining_calculation(test_db, minutes_ago, expected_remaini
     # Set the vote to X minutes ago
     vote_time = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
 
-    async with aiosqlite.connect(test_db.DATABASE_PATH) as conn:
+    async with aiosqlite.connect(
+        test_db.DATABASE_PATH, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+    ) as conn:
         await conn.execute(
-            "UPDATE votes SET timestamp = ? WHERE ip_hash = ?",
-            (vote_time.strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
+            "UPDATE votes SET timestamp = ? WHERE ip_hash = ?", (vote_time.strftime("%Y-%m-%d %H:%M:%S"), ip_hash)
         )
         await conn.commit()
 
@@ -133,7 +129,7 @@ async def test_time_remaining_calculation(test_db, minutes_ago, expected_remaini
         ({"live": 1, "die": 1, "total": 2}, False, "insufficient"),
         ({"live": 1, "die": 2, "total": 3}, True, "die"),
         ({"live": 2, "die": 1, "total": 3}, False, "live"),
-    ]
+    ],
 )
 async def test_minimum_votes_for_death(main_module, monkeypatch, votes, expect_death, expected_result):
     """
@@ -150,10 +146,9 @@ async def test_minimum_votes_for_death(main_module, monkeypatch, votes, expect_d
         sleep_calls.append(_seconds)
 
     monkeypatch.setattr(main_module.asyncio, "sleep", fake_sleep)
-    monkeypatch.setattr(main_module.db, "get_current_state", AsyncMock(return_value={
-        "is_alive": True,
-        "life_number": 123
-    }))
+    monkeypatch.setattr(
+        main_module.db, "get_current_state", AsyncMock(return_value={"is_alive": True, "life_number": 123})
+    )
     monkeypatch.setattr(main_module.db, "get_vote_counts", AsyncMock(return_value=votes))
 
     exec_mock = AsyncMock()

@@ -21,6 +21,7 @@ async def test_db(tmp_path, monkeypatch):
     import database as db
 
     importlib.reload(db)
+    await db.close_db()
     await db.init_db()
 
     try:
