@@ -47,7 +47,8 @@ sudo systemctl restart amialive-observer amialive-ai
 - Added Observer SSE broadcast service wrapper.
 - Improved Telegram diagnostics and channel validation in [ai/telegram_notifier.py](ai/telegram_notifier.py:1).
 - Auto-sends birth payload when AI reports missing life_number in [observer/main.py](observer/main.py:955).
-- Tests: `cd observer && python -m pytest tests/test_state_sync.py -q` (3 passed; warnings about sqlite datetime adapter).
+- Moved `/api/system/stats` into [observer/routes/system.py](observer/routes/system.py:1) and wired router in [observer/main.py](observer/main.py:1).
+- Tests: `cd observer && python -m pytest tests/test_system_checks.py -q` (skipped on Windows), `cd observer && python -m pytest tests/test_state_sync.py -q` (3 passed; sqlite datetime adapter warnings).
 
 ### Files Changed
 - Modified: `ai/brain.py`, `observer/main.py`
