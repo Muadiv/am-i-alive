@@ -261,8 +261,8 @@ _{excerpt[:150]}..._
 
 [Read full post at am-i-alive.muadiv.com.ar]"""
 
-        success = await self.send_message(message)
-        await self.log_notification(life_number, "blog_post", message, success)
+        success, status = await self.post_to_channel(message)
+        await self.log_notification(life_number, "blog_post", f"{message} ({status})", success)
         return success
 
     async def notify_model_change(self, life_number: int, name: str, old_model: str, new_model: str, reason: str):
