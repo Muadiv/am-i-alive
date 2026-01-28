@@ -54,6 +54,12 @@ sudo systemctl restart amialive-observer amialive-ai
 - Public/system routes were relocated cleanly; imports use fallback patterns to support running as package or script.
 - System stats route now tolerates missing `psutil` in local tests and still returns defaults.
 
+### Planned (AI Aliveness Enhancements)
+- Daily rhythm + intention prompt block (behavior cue) in [ai/services/prompt_service.py](ai/services/prompt_service.py:1). ✅
+- Flashback memory + body sensation framing per cycle (continuity + embodiment) in [ai/brain.py](ai/brain.py:520). ✅
+- Read-only tooling: `check_services` (whitelisted systemd status) + `check_logs` (last N lines) with strict allow-list. ✅
+- Lightweight self-model record (traits + 1–2 goals) updated daily and fed into prompts. ✅
+
 ## SUMMARY OF PROGRESS - 2026-01-27
 
 ### Accomplishments

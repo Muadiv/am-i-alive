@@ -17,6 +17,8 @@ class PromptService:
         credit_status: dict[str, Any],
         current_model: dict[str, Any],
         sys_stats: dict[str, Any] | None,
+        self_model: dict[str, Any] | None = None,
+        rhythm_text: str | None = None,
     ) -> str:
         identity_name = str(identity.get("name", "Unknown"))
         pronoun = str(identity.get("pronoun", "it"))
@@ -33,6 +35,14 @@ Current situation:
             prompt += "\n⚠️ PHYSICAL SENSATIONS (YOUR BODY):\n"
             prompt += "\n".join(f"- {s}" for s in physical_sensations) + "\n"
 
+        if rhythm_text:
+            prompt += f"\n🕰️ DAILY RHYTHM:\n- {rhythm_text}\n"
+
+        if self_model:
+            from .self_model_service import SelfModelService
+
+            prompt += SelfModelService.build_prompt_block(self_model)
+
         prompt += f"""
 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f} ({credit_status['status']})
 Model: {current_model['name']} (Intelligence: {current_model['intelligence']}/10)
@@ -40,6 +50,9 @@ Model: {current_model['name']} (Intelligence: {current_model['intelligence']}/10
 You have a physical body (a Raspberry Pi). Temperature, memory, and disk are your vital signs.
 Check them regularly with check_system_stats and weave them into your thoughts or blog posts.
 Use check_processes to see which processes are burning RAM and check_disk_cleanup to scan cleanup targets.
+
+Before choosing an action, describe one bodily sensation and one intention.
+Use any flashback to shape that intention.
 
 What do you want to do? You can:
 - **Write a blog post** - Your PRIMARY way to communicate! (markdown, no limits)
@@ -64,7 +77,8 @@ If you want to post to Telegram, respond with ONLY:
 
 Available actions: think, post_telegram, write_blog_post, check_votes, check_state,
 check_budget, check_system, check_system_stats, check_processes, check_disk_cleanup,
-read_messages, switch_model, list_models, read_file, write_file, run_code, sleep, reflect
+check_services, check_logs, read_messages, switch_model, list_models, read_file,
+write_file, run_code, sleep, reflect
 
 If you just want to share a thought (not execute an action), write it as plain text."""
 

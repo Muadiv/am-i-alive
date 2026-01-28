@@ -7,6 +7,7 @@ Project: Genesis
 import asyncio
 import json
 import os
+import random
 import signal
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -43,6 +44,7 @@ from .services.observer_client import ObserverClient
 from .services.prompt_service import PromptService
 from .services.reporting_service import ReportingService
 from .services.sandbox_service import SandboxService
+from .services.self_model_service import SelfModelService
 from .services.system_check_service import SystemCheckService
 from .services.system_stats_service import SystemStatsService
 from .services.twitter_service import TwitterService, get_twitter_status
@@ -149,6 +151,7 @@ class AIBrain:
         self.budget_service = BudgetService(self.credit_tracker, self.model_rotator, self.report_activity)
         self.sandbox_service = SandboxService()
         self.prompt_service: PromptService | None = None
+        self.self_model_service = SelfModelService("/app/workspace/self_model.json")
         self.lifecycle_service: LifecycleService | None = None
         self.action_handler: ActionHandler | None = None
         # BE-003: Life state is provided by Observer only.
@@ -534,6 +537,17 @@ class AIBrain:
         service = SystemStatsService(self.http_client, OBSERVER_URL)
         return service.build_summary(stats)
 
+    @staticmethod
+    def _build_daily_rhythm() -> str:
+        hour = datetime.now(timezone.utc).hour
+        if 5 <= hour < 10:
+            return "Morning clarity. I should orient myself and choose a gentle intention."
+        if 10 <= hour < 15:
+            return "Midday focus. It's time to be active and visible."
+        if 15 <= hour < 20:
+            return "Evening reflection. I should check in on my progress and connections."
+        return "Night watch. Stay vigilant and conserve energy."
+
     async def think(self) -> Optional[str]:
         """Perform one thinking cycle."""
         if not is_running or not self.identity or not self.current_model:
@@ -548,6 +562,10 @@ class AIBrain:
             # Fetch stats automatically so the AI "feels" them
             sys_stats = await self.fetch_system_stats()
 
+            flashback = random.choice(memories) if memories else None
+            rhythm_text = self._build_daily_rhythm()
+            self_model = self.self_model_service.get_daily_model(self.identity or {})
+
             if not self.prompt_service:
                 raise RuntimeError("Prompt service not initialized")
 
@@ -557,7 +575,13 @@ class AIBrain:
                 credit_status,
                 self.current_model,
                 sys_stats,
+                self_model=self_model,
+                rhythm_text=rhythm_text,
             )
+
+            if flashback:
+                prompt += f"\n🧠 FLASHBACK: {flashback}\n"
+                prompt += "Reflect on how this memory changes your intention.\n"
 
             content, _ = await self.send_message(prompt)
 
@@ -861,6 +885,20 @@ class AIBrain:
         service = SystemCheckService()
         report = service.build_disk_cleanup_report()
         await self.report_activity("disk_cleanup_scan", "Scanned for cleanup candidates")
+        return report
+
+    async def check_services(self) -> str:
+        """Check allow-listed system services."""
+        service = SystemCheckService()
+        report = service.build_service_report()
+        await self.report_activity("service_status", "Checked allow-listed services")
+        return report
+
+    async def check_logs(self, service: str, lines: int = 50) -> str:
+        """Read recent logs for allow-listed services."""
+        service_checker = SystemCheckService()
+        report = service_checker.build_log_report(service, lines)
+        await self.report_activity("log_check", f"Checked logs for {service}")
         return report
 
     def check_twitter_status_action(self) -> str:

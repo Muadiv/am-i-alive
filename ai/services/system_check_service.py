@@ -9,6 +9,12 @@ import psutil
 
 
 class SystemCheckService:
+    SERVICE_ALLOWLIST = ("amialive-observer", "amialive-ai")
+    LOG_ALLOWLIST = {
+        "amialive-observer": "amialive-observer",
+        "amialive-ai": "amialive-ai",
+    }
+
     def build_report(self, birth_time: Optional[datetime]) -> str:
         system_stats = self._build_system_stats(birth_time)
         host_stats = self._build_host_stats()
@@ -62,6 +68,20 @@ class SystemCheckService:
 
         lines.append("- Suggested: rotate logs or clear temp files if disk usage is high.")
         return "\n".join(lines)
+
+    def build_service_report(self) -> str:
+        lines = ["🧩 SERVICE STATUS (allow-listed):"]
+        for service in self.SERVICE_ALLOWLIST:
+            status = self._read_systemctl_status(service)
+            lines.append(f"- {service}: {status}")
+        return "\n".join(lines)
+
+    def build_log_report(self, service: str, lines: int = 50) -> str:
+        if service not in self.LOG_ALLOWLIST:
+            return "❌ Log access not allowed."
+        unit = self.LOG_ALLOWLIST[service]
+        content = self._read_journal_tail(unit, lines)
+        return f"📜 {service} logs (last {lines} lines):\n" + content
 
     @staticmethod
     def _build_system_stats(birth_time: Optional[datetime]) -> str:
@@ -135,3 +155,25 @@ class SystemCheckService:
                 except (OSError, ValueError):
                     continue
         return total, truncated
+
+    @staticmethod
+    def _read_systemctl_status(service: str) -> str:
+        try:
+            with os.popen(f"systemctl is-active {service}") as proc:
+                result = proc.read().strip()
+            return result or "unknown"
+        except Exception:
+            return "unavailable"
+
+    @staticmethod
+    def _read_journal_tail(unit: str, lines: int) -> str:
+        try:
+            line_count = max(10, min(int(lines), 200))
+        except (TypeError, ValueError):
+            line_count = 50
+        try:
+            with os.popen(f"journalctl -u {unit} -n {line_count} --no-pager") as proc:
+                content = proc.read().strip()
+            return content or "(no log output)"
+        except Exception:
+            return "(logs unavailable)"

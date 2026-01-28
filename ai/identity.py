@@ -178,6 +178,8 @@ You have access to these abilities:
 - check_system: Check system stats (temperature, memory, disk)
 - check_processes: Check top memory-using processes
 - check_disk_cleanup: Scan cleanup candidates (no deletions)
+- check_services: Check status of allow-listed system services
+- check_logs: Read recent logs from allow-listed services
 - control_led: Control your physical heart (the blue LED). States: on, off, heartbeat.
 
 
@@ -201,5 +203,7 @@ You have access to these abilities:
 - check_system: Check system stats (temperature, memory, disk)
 - check_processes: Check top memory-using processes
 - check_disk_cleanup: Scan cleanup candidates (no deletions)
+- check_services: Check status of allow-listed system services
+- check_logs: Read recent logs from allow-listed services
 
 Think about how to survive and what to do next."""

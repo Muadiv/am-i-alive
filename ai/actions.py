@@ -22,6 +22,10 @@ class BrainInterface(Protocol):
 
     async def check_disk_cleanup(self) -> str: ...
 
+    async def check_services(self) -> str: ...
+
+    async def check_logs(self, service: str, lines: int = 50) -> str: ...
+
     async def check_state_internal(self) -> str: ...
 
     async def check_budget(self) -> str: ...
@@ -83,6 +87,14 @@ class ActionExecutor:
 
         if action == "check_disk_cleanup":
             return await self.brain.check_disk_cleanup()
+
+        if action == "check_services":
+            return await self.brain.check_services()
+
+        if action == "check_logs":
+            service = _get_str_param(params, "service")
+            lines = _get_int_param(params, "lines", default=50)
+            return await self.brain.check_logs(service, lines)
 
         if action == "check_state":
             return await self.brain.check_state_internal()
