@@ -26,6 +26,16 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
+## REFACTOR PLAN TRACKING
+- [x] Inventory oversized modules and map responsibilities
+- [x] Define target module breakdown per domain
+- [x] Plan extraction order and compatibility shims
+- [x] Update imports and wiring plan
+- [x] Identify required tests/smoke checks and regressions
+- [ ] Fix `ai/actions.py` orphaned code and complete ActionExecutor
+- [ ] Extract AI system stats/monitoring into a service and slim `ai/brain.py`
+- [ ] Begin splitting `observer/main.py` into routers/services
+
 ## SUMMARY OF PROGRESS - 2026-01-27
 
 ### Accomplishments
