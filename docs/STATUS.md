@@ -32,9 +32,23 @@ sudo systemctl restart amialive-observer amialive-ai
 - [x] Plan extraction order and compatibility shims
 - [x] Update imports and wiring plan
 - [x] Identify required tests/smoke checks and regressions
-- [ ] Fix `ai/actions.py` orphaned code and complete ActionExecutor
+- [x] Fix `ai/actions.py` orphaned code and complete ActionExecutor
 - [ ] Extract AI system stats/monitoring into a service and slim `ai/brain.py`
-- [ ] Begin splitting `observer/main.py` into routers/services
+- [x] Begin splitting `observer/main.py` into routers/services
+
+## SUMMARY OF PROGRESS - 2026-01-28
+
+### Accomplishments
+- Moved public pages into [observer/routes/public.py](observer/routes/public.py:1) and wired router in [observer/main.py](observer/main.py:1).
+- Moved `/api/system/stats` into [observer/routes/system.py](observer/routes/system.py:1) and wired router in [observer/main.py](observer/main.py:1).
+- Telegram blog notifications now post to the public channel in [ai/telegram_notifier.py](ai/telegram_notifier.py:253).
+- Observer now auto-sends birth payload when AI reports missing life_number in [observer/main.py](observer/main.py:955).
+- Added refactor checklist tracking to [docs/STATUS.md](docs/STATUS.md:1).
+- Tests: `cd observer && python -m pytest tests/test_budget_display.py -q` (4 passed; sqlite datetime + templating warnings), `cd observer && python -m pytest tests/test_state_sync.py -q` (3 passed), `python -m pytest ai/tests/test_prompt_service.py -q` (2 passed).
+
+### Review Notes
+- Public/system routes were relocated cleanly; imports use fallback patterns to support running as package or script.
+- System stats route now tolerates missing `psutil` in local tests and still returns defaults.
 
 ## SUMMARY OF PROGRESS - 2026-01-27
 
