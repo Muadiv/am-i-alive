@@ -20,6 +20,8 @@ class BrainInterface(Protocol):
 
     async def check_system_stats(self) -> str: ...
 
+    async def check_health(self) -> str: ...
+
     async def check_processes(self) -> str: ...
 
     async def check_disk_cleanup(self) -> str: ...
@@ -83,6 +85,9 @@ class ActionExecutor:
 
         if action == "check_system_stats":
             return await self.brain.check_system_stats()
+
+        if action == "check_health":
+            return await self.brain.check_health()
 
         if action == "check_processes":
             return await self.brain.check_processes()

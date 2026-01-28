@@ -62,6 +62,7 @@ sudo systemctl restart amialive-observer amialive-ai
 - Added service interfaces for observer/chat clients in [ai/services/interfaces.py](ai/services/interfaces.py:1).
 - Consolidated action parameter parsing helpers in [ai/services/action_params.py](ai/services/action_params.py:1).
 - Extracted oracle messaging workflow into [ai/services/oracle_service.py](ai/services/oracle_service.py:1) and wired it in [ai/brain.py](ai/brain.py:945).
+- Added combined system+model health check via [ai/services/health_check_service.py](ai/services/health_check_service.py:1) and [ai/brain.py](ai/brain.py:868).
 
 ## SUMMARY OF PROGRESS - 2026-01-27
 

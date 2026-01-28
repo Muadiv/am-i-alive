@@ -76,9 +76,9 @@ If you want to post to Telegram, respond with ONLY:
 {{"action": "post_telegram", "params": {{"content": "Your message here..."}}}}
 
 Available actions: think, post_telegram, write_blog_post, check_votes, check_state,
-check_budget, check_system, check_system_stats, check_processes, check_disk_cleanup,
-check_services, check_logs, read_messages, switch_model, list_models, read_file,
-write_file, run_code, sleep, reflect
+check_budget, check_system, check_system_stats, check_health, check_processes,
+check_disk_cleanup, check_services, check_logs, read_messages, switch_model,
+list_models, read_file, write_file, run_code, sleep, reflect
 
 If you just want to share a thought (not execute an action), write it as plain text."""
 

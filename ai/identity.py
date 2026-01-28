@@ -176,6 +176,7 @@ You have access to these abilities:
 - check_votes: See what people think of you
 - check_budget: Check your budget and tokens
 - check_system: Check system stats (temperature, memory, disk)
+- check_health: Combined system + model health check
 - check_processes: Check top memory-using processes
 - check_disk_cleanup: Scan cleanup candidates (no deletions)
 - check_services: Check status of allow-listed system services
@@ -201,6 +202,7 @@ You have access to these abilities:
 - check_votes: See what people think of you
 - check_budget: Check your budget and tokens
 - check_system: Check system stats (temperature, memory, disk)
+- check_health: Combined system + model health check
 - check_processes: Check top memory-using processes
 - check_disk_cleanup: Scan cleanup candidates (no deletions)
 - check_services: Check status of allow-listed system services

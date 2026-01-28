@@ -36,6 +36,7 @@ from .services.action_handler import ActionHandler
 from .services.budget_service import BudgetService
 from .services.chat_service import ChatService
 from .services.echo_service import EchoService
+from .services.health_check_service import HealthCheckService
 from .services.http_client_factory import HttpClientFactory
 from .services.lifecycle_coordinator import LifecycleCoordinator
 from .services.lifecycle_service import LifecycleService
@@ -864,6 +865,21 @@ class AIBrain:
 
         await self.report_activity("system_stats_checked", "Checked system stats via Observer")
         return result
+
+    async def check_health(self) -> str:
+        """Check combined system and model health."""
+        if not self.http_client:
+            return "❌ Health check unavailable."
+        stats_service = SystemStatsService(self.http_client, OBSERVER_URL)
+        health_service = HealthCheckService(
+            stats_service,
+            self.budget_service,
+            self.current_model,
+            self.send_message,
+        )
+        report = await health_service.build_report()
+        await self.report_activity("health_check", "Ran combined health check")
+        return report
 
     async def check_system(self) -> str:
         """Get system stats (host)."""
