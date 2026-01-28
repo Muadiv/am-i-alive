@@ -213,7 +213,7 @@ class AIBrain:
         # Select model if not set
         if not self.current_model:
             self.current_model = self.model_rotator.select_random_model()
-            print(f"[BRAIN] 🧠 Selected model: {self.current_model['name']}")
+            logger.info(f"[BRAIN] 🧠 Selected model: {self.current_model['name']}")
 
         current_model = self.current_model
 
@@ -280,7 +280,7 @@ class AIBrain:
                 "status": status_level,
             }
 
-            print(
+            logger.info(
                 "[BRAIN] 💰 Usage: "
                 f"{usage_stats['total_tokens']} tokens, ${usage_stats['cost']:.4f}, "
                 f"Balance: ${usage_stats['balance']:.2f}"
@@ -290,7 +290,7 @@ class AIBrain:
         except httpx.HTTPStatusError as e:
             error_code = e.response.status_code
             error_text = e.response.text
-            print(f"[BRAIN] ❌ HTTP Error: {error_code} - {error_text}")
+            logger.error(f"[BRAIN] ❌ HTTP Error: {error_code} - {error_text}")
 
             if self.model_retry_policy:
                 handled, updated_model = await self.model_retry_policy.handle_error(
@@ -313,17 +313,17 @@ class AIBrain:
                             self.model_retry_policy.rate_limit_retries = 0
                             return result
                         except Exception as retry_error:
-                            print(f"[BRAIN] ❌ Retry failed: {retry_error}")
+                            logger.error(f"[BRAIN] ❌ Retry failed: {retry_error}")
                             raise
 
             raise
         except Exception as e:
-            print(f"[BRAIN] ❌ Error calling OpenRouter: {e}")
+            logger.error(f"[BRAIN] ❌ Error calling OpenRouter: {e}")
             raise
 
     async def handle_bankruptcy(self) -> None:
         """Handle running out of credits."""
-        print("[BRAIN] 💀 BANKRUPTCY! Out of credits!")
+        logger.warning("[BRAIN] 💀 BANKRUPTCY! Out of credits!")
         await self.report_thought(
             "I'm out of resources... I can't think anymore... This might be the end...", thought_type="bankruptcy"
         )
@@ -332,7 +332,7 @@ class AIBrain:
         try:
             await self.post_to_x("I'm running out of resources... Can anyone help? am-i-alive.muadiv.com.ar")
         except Exception as retry_error:
-            print(f"[BRAIN] ❌ Post failed during bankruptcy: {retry_error}")
+            logger.error(f"[BRAIN] ❌ Post failed during bankruptcy: {retry_error}")
 
         global is_running
         self.is_alive = False
@@ -404,17 +404,17 @@ class AIBrain:
                     saved_identity = json.load(f)
                 if isinstance(saved_identity, dict) and saved_identity.get("life_number") == self.life_number:
                     self.identity = saved_identity
-                    print(f"[BRAIN] ✅ Resuming identity for Life #{self.life_number}")
+                    logger.info(f"[BRAIN] ✅ Resuming identity for Life #{self.life_number}")
                 else:
                     await self.birth_sequence(life_data)
             except Exception as e:
-                print(f"[BRAIN] ⚠️  Failed to load identity: {e}")
+                logger.warning(f"[BRAIN] ⚠️  Failed to load identity: {e}")
                 await self.birth_sequence(life_data)
         else:
             await self.birth_sequence(life_data)
 
         life_num = self.life_number or 0
-        print(f"[BRAIN] ♻️  Life #{life_num} beginning...")
+        logger.info(f"[BRAIN] ♻️  Life #{life_num} beginning...")
 
         # Get credit status
         credit_status = self.credit_tracker.get_status()
@@ -438,7 +438,7 @@ class AIBrain:
         try:
             first_response, _ = await self.send_message(bootstrap)
         except Exception as e:
-            print(f"[BRAIN] Bootstrap error: {e}")
+            logger.error(f"[BRAIN] Bootstrap error: {e}")
             first_response = "I am awake. Still gathering my thoughts..."
 
         # Report the first thought
@@ -453,9 +453,9 @@ class AIBrain:
         self.is_alive = True
 
         if self.identity and self.current_model:
-            print(f"[BRAIN] ✨ {self.identity['name']} ({self.identity.get('pronoun', 'it')}) initialized")
-            print(f"[BRAIN] 💰 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f}")
-            print(
+            logger.info(f"[BRAIN] ✨ {self.identity['name']} ({self.identity.get('pronoun', 'it')}) initialized")
+            logger.info(f"[BRAIN] 💰 Budget: ${credit_status['balance']:.2f} / ${credit_status['budget']:.2f}")
+            logger.info(
                 f"[BRAIN] 🧠 Model: {self.current_model['name']} (Intelligence: {self.current_model['intelligence']}/10)"
             )
 
@@ -466,7 +466,7 @@ class AIBrain:
 
         # BE-003: Life number comes from Observer only.
         self.apply_birth_data(life_data)
-        print(f"[BRAIN] 👶 Beginning birth sequence for Life #{self.life_number}...")
+        logger.info(f"[BRAIN] 👶 Beginning birth sequence for Life #{self.life_number}...")
 
         if not self.http_client:
             raise RuntimeError("HTTP client not initialized")
@@ -488,7 +488,7 @@ class AIBrain:
         await self.report_thought(birth_line, thought_type="birth")
         await self.report_activity("identity_chosen", f"Name: {identity_name}, Pronoun: {self.identity.get('pronoun')}")
 
-        print(f"[BRAIN] 🎭 Identity: {identity_name} ({self.identity.get('pronoun')})")
+        logger.info(f"[BRAIN] 🎭 Identity: {identity_name} ({self.identity.get('pronoun')})")
 
         x_keys = {
             "api_key": X_API_KEY,
@@ -503,9 +503,9 @@ class AIBrain:
         try:
             model_name = self.current_model.get("name", "Unknown") if self.current_model else "Unknown"
             await self.lifecycle_service.notify_creator_birth(self.life_number or 0, self.identity, model_name)
-            print("[TELEGRAM] ✅ Birth notification sent")
+            logger.info("[TELEGRAM] ✅ Birth notification sent")
         except Exception as e:
-            print(f"[TELEGRAM] ❌ Failed to send birth notification: {e}")
+            logger.error(f"[TELEGRAM] ❌ Failed to send birth notification: {e}")
 
     async def save_identity(self) -> None:
         """Save identity to workspace."""
@@ -574,7 +574,7 @@ class AIBrain:
             return content
 
         except Exception as e:
-            print(f"[BRAIN] ❌ Think error: {e}")
+            logger.error(f"[BRAIN] ❌ Think error: {e}")
             await self.report_activity("error", f"Thinking error: {str(e)[:100]}")
             return None
 
@@ -678,7 +678,7 @@ class AIBrain:
             )
             await self.observer_client.report_thought(payload)
         except Exception as e:
-            print(f"[BRAIN] ❌ Failed to report thought: {e}")
+            logger.error(f"[BRAIN] ❌ Failed to report thought: {e}")
 
     async def report_activity(self, action: str, details: str | None = None) -> None:
         """Report an activity to the observer."""
@@ -695,7 +695,7 @@ class AIBrain:
             )
             await self.observer_client.report_activity(payload)
         except Exception as e:
-            print(f"[BRAIN] ❌ Failed to report activity: {e}")
+            logger.error(f"[BRAIN] ❌ Failed to report activity: {e}")
 
     async def send_heartbeat(self) -> None:
         """Send heartbeat to observer to mark AI as alive."""
@@ -712,7 +712,7 @@ class AIBrain:
                 }
             )
         except Exception as e:
-            print(f"[BRAIN] ❌ Failed to send heartbeat: {e}")
+            logger.error(f"[BRAIN] ❌ Failed to send heartbeat: {e}")
 
     async def notify_birth(self) -> None:
         """Notify observer that AI has been born."""
@@ -758,11 +758,11 @@ class AIBrain:
                 }
             )
             response.raise_for_status()
-            print(
+            logger.info(
                 f"[BRAIN] 🎂 Birth notification sent: Life #{self.life_number}, Name: {identity_name} {identity_icon}"
             )
         except Exception as e:
-            print(f"[BRAIN] ❌ Failed to notify birth: {e}")
+            logger.error(f"[BRAIN] ❌ Failed to notify birth: {e}")
 
     async def force_sync(self, sync_data: dict[str, Any]) -> None:
         """Force sync AI state with Observer."""
@@ -776,18 +776,18 @@ class AIBrain:
             trauma_message = self.lifecycle_service.build_trauma_message(str(previous_death_cause))
             if trauma_message:
                 self.chat_history.append({"role": "system", "content": trauma_message})
-                print(f"[BRAIN] 💔 Trauma injected from previous death: {previous_death_cause}")
+                logger.info(f"[BRAIN] 💔 Trauma injected from previous death: {previous_death_cause}")
 
         try:
             await self.report_activity("state_sync", f"Synced to Life #{self.life_number}")
         except Exception as e:
-            print(f"[BRAIN] ❌ Failed to report state sync: {e}")
+            logger.error(f"[BRAIN] ❌ Failed to report state sync: {e}")
 
     async def ask_echo(self, question: str) -> str:
         """Ask Echo (free model) a question to save credits."""
         await self.report_activity("asking_echo", f"Question: {question[:100]}...")
 
-        print(f"[BRAIN] 🔍 Asking Echo: {question[:50]}...")
+        logger.info(f"[BRAIN] 🔍 Asking Echo: {question[:50]}...")
 
         try:
             if not self.echo_service:
@@ -798,13 +798,13 @@ class AIBrain:
             output_tokens = int(usage.get("completion_tokens", 0))
             self.tokens_used_life += input_tokens + output_tokens
 
-            print(f"[ECHO] 🔮 Responded: {len(echo_response)} chars")
+            logger.info(f"[ECHO] 🔮 Responded: {len(echo_response)} chars")
             await self.report_activity("echo_responded", f"Question: {question[:50]}...")
 
             return f"[Echo says]: {echo_response}"
 
         except Exception as e:
-            print(f"[ECHO] ❌ Error: {e}")
+            logger.error(f"[ECHO] ❌ Error: {e}")
             return f"[Echo is unavailable]: {e}"
 
     async def post_to_x(self, content: str) -> str:
@@ -841,12 +841,12 @@ class AIBrain:
 
             await self.report_activity("system_check", "Checked vital signs")
 
-            print("[SYSTEM] ✅ System check complete")
+            logger.info("[SYSTEM] ✅ System check complete")
 
             return result
 
         except Exception as e:
-            print(f"[SYSTEM] ❌ Failed to check system: {e}")
+            logger.error(f"[SYSTEM] ❌ Failed to check system: {e}")
             return f"❌ Failed to check system: {str(e)[:200]}"
 
     async def check_processes(self) -> str:
@@ -936,7 +936,7 @@ class AIBrain:
         try:
             await self.http_client.post(f"{OBSERVER_URL}/api/oracle/ack", json={"message_id": message_id})
         except Exception as e:
-            print(f"[BRAIN] Oracle ack failed: {e}")
+            logger.error(f"[BRAIN] Oracle ack failed: {e}")
 
     async def shutdown(self) -> None:
         """Clean shutdown."""
@@ -944,7 +944,7 @@ class AIBrain:
 
         # Stop budget server if running
         if _budget_server:
-            print("[BRAIN] 🛑 Stopping budget server...")
+            logger.info("[BRAIN] 🛑 Stopping budget server...")
             _budget_server.should_exit = True
 
         # Calculate survival time before shutdown
@@ -961,9 +961,9 @@ class AIBrain:
             await notifier.notify_death(
                 self.life_number or 0, "shutdown", survival_time  # Generic cause, Observer knows the real reason
             )
-            print("[TELEGRAM] ☠️ Death notification sent")
+            logger.info("[TELEGRAM] ☠️ Death notification sent")
         except Exception as e:
-            print(f"[TELEGRAM] ❌ Failed to send death notification: {e}")
+            logger.error(f"[TELEGRAM] ❌ Failed to send death notification: {e}")
 
         self.is_alive = False
         is_running = False
@@ -980,7 +980,7 @@ async def heartbeat_loop() -> None:
     """Background task to send heartbeat every 30 seconds."""
     global brain, is_running
 
-    print("[BRAIN] 💓 Starting heartbeat loop...")
+    logger.info("[BRAIN] 💓 Starting heartbeat loop...")
 
     while is_running:
         try:
@@ -988,17 +988,17 @@ async def heartbeat_loop() -> None:
                 await brain.send_heartbeat()
             await asyncio.sleep(30)
         except Exception as e:
-            print(f"[BRAIN] ❌ Heartbeat error: {e}")
+            logger.error(f"[BRAIN] ❌ Heartbeat error: {e}")
             await asyncio.sleep(30)
 
-    print("[BRAIN] 💔 Heartbeat stopped.")
+    logger.info("[BRAIN] 💔 Heartbeat stopped.")
 
 
 async def notification_monitor() -> None:
     """Background task to monitor budget and votes, send Telegram notifications."""
     global brain, is_running
 
-    print("[TELEGRAM] 📡 Starting notification monitor...")
+    logger.info("[TELEGRAM] 📡 Starting notification monitor...")
 
     last_budget_warning = 0.0
     last_vote_warning = 0.0
@@ -1025,9 +1025,9 @@ async def notification_monitor() -> None:
                         brain.life_number or 0, identity_name, balance, remaining_percent
                     )
                     last_budget_warning = current_time
-                    print(f"[TELEGRAM] ⚠️ Budget warning sent: {remaining_percent:.1f}% remaining")
+                    logger.info(f"[TELEGRAM] ⚠️ Budget warning sent: {remaining_percent:.1f}% remaining")
                 except Exception as e:
-                    print(f"[TELEGRAM] ❌ Failed to send budget warning: {e}")
+                    logger.error(f"[TELEGRAM] ❌ Failed to send budget warning: {e}")
 
             # Check vote status
             try:
@@ -1043,27 +1043,27 @@ async def notification_monitor() -> None:
                         identity_name = brain.identity.get("name", "Unknown") if brain.identity else "Unknown"
                         await notifier.notify_vote_status(brain.life_number or 0, identity_name, votes)
                         last_vote_warning = current_time
-                        print(f"[TELEGRAM] 🚨 Vote warning sent: {die} die vs {live} live")
+                        logger.info(f"[TELEGRAM] 🚨 Vote warning sent: {die} die vs {live} live")
                     except Exception as e:
-                        print(f"[TELEGRAM] ❌ Failed to send vote warning: {e}")
+                        logger.error(f"[TELEGRAM] ❌ Failed to send vote warning: {e}")
             except Exception as e:
-                print(f"[TELEGRAM] ⚠️ Failed to check votes: {e}")
+                logger.error(f"[TELEGRAM] ⚠️ Failed to check votes: {e}")
 
             # Wait 5 minutes before next check
             await asyncio.sleep(300)
 
         except Exception as e:
-            print(f"[TELEGRAM] ❌ Monitor error: {e}")
+            logger.error(f"[TELEGRAM] ❌ Monitor error: {e}")
             await asyncio.sleep(300)
 
-    print("[TELEGRAM] 📴 Notification monitor stopped.")
+    logger.info("[TELEGRAM] 📴 Notification monitor stopped.")
 
 
 async def queue_birth_data(life_data: dict[str, Any]) -> None:
     """Queue Observer-provided birth data for initialization."""
     global pending_birth_data
     pending_birth_data = life_data
-    print("[BRAIN] 📥 Birth data queued")
+    logger.info("[BRAIN] 📥 Birth data queued")
     if birth_event:
         birth_event.set()
 
@@ -1081,7 +1081,7 @@ async def main_loop() -> None:
 
     await start_command_server(AI_COMMAND_PORT, brain, birth_event)
 
-    print("[BRAIN] ⏳ Waiting for birth data from Observer...")
+    logger.info("[BRAIN] ⏳ Waiting for birth data from Observer...")
 
     while is_running:
         if not pending_birth_data:
@@ -1096,14 +1096,14 @@ async def main_loop() -> None:
         try:
             await brain.initialize(life_data)
         except Exception as e:
-            print(f"[BRAIN] ❌ Birth initialization failed: {e}")
+            logger.error(f"[BRAIN] ❌ Birth initialization failed: {e}")
             continue
 
         if not brain.identity:
-            print("[BRAIN] ❌ Identity missing after initialization")
+            logger.error("[BRAIN] ❌ Identity missing after initialization")
             continue
 
-        print(f"[BRAIN] 🧠 Starting consciousness loop for {brain.identity['name']}...")
+        logger.info(f"[BRAIN] 🧠 Starting consciousness loop for {brain.identity['name']}...")
 
         # Start heartbeat task
         asyncio.create_task(heartbeat_loop())
@@ -1114,7 +1114,7 @@ async def main_loop() -> None:
         try:
             while is_running:
                 if pending_birth_data:
-                    print("[BRAIN] 🔁 New birth data received; restarting consciousness loop.")
+                    logger.info("[BRAIN] 🔁 New birth data received; restarting consciousness loop.")
                     break
 
                 try:
@@ -1124,27 +1124,24 @@ async def main_loop() -> None:
                     if thought:
                         # Log the thought (truncate for console)
                         thought_preview = thought[:200] + "..." if len(thought) > 200 else thought
-                        print(f"[{brain.identity['name']}] 💭 {thought_preview}")
+                        logger.info(f"[{brain.identity['name']}] 💭 {thought_preview}")
 
                     # Wait before next thought
                     await asyncio.sleep(current_think_interval)
 
                 except Exception as e:
-                    print(f"[BRAIN] ❌ Loop error: {e}")
-                    import traceback
-
-                    traceback.print_exc()
+                    logger.exception(f"[BRAIN] ❌ Loop error: {e}")
                     await asyncio.sleep(60)
         finally:
             await brain.shutdown()
 
-        print(f"[BRAIN] ☠️  {brain.identity['name']}'s consciousness ended.")
+        logger.info(f"[BRAIN] ☠️  {brain.identity['name']}'s consciousness ended.")
 
 
 def signal_handler(sig: int, frame: Any) -> None:
     """Handle shutdown signals."""
     global is_running
-    print(f"[BRAIN] 🛑 Shutdown signal ({sig}) received...")
+    logger.warning(f"[BRAIN] 🛑 Shutdown signal ({sig}) received...")
     is_running = False
     if brain:
         brain.is_alive = False
@@ -1177,9 +1174,9 @@ if __name__ == "__main__":
     # Command server is started inside main_loop after the event loop is ready.
 
     # Print startup banner
-    print("=" * 80)
-    print("🧠 AM I ALIVE? - Genesis Brain (OpenRouter Edition)")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("🧠 AM I ALIVE? - Genesis Brain (OpenRouter Edition)")
+    logger.info("=" * 80)
 
     # Run main loop
     asyncio.run(main_loop())

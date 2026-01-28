@@ -90,8 +90,8 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
 
         logger.debug(f"Birth notification received: {data}")
 
-        print("[BRAIN] 📥 Birth request received", flush=True)
-        print(f"[BRAIN] 📎 brain_loop={brain_module.brain_loop}", flush=True)
+        logger.info("[BRAIN] 📥 Birth request received")
+        logger.debug(f"[BRAIN] 📎 brain_loop={brain_module.brain_loop}")
 
         # Signal to birth sequence on the main loop thread
         if brain_module.brain_loop:
@@ -101,14 +101,14 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
             )
             try:
                 future.result(timeout=2)
-                print("[BRAIN] ✅ Birth data queued from command server", flush=True)
+                logger.info("[BRAIN] ✅ Birth data queued from command server")
             except Exception as exc:
-                print(f"[BRAIN] ❌ Birth queue failed: {exc}", flush=True)
+                logger.error(f"[BRAIN] ❌ Birth queue failed: {exc}")
         else:
             _pending_birth_data = data
             if _birth_event:
                 _birth_event.set()
-            print("[BRAIN] ⚠️ Used fallback birth queue path", flush=True)
+            logger.warning("[BRAIN] ⚠️ Used fallback birth queue path")
 
         self._send_response(200, '{"status": "ok"}')
 

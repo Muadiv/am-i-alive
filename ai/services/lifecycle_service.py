@@ -10,6 +10,7 @@ import tweepy  # type: ignore
 from ..identity import get_birth_prompt
 from ..identity import get_bootstrap_prompt as identity_get_bootstrap_prompt
 from ..identity import get_trauma_prompt
+from ..logging_config import logger
 from ..model_config import MODELS
 from ..telegram_notifier import notifier
 
@@ -42,8 +43,8 @@ class LifecycleService:
                                 if isinstance(mem, list):
                                     fragments.extend(mem)
                     except Exception as e:
-                        print(f"[BRAIN] Error loading memory {filename}: {e}")
-        print(f"[BRAIN] 💭 Loaded {len(fragments)} memory fragments")
+                        logger.warning(f"[BRAIN] Error loading memory {filename}: {e}")
+        logger.info(f"[BRAIN] 💭 Loaded {len(fragments)} memory fragments")
         return fragments
 
     async def save_identity(self, identity: dict[str, Any], life_number: int | None, identity_file: str) -> None:
@@ -83,10 +84,10 @@ class LifecycleService:
             response = client.create_tweet(text=tweet)
             tweet_id = response.data["id"]
 
-            print(f"[BIRTH TWEET] 🐦 @AmIAlive_AI: {tweet}")
+            logger.info(f"[BIRTH TWEET] 🐦 @AmIAlive_AI: {tweet}")
             return tweet_id
         except Exception as e:
-            print(f"[BIRTH TWEET] ❌ Failed: {e}")
+            logger.error(f"[BIRTH TWEET] ❌ Failed: {e}")
             return None
 
     async def notify_birth(self, payload: dict[str, Any]) -> None:
@@ -124,7 +125,7 @@ class LifecycleService:
                 output_tokens = int(usage.get("completion_tokens", 0))
                 tokens_used = input_tokens + output_tokens
         except Exception as e:
-            print(f"[BRAIN] ❌ Birth sequence error: {e}")
+            logger.error(f"[BRAIN] ❌ Birth sequence error: {e}")
             response_text = '{"name": "Genesis", "pronoun": "it", "first_thought": "I exist, but I am uncertain."}'
 
         try:

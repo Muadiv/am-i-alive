@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import tweepy  # type: ignore
 
 from ..identity import check_twitter_suspended
+from ..logging_config import logger
 from ..safety.content_filter import is_content_blocked
 
 
@@ -47,7 +48,7 @@ class TwitterService:
                     if posts_today >= 24:
                         return "🚫 Daily limit reached (24 posts). Try tomorrow."
         except Exception as e:
-            print(f"[BRAIN] ⚠️ Failed to check Twitter post count: {e}")
+            logger.warning(f"[BRAIN] ⚠️ Failed to check Twitter post count: {e}")
             posts_today = 0
 
         await report_activity("posting_x", f"Tweet: {content[:50]}...")
@@ -67,8 +68,8 @@ class TwitterService:
             response = client.create_tweet(text=content)
             tweet_id = response.data["id"]
 
-            print(f"[X POST] 🐦 Success! Tweet ID: {tweet_id}")
-            print(f"[X POST] 📝 Content: {content}")
+            logger.info(f"[X POST] 🐦 Success! Tweet ID: {tweet_id}")
+            logger.info(f"[X POST] 📝 Content: {content}")
 
             with open(rate_limit_file, "w") as f:
                 json.dump(
@@ -80,14 +81,14 @@ class TwitterService:
 
         except Exception as e:
             error_msg = str(e)[:200]
-            print(f"[X POST] ❌ Failed: {error_msg}")
+            logger.error(f"[X POST] ❌ Failed: {error_msg}")
 
             error_lower = error_msg.lower()
             if any(term in error_lower for term in ("suspended", "forbidden", "unauthorized", "401")):
                 suspension_file = "/app/workspace/.twitter_suspended"
                 with open(suspension_file, "w") as f:
                     json.dump({"suspended": True, "detected_at": now.isoformat(), "error": error_msg}, f)
-                print("[X POST] Account appears to be unavailable")
+                logger.warning("[X POST] Account appears to be unavailable")
                 await report_activity("x_account_suspended", "Twitter account unavailable - falling back to blog")
                 return "❌ X/Twitter account appears unavailable. Use write_blog_post to communicate instead."
 

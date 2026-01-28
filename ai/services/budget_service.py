@@ -4,6 +4,7 @@ from typing import Any, Callable
 
 import httpx
 
+from ..logging_config import logger
 from ..model_config import get_model_by_id
 from ..model_rotator import ModelRotator
 from ..telegram_notifier import notifier
@@ -104,7 +105,7 @@ Top models by spending:"""
         test_message = "Respond with just 'OK' if you receive this."
 
         try:
-            print(f"[BRAIN] 🔍 Testing model health: {current_model['name']}")
+            logger.info(f"[BRAIN] 🔍 Testing model health: {current_model['name']}")
             await send_message(test_message, system_prompt="You are a test assistant.")
 
             return f"""✅ Model '{current_model['name']}' is HEALTHY
@@ -169,9 +170,9 @@ Recommendation: Try 'switch_model' with a different model ID."""
         try:
             reason = f"Intelligence: {model['intelligence']}/10, Best for: {model['best_for']}"
             await notifier.notify_model_change(life_number or 0, identity_name, old_model_name, model["name"], reason)
-            print("[TELEGRAM] ✅ Model change notification sent")
+            logger.info("[TELEGRAM] ✅ Model change notification sent")
         except Exception as e:
-            print(f"[TELEGRAM] ❌ Failed to send model change notification: {e}")
+            logger.error(f"[TELEGRAM] ❌ Failed to send model change notification: {e}")
 
         input_cost = float(model.get("input_cost", 0.0))
         cost_str = "FREE" if input_cost == 0 else f"${input_cost:.3f}/1M"

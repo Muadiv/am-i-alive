@@ -10,6 +10,7 @@ import os
 import random
 from typing import Dict, List, Optional
 
+from .logging_config import logger
 from .model_config import (
     BUDGET_THRESHOLDS,
     MODELS,
@@ -41,13 +42,13 @@ class ModelRotator:
                     if isinstance(history, list):
                         filtered = [model_id for model_id in history if get_model_by_id(str(model_id))]
                         if len(filtered) != len(history):
-                            print("[MODEL] ⚠️ Removed unknown models from history")
+                            logger.warning("[MODEL] ⚠️ Removed unknown models from history")
                             self.history = filtered
                             self.save_history()
                         return filtered
                     return []
             except Exception as e:
-                print(f"[MODEL] ⚠️ Failed to load model history: {e}")
+                logger.warning(f"[MODEL] ⚠️ Failed to load model history: {e}")
                 return []
         return []
 

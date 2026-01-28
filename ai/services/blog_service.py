@@ -3,6 +3,7 @@ from typing import Any
 
 import httpx
 
+from ..logging_config import logger
 from ..safety.content_filter import is_content_blocked
 from ..telegram_notifier import notifier
 
@@ -64,7 +65,7 @@ class BlogService:
                 identity_name = identity.get("name", "Unknown") if identity else "Unknown"
                 await notifier.notify_blog_post(life_number, identity_name, title, excerpt)
             except Exception as e:
-                print(f"[TELEGRAM] ❌ Failed to send blog notification: {e}")
+                logger.error(f"[TELEGRAM] ❌ Failed to send blog notification: {e}")
 
             return (
                 "✅ Blog post published!\n\n"
@@ -77,8 +78,8 @@ class BlogService:
         except httpx.HTTPStatusError as e:
             status_code = e.response.status_code if e.response else "unknown"
             body = e.response.text[:200] if e.response else "no response"
-            print(f"[BLOG] ❌ Blog API error: {status_code} - {body}")
+            logger.error(f"[BLOG] ❌ Blog API error: {status_code} - {body}")
             return f"❌ Failed to publish blog post: {status_code}"
         except Exception as e:
-            print(f"[BLOG] ❌ Failed to write blog post: {e}")
+            logger.error(f"[BLOG] ❌ Failed to write blog post: {e}")
             return f"❌ Failed to publish blog post: {str(e)[:200]}"

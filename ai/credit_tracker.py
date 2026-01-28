@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -85,7 +84,7 @@ class CreditTracker:
                     reset_date = reset_date.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) >= reset_date:
                     # Monthly reset!
-                    print(f"[CREDITS] 🎉 Monthly budget reset! New balance: ${self.monthly_budget:.2f}")
+                    logger.info(f"[CREDITS] 🎉 Monthly budget reset! New balance: ${self.monthly_budget:.2f}")
                     data["current_balance_usd"] = self.monthly_budget
                     data["reset_date"] = self.get_next_reset_date()
                     data["usage_monthly"] = 0
@@ -117,7 +116,7 @@ class CreditTracker:
                     self.save_if_changed(data)
                 return data
             except Exception as e:
-                print(f"[CREDITS] Error loading credits file: {e}")
+                logger.error(f"[CREDITS] Error loading credits file: {e}")
                 return self.create_new_data()
         else:
             return self.create_new_data()
