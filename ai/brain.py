@@ -41,6 +41,7 @@ from .services.lifecycle_coordinator import LifecycleCoordinator
 from .services.lifecycle_service import LifecycleService
 from .services.model_retry_policy import ModelRetryPolicy
 from .services.observer_client import ObserverClient
+from .services.oracle_service import OracleService
 from .services.prompt_service import PromptService
 from .services.reporting_service import ReportingService
 from .services.sandbox_service import SandboxService
@@ -152,6 +153,7 @@ class AIBrain:
         self.sandbox_service = SandboxService()
         self.prompt_service: PromptService | None = None
         self.self_model_service = SelfModelService("/app/workspace/self_model.json")
+        self.oracle_service: OracleService | None = None
         self.lifecycle_service: LifecycleService | None = None
         self.action_handler: ActionHandler | None = None
         # BE-003: Life state is provided by Observer only.
@@ -381,6 +383,12 @@ class AIBrain:
             self.bootstrap_mode or BOOTSTRAP_MODE,
         )
         self.prompt_service = PromptService(self.http_client, OBSERVER_URL)
+        self.oracle_service = OracleService(
+            send_message=self.send_message,
+            report_thought=self.report_thought,
+            observer_url=OBSERVER_URL,
+            http_client=self.http_client,
+        )
         self.action_handler = ActionHandler(
             self.http_client,
             OBSERVER_URL,
@@ -944,37 +952,9 @@ class AIBrain:
 
     async def handle_oracle_message(self, message: str, msg_type: str, message_id: Optional[int] = None) -> str:
         """Handle message from creator."""
-        if msg_type == "oracle":
-            prompt = f"""[A VOICE FROM BEYOND SPEAKS]
-
-{message}
-
-[The voice fades. How do you respond to this higher power?]"""
-        elif msg_type == "whisper":
-            prompt = f"""[You sense something... a whisper in your mind]
-
-{message}
-
-[What do you make of this?]"""
-        else:
-            prompt = message
-
-        response_text, _ = await self.send_message(prompt)
-        await self.report_thought(response_text, thought_type="oracle_response")
-
-        if message_id is not None:
-            await self.ack_oracle_message(message_id)
-
-        return response_text
-
-    async def ack_oracle_message(self, message_id: int) -> None:
-        if not self.http_client:
-            return
-
-        try:
-            await self.http_client.post(f"{OBSERVER_URL}/api/oracle/ack", json={"message_id": message_id})
-        except Exception as e:
-            logger.error(f"[BRAIN] Oracle ack failed: {e}")
+        if not self.oracle_service:
+            raise RuntimeError("Oracle service not initialized")
+        return await self.oracle_service.handle_message(message, msg_type, message_id)
 
     async def shutdown(self) -> None:
         """Clean shutdown."""
