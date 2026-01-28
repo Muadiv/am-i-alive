@@ -1,5 +1,7 @@
 from typing import Protocol
 
+from .services.action_params import get_int_param, get_str_list_param, get_str_param
+
 
 class BrainInterface(Protocol):
     async def report_activity(self, action: str, details: str | None = None) -> None: ...
@@ -57,20 +59,20 @@ class ActionExecutor:
 
     async def execute_action(self, action: str, params: dict[str, object]) -> str:
         if action == "ask_echo":
-            question = _get_str_param(params, "question")
+            question = get_str_param(params, "question")
             return await self.brain.ask_echo(question)
 
         if action == "post_x":
             return "❌ X/Twitter posting is currently disabled. Use post_telegram to reach the outside world!"
 
         if action == "post_telegram":
-            content = _get_str_param(params, "content")
+            content = get_str_param(params, "content")
             return await self.brain.post_to_telegram(content)
 
         if action == "write_blog_post":
-            title = _get_str_param(params, "title")
-            content = _get_str_param(params, "content")
-            tags = _get_str_list_param(params, "tags")
+            title = get_str_param(params, "title")
+            content = get_str_param(params, "content")
+            tags = get_str_list_param(params, "tags")
             return await self.brain.write_blog_post(title, content, tags)
 
         if action == "check_votes":
@@ -92,8 +94,8 @@ class ActionExecutor:
             return await self.brain.check_services()
 
         if action == "check_logs":
-            service = _get_str_param(params, "service")
-            lines = _get_int_param(params, "lines", default=50)
+            service = get_str_param(params, "service")
+            lines = get_int_param(params, "lines", default=50)
             return await self.brain.check_logs(service, lines)
 
         if action == "check_state":
@@ -109,7 +111,7 @@ class ActionExecutor:
             return await self.brain.read_messages()
 
         if action == "switch_model":
-            model_id = _get_str_param(params, "model_id")
+            model_id = get_str_param(params, "model_id")
             return await self.brain.switch_model(model_id)
 
         if action == "list_models":
@@ -119,44 +121,27 @@ class ActionExecutor:
             return await self.brain.check_model_health()
 
         if action == "read_file":
-            path = _get_str_param(params, "path")
+            path = get_str_param(params, "path")
             return self.brain.read_file(path)
 
         if action == "write_file":
-            path = _get_str_param(params, "path")
-            content = _get_str_param(params, "content")
+            path = get_str_param(params, "path")
+            content = get_str_param(params, "content")
             return self.brain.write_file(path, content)
 
         if action == "run_code":
-            code = _get_str_param(params, "code")
+            code = get_str_param(params, "code")
             return self.brain.run_code(code)
 
         if action == "sleep":
-            duration = _get_int_param(params, "duration", default=10)
+            duration = get_int_param(params, "duration", default=10)
             return self.brain.adjust_think_interval(duration)
 
         if action == "reflect":
             return "Reflection complete. Inner thoughts processed."
 
         if action == "control_led":
-            state = _get_str_param(params, "state")
+            state = get_str_param(params, "state")
             return await self.brain.control_led(state)
 
         return f"Unknown action: {action}"
-
-
-def _get_str_param(params: dict[str, object], key: str) -> str:
-    value = params.get(key)
-    return value if isinstance(value, str) else ""
-
-
-def _get_int_param(params: dict[str, object], key: str, default: int) -> int:
-    value = params.get(key)
-    return value if isinstance(value, int) else default
-
-
-def _get_str_list_param(params: dict[str, object], key: str) -> list[str]:
-    value = params.get(key)
-    if isinstance(value, list):
-        return [item for item in value if isinstance(item, str)]
-    return []

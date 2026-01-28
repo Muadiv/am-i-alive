@@ -60,6 +60,7 @@ sudo systemctl restart amialive-observer amialive-ai
 - Read-only tooling: `check_services` (whitelisted systemd status) + `check_logs` (last N lines) with strict allow-list. ✅
 - Lightweight self-model record (traits + 1–2 goals) updated daily and fed into prompts. ✅
 - Added service interfaces for observer/chat clients in [ai/services/interfaces.py](ai/services/interfaces.py:1).
+- Consolidated action parameter parsing helpers in [ai/services/action_params.py](ai/services/action_params.py:1).
 
 ## SUMMARY OF PROGRESS - 2026-01-27
 
