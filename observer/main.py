@@ -973,6 +973,32 @@ async def validate_state_sync_once():
         observer_life = observer_state.get("life_number")
         ai_life = ai_state.get("life_number")
 
+        if observer_life and not ai_life:
+            print("[SYNC] ⚠️  AI missing life_number; sending birth payload")
+            birth_payload = dict(observer_state)
+            birth_payload["previous_death_cause"] = await db.get_previous_death_cause()
+            birth_payload["previous_life"] = {}
+            try:
+                conn = await db.get_db()
+                async with conn.execute(
+                    """
+                    SELECT * FROM deaths ORDER BY id DESC LIMIT 1
+                """
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        birth_payload["previous_life"] = dict(row)
+            except Exception as e:
+                print(f"[SYNC] ⚠️ Could not get previous life details: {e}")
+
+            birth_payload["is_alive"] = True
+            notified = await notify_ai_birth(birth_payload)
+            if notified:
+                print("[SYNC] ✅ Birth payload delivered")
+            else:
+                print("[SYNC] ❌ Birth payload failed after retries")
+            return
+
         if observer_life != ai_life:
             print("[SYNC] ⚠️  DESYNC DETECTED!")
             print(f"[SYNC]    Observer: Life #{observer_life}")
