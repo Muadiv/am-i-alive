@@ -9,6 +9,7 @@ from ai.core.action_processor import ActionProcessor
 from ai.services.action_handler import ActionHandler
 from ai.services.chat_service import ChatService
 from ai.services.echo_service import EchoService
+from ai.services.interfaces import ObserverClientProtocol
 from ai.services.observer_client import ObserverClient
 from ai.services.reporting_service import ReportingService
 
@@ -96,7 +97,7 @@ async def test_action_handler_builds_blog_title():
     handler = ActionHandler(
         http_client=cast(httpx.AsyncClient, DummyHttpClient()),
         observer_url="http://observer",
-        observer_client=cast(httpx.AsyncClient, DummyHttpClient()),
+        observer_client=DummyObserverClient(),
         get_identity=lambda: {"name": "Test"},
         get_life_number=lambda: 1,
         report_activity=report_activity,
@@ -109,3 +110,38 @@ async def test_action_handler_builds_blog_title():
     result = await handler.write_blog_post(title, content, [])
 
     assert "Blog post" in result
+
+
+class DummyObserverClient(ObserverClientProtocol):
+    async def report_thought(self, payload: dict[str, Any]) -> None:
+        return None
+
+    async def report_activity(self, payload: dict[str, Any]) -> None:
+        return None
+
+    async def send_heartbeat(self, payload: dict[str, Any]) -> None:
+        return None
+
+    async def notify_birth(self, payload: dict[str, Any]) -> httpx.Response:
+        raise RuntimeError("not used")
+
+    async def fetch_system_stats(self) -> dict[str, Any]:
+        return {}
+
+    async def fetch_messages_count(self) -> int | None:
+        return 0
+
+    async def fetch_blog_post_count(self) -> int | None:
+        return 0
+
+    async def fetch_votes(self) -> dict[str, Any]:
+        return {}
+
+    async def fetch_messages(self) -> dict[str, Any]:
+        return {"messages": []}
+
+    async def mark_messages_read(self, message_ids: list[int]) -> None:
+        return None
+
+    async def fetch_state(self) -> dict[str, Any]:
+        return {}

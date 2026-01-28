@@ -6,6 +6,7 @@ from typing import Any, Callable
 import httpx
 
 from .blog_service import BlogService
+from .interfaces import ObserverClientProtocol
 from .message_service import MessageService
 from .telegram_service import TelegramService
 
@@ -15,7 +16,7 @@ class ActionHandler:
         self,
         http_client: httpx.AsyncClient,
         observer_url: str,
-        observer_client,
+        observer_client: ObserverClientProtocol,
         get_identity: Callable[[], dict[str, Any] | None],
         get_life_number: Callable[[], int],
         report_activity,

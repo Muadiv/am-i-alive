@@ -4,8 +4,10 @@ from typing import Any, Optional
 
 import httpx
 
+from .interfaces import ObserverClientProtocol
 
-class ObserverClient:
+
+class ObserverClient(ObserverClientProtocol):
     def __init__(self, http_client: httpx.AsyncClient, observer_url: str) -> None:
         self.http_client = http_client
         self.observer_url = observer_url

@@ -4,8 +4,10 @@ from typing import Any
 
 import httpx
 
+from .interfaces import ChatServiceProtocol
 
-class ChatService:
+
+class ChatService(ChatServiceProtocol):
     def __init__(self, http_client: httpx.AsyncClient, api_url: str, headers: dict[str, str]) -> None:
         self.http_client = http_client
         self.api_url = api_url
