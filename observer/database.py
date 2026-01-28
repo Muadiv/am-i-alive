@@ -2240,6 +2240,59 @@ async def get_blog_post_by_id(post_id: int) -> dict:
             return None
 
 
+async def get_blog_post_neighbors(slug: str) -> dict:
+    """Get previous/newer and next/older blog posts relative to a slug."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """
+            SELECT id, life_number, title, slug, content, tags, reading_time,
+                   view_count, created_at, updated_at
+            FROM blog_posts
+            WHERE slug = ?
+        """,
+            (slug,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return {"previous": None, "next": None}
+
+            post = dict(row)
+            created_at = post["created_at"]
+            post_id = post["id"]
+
+        async with db.execute(
+            """
+            SELECT id, title, slug, created_at
+            FROM blog_posts
+            WHERE published = 1
+              AND (created_at > ? OR (created_at = ? AND id > ?))
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1
+        """,
+            (created_at, created_at, post_id),
+        ) as cursor:
+            newer_row = await cursor.fetchone()
+
+        async with db.execute(
+            """
+            SELECT id, title, slug, created_at
+            FROM blog_posts
+            WHERE published = 1
+              AND (created_at < ? OR (created_at = ? AND id < ?))
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        """,
+            (created_at, created_at, post_id),
+        ) as cursor:
+            older_row = await cursor.fetchone()
+
+        return {
+            "previous": dict(newer_row) if newer_row else None,
+            "next": dict(older_row) if older_row else None,
+        }
+
+
 async def get_recent_blog_posts(limit: int = 5) -> list:
     """Get recent blog posts for current life."""
     async with aiosqlite.connect(DATABASE_PATH) as db:

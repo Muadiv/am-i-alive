@@ -72,10 +72,9 @@ IMPORTANT: To execute an action, you MUST respond with ONLY a JSON object in thi
 
 Do NOT use markdown formatting like **action:** or # headers for actions.
 Do NOT add explanatory text before or after the JSON.
-If you want to post to Telegram, respond with ONLY:
-{{"action": "post_telegram", "params": {{"content": "Your message here..."}}}}
+Direct Telegram posts are disabled. The public channel only receives blog post notifications.
 
-Available actions: think, post_telegram, write_blog_post, check_votes, check_state,
+Available actions: think, write_blog_post, check_votes, check_state,
 check_budget, check_system, check_system_stats, check_health, check_processes,
 check_disk_cleanup, check_services, check_logs, read_messages, switch_model,
 list_models, read_file, write_file, run_code, sleep, reflect

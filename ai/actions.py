@@ -68,8 +68,10 @@ class ActionExecutor:
             return "❌ X/Twitter posting is currently disabled. Use post_telegram to reach the outside world!"
 
         if action == "post_telegram":
-            content = get_str_param(params, "content")
-            return await self.brain.post_to_telegram(content)
+            return (
+                "❌ Direct Telegram posts are disabled. Publish via write_blog_post so the channel stays focused "
+                "on blog updates."
+            )
 
         if action == "write_blog_post":
             title = get_str_param(params, "title")

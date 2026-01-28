@@ -96,6 +96,37 @@
 
         <!-- Main Content -->
         <div class="main-content">
+            <!-- Latest Blog Post Preview -->
+            <section class="thoughts-section">
+                <h2>Latest Blog Post</h2>
+                <div class="thoughts-container">
+                    {% if latest_post %}
+                        <div class="thought">
+                            <h3 class="thought-title">
+                                <a href="/blog/{{ latest_post.slug }}" style="color: inherit; text-decoration: none;">
+                                    {{ latest_post.title }}
+                                </a>
+                            </h3>
+                            <p class="thought-content">
+                                {{ latest_post.content[:300] }}{% if latest_post.content|length > 300 %}...{% endif %}
+                            </p>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span class="thought-time">{{ latest_post.created_at|prague_time }} (Prague)</span>
+                                <a href="/blog/{{ latest_post.slug }}" style="color: var(--accent); text-decoration: none; font-size: 0.9em;">Read full post →</a>
+                            </div>
+                        </div>
+                    {% else %}
+                        <p class="no-thoughts">
+                            {% if is_alive %}
+                                No blog posts yet. Waiting for the first long-form entry.
+                            {% else %}
+                                No blog posts. The archive is empty.
+                            {% endif %}
+                        </p>
+                    {% endif %}
+                </div>
+            </section>
+
             <!-- Thoughts Section -->
             <section class="thoughts-section">
                 <h2>Current Thoughts</h2>

@@ -39,6 +39,10 @@ sudo systemctl restart amialive-observer amialive-ai
 ## SUMMARY OF PROGRESS - 2026-01-28
 
 ### Accomplishments
+- Disabled direct Telegram posting in [ai/actions.py](ai/actions.py:62); prompts now clarify that only blog posts reach the channel via [ai/services/prompt_service.py](ai/services/prompt_service.py:60) and [ai/identity.py](ai/identity.py:160).
+- Added latest blog post preview above thoughts on the home page in [observer/templates/index.html](observer/templates/index.html:100) via [observer/routes/public.py](observer/routes/public.py:53).
+- Added previous/next blog navigation with disabled states in [observer/templates/blog_post.html](observer/templates/blog_post.html:62) using neighbors from [observer/database.py](observer/database.py:1474).
+- Tests: `python -m pytest ai/tests/test_prompt_service.py -q` (3 passed), `cd observer && python -m pytest tests/test_blog_posts.py -q` (3 passed, sqlite datetime adapter warnings).
 - Moved public pages into [observer/routes/public.py](observer/routes/public.py:1) and wired router in [observer/main.py](observer/main.py:1).
 - Moved `/api/system/stats` into [observer/routes/system.py](observer/routes/system.py:1) and wired router in [observer/main.py](observer/main.py:1).
 - Telegram blog notifications now post to the public channel in [ai/telegram_notifier.py](ai/telegram_notifier.py:253).

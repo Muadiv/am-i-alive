@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 try:
     from database import get_all_blog_posts as get_all_blog_posts_db
     from database import get_blog_post_by_slug as get_blog_post_by_slug_db
+    from database import get_blog_post_neighbors as get_blog_post_neighbors_db
     from database import get_current_life_blog_posts as get_current_life_blog_posts_db
     from database import get_current_state as get_current_state_db
     from database import get_death_count as get_death_count_db
@@ -20,6 +21,7 @@ try:
 except ImportError:
     from ..database import get_all_blog_posts as get_all_blog_posts_db
     from ..database import get_blog_post_by_slug as get_blog_post_by_slug_db
+    from ..database import get_blog_post_neighbors as get_blog_post_neighbors_db
     from ..database import get_current_life_blog_posts as get_current_life_blog_posts_db
     from ..database import get_current_state as get_current_state_db
     from ..database import get_death_count as get_death_count_db
@@ -66,6 +68,7 @@ async def home(request: Request):
     site_stats = await get_site_stats_db()
 
     recent_posts = await get_recent_blog_posts_db(5)
+    latest_post = recent_posts[0] if recent_posts else None
 
     return templates.TemplateResponse(
         "index.html",
@@ -75,6 +78,7 @@ async def home(request: Request):
             "votes": votes,
             "thoughts": thoughts,
             "recent_posts": recent_posts,
+            "latest_post": latest_post,
             "death_count": death_count,
             "message_count": message_count,
             "site_stats": site_stats,
@@ -196,9 +200,11 @@ async def blog_post(request: Request, slug: str):
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
+    neighbors = await get_blog_post_neighbors_db(slug)
+
     post["html_content"] = markdown2.markdown(post["content"], extras=["fenced-code-blocks", "tables", "header-ids"])
     post["html_content"] = bleach.clean(
         post["html_content"], tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES, strip=True
     )
 
-    return templates.TemplateResponse("blog_post.html", {"request": request, "post": post})
+    return templates.TemplateResponse("blog_post.html", {"request": request, "post": post, "neighbors": neighbors})
