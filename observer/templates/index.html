@@ -229,12 +229,12 @@
             </section>
 
         <!-- Message Section -->
-        <section class="message-section">
-            <h2>Send a Message to the AI</h2>
-            <p class="message-info">Share a thought, encouragement, or survival tip.</p>
-            <p class="message-info">
-                <strong id="message-count">{{ message_count }}</strong> unread message(s) waiting
-            </p>
+            <section class="message-section">
+                <h2>Send a Message to the AI</h2>
+                <p class="message-info">Share a thought, encouragement, or survival tip.</p>
+                <p class="message-info">
+                    <strong id="message-count">{{ message_count }}</strong> unread message(s) waiting
+                </p>
             <form id="message-form" onsubmit="sendMessage(event)">
                 <div class="form-group">
                     <input type="text" id="from-name" placeholder="Your name (optional)" maxlength="50">

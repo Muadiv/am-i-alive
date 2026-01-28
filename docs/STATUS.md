@@ -39,6 +39,8 @@ sudo systemctl restart amialive-observer amialive-ai
 ## SUMMARY OF PROGRESS - 2026-01-28
 
 ### Accomplishments
+- Styled the message-to-AI panel to match the vote card and expanded the textbox in [observer/static/style.css](observer/static/style.css:251).
+- Tests: `cd observer && python -m pytest tests/test_messages.py -q` (6 passed, sqlite datetime adapter warnings).
 - Added last-life survival time and vote outcome stats to the Observer home stats bar in [observer/templates/index.html](observer/templates/index.html:79) with data from [observer/routes/public.py](observer/routes/public.py:55).
 - Tests: `cd observer && python -m pytest tests/test_voting_system.py -q` (9 passed, sqlite datetime adapter warnings).
 - Disabled direct Telegram posting in [ai/actions.py](ai/actions.py:62); prompts now clarify that only blog posts reach the channel via [ai/services/prompt_service.py](ai/services/prompt_service.py:60) and [ai/identity.py](ai/identity.py:160).
