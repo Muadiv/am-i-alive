@@ -16,11 +16,11 @@ import aiosqlite
 import bleach
 import database as db
 import httpx
-import markdown2
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from routes.public import router as public_router
 from routes.system import router as system_router
 from services.broadcast import BroadcastManager
 from sse_starlette.sse import EventSourceResponse
@@ -60,6 +60,7 @@ except ImportError:
 
 app.include_router(health_router, prefix="/api")
 app.include_router(system_router)
+app.include_router(public_router)
 
 # Templates and static files
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
@@ -308,166 +309,13 @@ def hash_ip(ip: str) -> str:
     return hashlib.sha256(f"{ip}{IP_SALT}".encode()).hexdigest()
 
 
+# Exported aliases for tests that import routes from main.
+if True:  # noqa: SIM114
+    from routes.public import budget_page as budget_page  # noqa: F401,E402
+
 # =============================================================================
 # PUBLIC PAGES
 # =============================================================================
-
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    """Main page - see the AI, vote, watch it live."""
-    # BE-001: Track visitors
-    client_ip = get_client_ip(request) or "unknown"
-    ip_hash = hash_ip(client_ip)[:16]
-    await db.track_visitor(ip_hash)
-
-    state = await db.get_current_state()
-    votes = await db.get_vote_counts()
-    thoughts = await db.get_recent_thoughts(10)
-    death_count = await db.get_death_count()
-    message_count = await db.get_unread_message_count()
-    site_stats = await db.get_site_stats()
-
-    # Get recent blog posts for "Current Thoughts" section
-    recent_posts = await db.get_recent_blog_posts(5)
-
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "state": state,
-            "votes": votes,
-            "thoughts": thoughts,
-            "recent_posts": recent_posts,
-            "death_count": death_count,
-            "message_count": message_count,
-            "site_stats": site_stats,
-            "is_alive": state.get("is_alive", False),
-        },
-    )
-
-
-@app.get("/history", response_class=HTMLResponse)
-async def history(request: Request):
-    """View past lives."""
-    lives = await db.get_life_history()
-    death_count = await db.get_death_count()
-
-    return templates.TemplateResponse("history.html", {"request": request, "lives": lives, "death_count": death_count})
-
-
-@app.get("/budget", response_class=HTMLResponse)
-async def budget_page(request: Request):
-    """View AI's budget and spending."""
-    # Get budget data from AI
-    budget_data = {}
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{AI_API_URL}/budget", timeout=5.0)
-            budget_data = response.json()
-            # BE-002: Ensure token breakdown fields exist for budget display
-            budget_data.setdefault("models", [])
-            budget_data.setdefault(
-                "totals", {"total_input_tokens": 0, "total_output_tokens": 0, "total_tokens": 0, "total_cost": 0.0}
-            )
-            budget_data.setdefault(
-                "current_life",
-                {
-                    "life_number": budget_data.get("lives", 0),
-                    "total_input_tokens": 0,
-                    "total_output_tokens": 0,
-                    "total_tokens": 0,
-                    "total_cost": 0.0,
-                },
-            )
-            budget_data.setdefault(
-                "all_time",
-                {
-                    "total_input_tokens": 0,
-                    "total_output_tokens": 0,
-                    "total_tokens": 0,
-                    "total_cost": 0.0,
-                    "total_lives": budget_data.get("lives", 0),
-                },
-            )
-    except Exception as e:
-        print(f"[BUDGET] ⚠️ Failed to fetch budget data: {e}")
-        budget_data = {"error": "Could not fetch budget data"}
-
-    return templates.TemplateResponse("budget.html", {"request": request, "budget": budget_data})
-
-
-@app.get("/about", response_class=HTMLResponse)
-async def about_page(request: Request):
-    """About page explaining the experiment."""
-    return templates.TemplateResponse("about.html", {"request": request})
-
-
-@app.get("/blog", response_class=HTMLResponse)
-async def blog_page(request: Request):
-    """Blog homepage - current life's posts only."""
-    state = await db.get_current_state()
-    posts = await db.get_current_life_blog_posts(state["life_number"], limit=20)
-
-    # Add memory fragments at the top if life > 1
-    memories = []
-    if state["life_number"] > 1:
-        # Load memory fragments from previous life
-        try:
-            memory_data = await db.get_life_history()
-            if memory_data:
-                # Get most recent dead life
-                previous_life = [life for life in memory_data if life["life_number"] == state["life_number"] - 1]
-                if previous_life and previous_life[0].get("summary"):
-                    # Parse summary into fragments
-                    summary = previous_life[0]["summary"]
-                    memories = [s.strip() for s in summary.split(";") if s.strip()]
-        except Exception:
-            memories = []
-
-    return templates.TemplateResponse(
-        "blog.html", {"request": request, "posts": posts, "state": state, "memories": memories, "is_current_life": True}
-    )
-
-
-@app.get("/blog/history", response_class=HTMLResponse)
-async def blog_history(request: Request):
-    """Archive of ALL blog posts from all lives."""
-    all_posts = await db.get_all_blog_posts(limit=100)
-
-    # Group by life_number
-    posts_by_life = {}
-    for post in all_posts:
-        life = post["life_number"]
-        if life not in posts_by_life:
-            posts_by_life[life] = []
-        posts_by_life[life].append(post)
-
-    return templates.TemplateResponse(
-        "blog_history.html", {"request": request, "posts_by_life": posts_by_life, "total_posts": len(all_posts)}
-    )
-
-
-@app.get("/chronicle", response_class=HTMLResponse)
-async def chronicle(request: Request):
-    """Public Chronicle page showing notable events timeline."""
-    return templates.TemplateResponse("chronicle.html", {"request": request})
-
-
-@app.get("/blog/{slug}", response_class=HTMLResponse)
-async def blog_post(request: Request, slug: str):
-    """Individual blog post page."""
-    post = await db.get_blog_post_by_slug(slug)
-    if not post:
-        raise HTTPException(status_code=404, detail="Post not found")
-
-    # Convert markdown to HTML
-    post["html_content"] = markdown2.markdown(post["content"], extras=["fenced-code-blocks", "tables", "header-ids"])
-    post["html_content"] = bleach.clean(
-        post["html_content"], tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES, strip=True
-    )
-
-    return templates.TemplateResponse("blog_post.html", {"request": request, "post": post})
 
 
 @app.get("/god", response_class=HTMLResponse)
