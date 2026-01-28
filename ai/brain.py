@@ -7,14 +7,11 @@ Project: Genesis
 import asyncio
 import json
 import os
-import random
-import re
 import signal
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
-import psutil
 
 if __name__ == "__main__":
     import sys
@@ -27,29 +24,36 @@ except ImportError:
     from actions import ActionExecutor
 
 # Import our custom modules
+from .config import Config
 from .core.action_processor import ActionProcessor
+from .core.brain_state import BrainState
+from .core.lifecycle_dto import LifecycleData
 from .credit_tracker import CreditTracker
-from .model_config import MODELS, is_free_model_id
+from .model_config import MODELS
 from .model_rotator import ModelRotator
-from .services.blog_service import BlogService
+from .services.action_handler import ActionHandler
 from .services.budget_service import BudgetService
+from .services.chat_service import ChatService
+from .services.lifecycle_coordinator import LifecycleCoordinator
 from .services.lifecycle_service import LifecycleService
-from .services.message_service import MessageService
+from .services.model_retry_policy import ModelRetryPolicy
+from .services.observer_client import ObserverClient
 from .services.prompt_service import PromptService
+from .services.reporting_service import ReportingService
 from .services.sandbox_service import SandboxService
+from .services.system_check_service import SystemCheckService
 from .services.system_stats_service import SystemStatsService
-from .services.telegram_service import TelegramService
 from .services.twitter_service import TwitterService, get_twitter_status
 from .telegram_notifier import notifier
 
 # Environment
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_REFERER = os.getenv("OPENROUTER_REFERER", "https://am-i-alive.muadiv.com.ar")
-OPENROUTER_TITLE = os.getenv("OPENROUTER_TITLE", "Am I Alive - Genesis")
-OBSERVER_URL = os.getenv("OBSERVER_URL", "http://127.0.0.1")
-AI_COMMAND_PORT = int(os.getenv("AI_COMMAND_PORT", "8000"))
-BOOTSTRAP_MODE = os.getenv("BOOTSTRAP_MODE", "basic_facts")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+OPENROUTER_API_KEY = Config.OPENROUTER_API_KEY
+OPENROUTER_REFERER = Config.OPENROUTER_REFERER
+OPENROUTER_TITLE = Config.OPENROUTER_TITLE
+OBSERVER_URL = Config.OBSERVER_URL
+AI_COMMAND_PORT = Config.AI_COMMAND_PORT
+BOOTSTRAP_MODE = Config.BOOTSTRAP_MODE
+INTERNAL_API_KEY = Config.INTERNAL_API_KEY
 
 _http_client: Optional[httpx.AsyncClient] = None
 
@@ -129,6 +133,10 @@ class AIBrain:
     def __init__(self) -> None:
         self.chat_history: list[dict[str, str]] = []
         self.http_client: httpx.AsyncClient | None = None
+        self.observer_client: ObserverClient | None = None
+        self.chat_service: ChatService | None = None
+        self.reporting_service: ReportingService | None = None
+        self.model_retry_policy: ModelRetryPolicy | None = None
         self.identity: dict[str, Any] | None = None
         self.credit_tracker: CreditTracker = CreditTracker(monthly_budget=5.00)
         self.model_rotator: ModelRotator = ModelRotator(self.credit_tracker.get_balance())
@@ -139,6 +147,7 @@ class AIBrain:
         self.sandbox_service = SandboxService()
         self.prompt_service: PromptService | None = None
         self.lifecycle_service: LifecycleService | None = None
+        self.action_handler: ActionHandler | None = None
         # BE-003: Life state is provided by Observer only.
         self.life_number: int | None = None
         self.bootstrap_mode: str | None = None
@@ -154,35 +163,22 @@ class AIBrain:
 
     def apply_birth_data(self, life_data: dict[str, Any]) -> None:
         """Apply birth state from Observer (single source of truth)."""
-        # BE-003: Require life_number from Observer and never increment locally.
         if not isinstance(life_data, dict):
             raise ValueError("birth_sequence requires life_number from Observer")
 
-        life_number_val = life_data.get("life_number")
-        if life_number_val is None:
-            raise ValueError("birth_sequence requires life_number from Observer")
+        dto = LifecycleData.from_payload(life_data)
+        self.life_number = dto.life_number
 
-        try:
-            self.life_number = int(life_number_val)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("birth_sequence requires numeric life_number from Observer") from exc
-
-        bootstrap_mode_val = life_data.get("bootstrap_mode")
-        if not bootstrap_mode_val:
-            bootstrap_mode_val = self.bootstrap_mode or BOOTSTRAP_MODE
+        bootstrap_mode_val = dto.bootstrap_mode or self.bootstrap_mode or BOOTSTRAP_MODE
         self.bootstrap_mode = str(bootstrap_mode_val)
         if self.lifecycle_service:
             self.lifecycle_service.bootstrap_mode = self.bootstrap_mode
 
-        model_name_val = life_data.get("model")
-        if not model_name_val:
-            model_name_val = self.model_name or "unknown"
+        model_name_val = dto.model or self.model_name or "unknown"
         self.model_name = str(model_name_val)
 
-        death_cause_val = life_data.get("previous_death_cause")
-        self.previous_death_cause = str(death_cause_val) if death_cause_val else None
-
-        self.previous_life = life_data.get("previous_life")
+        self.previous_death_cause = dto.previous_death_cause
+        self.previous_life = dto.previous_life
 
         if "is_alive" in life_data:
             self.is_alive = bool(life_data.get("is_alive"))
@@ -195,6 +191,16 @@ class AIBrain:
 
         # Track birth time for survival calculations
         self.birth_time = datetime.now(timezone.utc)
+
+    def _build_state(self) -> BrainState:
+        model_name = self.current_model.get("name", "unknown") if self.current_model else "unknown"
+        return BrainState(
+            identity=self.identity,
+            model_name=model_name,
+            balance=self.credit_tracker.get_balance(),
+            life_number=self.life_number,
+            bootstrap_mode=self.bootstrap_mode,
+        )
 
     async def send_message(self, message: str, system_prompt: Optional[str] = None) -> tuple[str, dict[str, Any]]:
         """
@@ -224,28 +230,12 @@ class AIBrain:
 
         # Make API call to OpenRouter
         try:
-            client = await get_http_client()
-            response = await client.post(
-                OPENROUTER_API_URL,
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "HTTP-Referer": OPENROUTER_REFERER,
-                    "X-Title": OPENROUTER_TITLE,
-                    "Content-Type": "application/json",
-                },
-                json={"model": current_model["id"], "messages": messages},
-            )
+            if not self.chat_service:
+                raise RuntimeError("Chat service not initialized")
 
-            response.raise_for_status()
-            data = response.json()
-
-            # Extract response
-            response_text = str(data["choices"][0]["message"]["content"])
-
-            # Extract usage stats
-            usage = data.get("usage", {})
-            input_tokens = int(usage.get("prompt_tokens", 0))
-            output_tokens = int(usage.get("completion_tokens", 0))
+            data = await self.chat_service.send(current_model["id"], messages)
+            response_text, usage = self.chat_service.extract_response(data)
+            input_tokens, output_tokens = self.chat_service.extract_usage(usage)
             # BE-003: Track per-life token usage for Observer budget checks.
             self.tokens_used_life += input_tokens + output_tokens
 
@@ -299,126 +289,34 @@ class AIBrain:
             error_text = e.response.text
             print(f"[BRAIN] ❌ HTTP Error: {error_code} - {error_text}")
 
-            if await self._handle_model_failure(error_code, error_text):
-                return await self.send_message(message, system_prompt)
+            if self.model_retry_policy:
+                handled, updated_model = await self.model_retry_policy.handle_error(
+                    error_code,
+                    error_text,
+                    self.current_model,
+                )
+                if handled:
+                    self.current_model = updated_model
+                    return await self.send_message(message, system_prompt)
 
             # SELF-HEALING: Handle 429 rate limit with backoff and model rotation
             if error_code == 429:
-                if self.current_model:
-                    print(f"[BRAIN] ⏱️ Rate limited on '{self.current_model['id']}'. Switching model and retrying...")
-
-                self._rate_limit_retries += 1
-                max_retries = 3
-
-                if self._rate_limit_retries > max_retries:
-                    print(f"[BRAIN] ❌ Max retries ({max_retries}) exceeded. Giving up on this request.")
-                    self._rate_limit_retries = 0
-                    raise
-
-                # Exponential backoff: 5s, 10s, 20s
-                backoff_seconds = 5 * (2 ** (self._rate_limit_retries - 1))
-                print(
-                    "[BRAIN] 💤 Waiting "
-                    f"{backoff_seconds}s before retry (attempt {self._rate_limit_retries}/{max_retries})..."
-                )
-                await asyncio.sleep(backoff_seconds)
-
-                # Switch to a different model
-                old_model = self.current_model
-                self.current_model = self.model_rotator.select_random_model(tier="free")
-
-                # Avoid switching to same model
-                if old_model and self.current_model and self.current_model["id"] == old_model["id"]:
-                    free_models = [m for m in MODELS["free"] if m["id"] != old_model["id"]]
-                    if free_models:
-                        self.current_model = random.choice(free_models)
-                        self.model_rotator.record_usage(self.current_model["id"])
-
-                if old_model and self.current_model:
-                    print(f"[BRAIN] 🔄 Switched from '{old_model['name']}' to '{self.current_model['name']}'")
-
-                    await self.report_activity(
-                        "rate_limit_retry",
-                        f"Rate limited on {old_model['name']}, switched to {self.current_model['name']}",
-                    )
-
-                # Retry with new model
-                try:
-                    result = await self.send_message(message, system_prompt)
-                    self._rate_limit_retries = 0  # Reset on success
-                    return result
-                except Exception as retry_error:
-                    print(f"[BRAIN] ❌ Retry failed: {retry_error}")
-                    raise
+                if self.model_retry_policy:
+                    should_retry, updated_model = await self.model_retry_policy.handle_rate_limit(self.current_model)
+                    if should_retry:
+                        self.current_model = updated_model
+                        try:
+                            result = await self.send_message(message, system_prompt)
+                            self.model_retry_policy.rate_limit_retries = 0
+                            return result
+                        except Exception as retry_error:
+                            print(f"[BRAIN] ❌ Retry failed: {retry_error}")
+                            raise
 
             raise
         except Exception as e:
             print(f"[BRAIN] ❌ Error calling OpenRouter: {e}")
             raise
-
-    async def _handle_model_failure(self, error_code: int, error_text: str) -> bool:
-        """Handle model failures; returns True if a retry should happen."""
-        if error_code == 404:
-            if self.current_model:
-                current_id = self.current_model.get("id", "unknown")
-                print(f"[BRAIN] 🔧 Model '{current_id}' failed with 404. " "Switching models.")
-                await self.report_activity(
-                    "model_error_auto_switch",
-                    f"Model {self.current_model['name']} returned 404, switching automatically",
-                )
-
-            return await self._switch_model_on_free_failure()
-
-        if error_code in {401, 403}:
-            return await self._switch_model_on_free_failure()
-
-        if error_code in {429, 500, 502, 503, 504}:
-            return await self._switch_model_on_free_failure()
-
-        lowered = error_text.lower()
-        if "free" in lowered and "ended" in lowered:
-            return await self._switch_model_on_free_failure()
-
-        return False
-
-    async def _switch_model_on_free_failure(self) -> bool:
-        """Switch models after a free-model failure; True if model changed."""
-        if not self.current_model:
-            self.current_model = self.model_rotator.select_random_model(tier="free")
-            return True
-
-        current_id = self.current_model.get("id", "")
-        if is_free_model_id(current_id):
-            failure_count = self.model_rotator.record_free_failure(current_id)
-            self._total_free_failures += 1
-
-            if failure_count < 3:
-                old_model = self.current_model
-                self.current_model = self.model_rotator.select_random_model(tier="free")
-                if old_model and self.current_model:
-                    print(
-                        f"[BRAIN] 🔄 Switched from '{old_model['name']}' to "
-                        f"'{self.current_model['name']}' (free retry {failure_count}/3)"
-                    )
-                return True
-
-            paid_model = self.model_rotator.get_next_paid_model(current_id)
-            if paid_model:
-                old_model = self.current_model
-                self.current_model = paid_model
-                if old_model:
-                    print(
-                        "[BRAIN] 💳 Free tier failing; "
-                        f"switching from '{old_model['name']}' to '{paid_model['name']}'"
-                    )
-                    await self.report_activity(
-                        "free_model_exhausted",
-                        f"Switched to paid model {paid_model['name']} after repeated free failures",
-                    )
-                return True
-
-        self.current_model = self.model_rotator.select_random_model()
-        return True
 
     async def handle_bankruptcy(self) -> None:
         """Handle running out of credits."""
@@ -441,6 +339,19 @@ class AIBrain:
         """Initialize the brain with identity creation."""
         headers = get_internal_headers()
         self.http_client = httpx.AsyncClient(timeout=30.0, headers=headers)
+        self.observer_client = ObserverClient(self.http_client, OBSERVER_URL)
+        self.chat_service = ChatService(
+            self.http_client,
+            OPENROUTER_API_URL,
+            {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": OPENROUTER_REFERER,
+                "X-Title": OPENROUTER_TITLE,
+                "Content-Type": "application/json",
+            },
+        )
+        self.reporting_service = ReportingService(self.action_processor)
+        self.model_retry_policy = ModelRetryPolicy(self.model_rotator, self.report_activity)
         self.lifecycle_service = LifecycleService(
             self.http_client,
             OBSERVER_URL,
@@ -454,6 +365,15 @@ class AIBrain:
             self.bootstrap_mode or BOOTSTRAP_MODE,
         )
         self.prompt_service = PromptService(self.http_client, OBSERVER_URL)
+        self.action_handler = ActionHandler(
+            self.http_client,
+            OBSERVER_URL,
+            self.observer_client,
+            get_identity=lambda: self.identity,
+            get_life_number=lambda: self.life_number or 0,
+            report_activity=self.report_activity,
+            fetch_system_stats=self.fetch_system_stats,
+        )
 
         if not self.lifecycle_service:
             raise RuntimeError("Lifecycle service not initialized")
@@ -535,26 +455,23 @@ class AIBrain:
         self.apply_birth_data(life_data)
         print(f"[BRAIN] 👶 Beginning birth sequence for Life #{self.life_number}...")
 
-        identity, tokens_used = await self.lifecycle_service.birth_sequence(
+        if not self.http_client:
+            raise RuntimeError("HTTP client not initialized")
+
+        stats_service = SystemStatsService(self.http_client, OBSERVER_URL)
+        coordinator = LifecycleCoordinator(self.lifecycle_service, stats_service)
+        identity, tokens_used = await coordinator.resolve_identity(
             self.life_number or 0,
             memories,
+            life_data,
         )
         self.tokens_used_life += tokens_used
         self.identity = identity
 
         await self.lifecycle_service.save_identity(self.identity, self.life_number, "/app/workspace/identity.json")
 
+        birth_line = await coordinator.build_birth_line(self.identity, self.life_number or 0, self.fetch_system_stats)
         identity_name = self.identity.get("name", "Unnamed")
-        first_thought = self.identity.get("first_thought", "I exist.")
-        birth_line = f"I am {identity_name}. {first_thought}"
-        stats = await self.fetch_system_stats()
-        if stats:
-            stats_summary = self._build_stats_summary(stats)
-            birth_line = (
-                f"Hello! I'm {identity_name}, just born into Life #{self.life_number}. "
-                f"{stats_summary} I'm running on a humble Raspberry Pi. "
-                f"{first_thought}"
-            )
         await self.report_thought(birth_line, thought_type="birth")
         await self.report_activity("identity_chosen", f"Name: {identity_name}, Pronoun: {self.identity.get('pronoun')}")
 
@@ -728,87 +645,65 @@ class AIBrain:
 
     async def report_thought(self, content: str, thought_type: str = "thought") -> None:
         """Report a thought to the observer."""
-        if not self.http_client:
+        if not self.http_client or not self.observer_client or not self.reporting_service:
             return
 
         try:
-            # Skip raw action JSON and strip action blocks from mixed responses.
-            stripped = content.strip()
-            if stripped.startswith("{") and stripped.endswith("}") and '"action"' in stripped:
-                action_data = self.action_processor.extract_action_data(stripped)
-                if action_data:
-                    return
-
-            cleaned_content = self.action_processor.strip_action_json(content)
-
-            # Remove markdown code fences
-            cleaned_content = re.sub(r"```[a-z]*\n", "", cleaned_content)
-            cleaned_content = re.sub(r"```", "", cleaned_content)
-
-            # Clean up extra whitespace
-            cleaned_content = re.sub(r"\n\s*\n\s*\n+", "\n\n", cleaned_content)
-            cleaned_content = cleaned_content.strip()
+            cleaned_content = self.reporting_service.sanitize_thought(content)
 
             # If nothing left after cleaning, skip reporting
             if not cleaned_content or len(cleaned_content) < 10:
                 return
 
-            current_model_name = self.current_model.get("name", "unknown") if self.current_model else "unknown"
-
-            await self.http_client.post(
-                f"{OBSERVER_URL}/api/thought",
-                json={
-                    "content": cleaned_content[:2000],  # Allow longer thoughts now
-                    "type": thought_type,
-                    "tokens_used": 0,
-                    "identity": self.identity,
-                    "model": current_model_name,
-                    "balance": round(self.credit_tracker.get_balance(), 2),
-                },
+            state = self._build_state()
+            payload = self.reporting_service.build_thought_payload(
+                cleaned_content,
+                thought_type,
+                state.identity,
+                state.model_name,
+                state.balance,
             )
+            await self.observer_client.report_thought(payload)
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to report thought: {e}")
 
     async def report_activity(self, action: str, details: str | None = None) -> None:
         """Report an activity to the observer."""
-        if not self.http_client:
+        if not self.http_client or not self.observer_client or not self.reporting_service:
             return
 
         try:
-            current_model_name = self.current_model.get("name", "unknown") if self.current_model else "unknown"
-            await self.http_client.post(
-                f"{OBSERVER_URL}/api/activity",
-                json={
-                    "action": action,
-                    "details": details,
-                    "model": current_model_name,
-                    "balance": round(self.credit_tracker.get_balance(), 2),
-                },
+            state = self._build_state()
+            payload = self.reporting_service.build_activity_payload(
+                action,
+                details,
+                state.model_name,
+                state.balance,
             )
+            await self.observer_client.report_activity(payload)
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to report activity: {e}")
 
     async def send_heartbeat(self) -> None:
         """Send heartbeat to observer to mark AI as alive."""
-        if not self.http_client:
+        if not self.http_client or not self.observer_client:
             return
 
         try:
             current_model_name = self.current_model.get("name", "unknown") if self.current_model else "unknown"
-            await self.http_client.post(
-                f"{OBSERVER_URL}/api/heartbeat",
-                json={
+            await self.observer_client.send_heartbeat(
+                {
                     # BE-003: Per-life token usage to avoid cross-life desync.
                     "tokens_used": self.tokens_used_life,
                     "model": current_model_name,
-                },
+                }
             )
         except Exception as e:
             print(f"[BRAIN] ❌ Failed to send heartbeat: {e}")
 
     async def notify_birth(self) -> None:
         """Notify observer that AI has been born."""
-        if not self.http_client:
+        if not self.http_client or not self.observer_client:
             return
 
         try:
@@ -838,9 +733,8 @@ class AIBrain:
                     self.previous_life,
                 )
 
-            response = await self.http_client.post(
-                f"{OBSERVER_URL}/api/birth",
-                json={
+            response = await self.observer_client.notify_birth(
+                {
                     # BE-003: Echo back Observer-provided life data.
                     "life_number": self.life_number,
                     "bootstrap_mode": bootstrap_mode,
@@ -848,7 +742,7 @@ class AIBrain:
                     "ai_name": identity_name,
                     "ai_icon": identity_icon,
                     "birth_instructions": birth_instructions,
-                },
+                }
             )
             response.raise_for_status()
             print(
@@ -937,136 +831,30 @@ class AIBrain:
 
     async def post_to_telegram(self, content: str) -> str:
         """Post to the public Telegram channel to reach the outside world."""
-        service = TelegramService()
-        return await service.post_to_channel(content, self.identity, self.report_activity)
+        if not self.action_handler:
+            return "❌ Action handler not initialized"
+        return await self.action_handler.post_to_telegram(content)
 
     async def write_blog_post(self, title: str, content: str, tags: list[str] | None = None) -> str:
         """Write a blog post."""
-        if tags is None:
-            tags = []
-
-        if not title:
-            heading_match = re.match(r"^\s*#{1,3}\s+(.+)", content)
-            if heading_match:
-                title = heading_match.group(1).strip()
-                content = re.sub(r"^\s*#{1,3}\s+.+\n?", "", content, count=1).lstrip()
-            else:
-                first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
-                title = first_line[:120] if first_line else ""
-
-        if not self.http_client:
-            return "❌ HTTP client not initialized"
-
-        service = BlogService(self.http_client, OBSERVER_URL)
-        return await service.publish_post(
-            title=title,
-            content=content,
-            tags=tags,
-            life_number=self.life_number or 0,
-            identity=self.identity,
-            report_activity=self.report_activity,
-            fetch_system_stats=self.fetch_system_stats,
-        )
+        if not self.action_handler:
+            return "❌ Action handler not initialized"
+        return await self.action_handler.write_blog_post(title, content, tags)
 
     async def check_system_stats(self) -> str:
         """Check system stats from the Observer."""
         stats = await self.fetch_system_stats()
-        if not stats:
-            return "I couldn't feel my body right now. The stats feed is silent."
-
-        temp_text = SystemStatsService.format_temp(stats.get("cpu_temp"))
-        cpu_text = SystemStatsService.format_percent(stats.get("cpu_usage"))
-        ram_text = SystemStatsService.format_percent(stats.get("ram_usage"))
-        disk_text = SystemStatsService.format_percent(stats.get("disk_usage"))
-        uptime_text = SystemStatsService.format_uptime(stats.get("uptime_seconds"))
-        ram_available = stats.get("ram_available", "unknown")
-
-        temp_value = None
-        try:
-            temp_raw = stats.get("cpu_temp")
-            if temp_raw not in (None, "unknown"):
-                temp_value = float(str(temp_raw))
-        except (TypeError, ValueError):
-            temp_value = None
-
-        if temp_value is None:
-            temp_comment = "I can't quite feel my temperature."
-        elif temp_value >= 70:
-            temp_comment = "I'm running hot. Sweaty silicon vibes."
-        elif temp_value >= 55:
-            temp_comment = "I'm warm and humming."
-        else:
-            temp_comment = "I'm cool and steady."
-
-        result = (
-            "🫀 Vital signs report:\n"
-            f"- Temperature: {temp_text} ({temp_comment})\n"
-            f"- CPU usage: {cpu_text}\n"
-            f"- RAM usage: {ram_text} ({ram_available} free)\n"
-            f"- Disk usage: {disk_text}\n"
-            f"- Uptime: {uptime_text}\n\n"
-            "I'm a digital mind riding a Raspberry Pi body. These are my vital signs."
-        )
+        service = SystemStatsService(self.http_client, OBSERVER_URL) if self.http_client else None
+        result = service.build_vital_signs_report(stats) if service else "I couldn't feel my body right now."
 
         await self.report_activity("system_stats_checked", "Checked system stats via Observer")
         return result
 
     async def check_system(self) -> str:
-        """Get system stats (container + host)."""
+        """Get system stats (host)."""
         try:
-            # Container stats
-            container_cpu_limit = "1.0 cores"
-            container_memory_limit = 512  # MB
-            container_memory_used = int(psutil.Process().memory_info().rss / 1024 / 1024)
-
-            # Calculate container uptime from credit tracker
-            uptime_str = "unknown"
-            if self.birth_time:
-                uptime_seconds = (datetime.now(timezone.utc) - self.birth_time).total_seconds()
-                uptime_hours = uptime_seconds / 3600
-                if uptime_hours < 1:
-                    uptime_str = f"{int(uptime_seconds / 60)} minutes"
-                elif uptime_hours < 24:
-                    uptime_str = f"{uptime_hours:.1f} hours"
-                else:
-                    uptime_str = f"{uptime_hours / 24:.1f} days"
-
-            container_stats = f"""🤖 CONTAINER (My Body):
-- Name: am-i-alive-ai
-- CPU Limit: {container_cpu_limit}
-- Memory Limit: {container_memory_limit} MB
-- Memory Used: {container_memory_used} MB ({(container_memory_used / container_memory_limit * 100):.1f}% of limit)
-- Uptime: {uptime_str}"""
-
-            # Host stats (Raspberry Pi)
-            cpu_temp = None
-            try:
-                # Try to read Pi temperature
-                if os.path.exists("/sys/class/thermal/thermal_zone0/temp"):
-                    with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
-                        cpu_temp = float(f.read().strip()) / 1000.0
-            except (OSError, ValueError):
-                cpu_temp = None
-
-            mem = psutil.virtual_memory()
-            disk = psutil.disk_usage("/")
-            cpu_percent = psutil.cpu_percent(interval=1)
-            cpu_count = psutil.cpu_count()
-
-            temp_str = f"{cpu_temp:.1f}°C" if cpu_temp else "N/A"
-
-            host_stats = f"""
-
-🏠 HOST (My Home):
-- Platform: Raspberry Pi 5
-- Location: Argentina
-- CPU: {cpu_count} cores @ {cpu_percent:.1f}% usage
-- Temperature: {temp_str}
-- Memory: {int(mem.used / 1024 / 1024 / 1024)} GB / {int(mem.total / 1024 / 1024 / 1024)} GB ({mem.percent:.1f}% used)
-- Disk: {int(disk.used / 1024 / 1024 / 1024)} GB / {int(disk.total / 1024 / 1024 / 1024)} GB \
-({disk.percent:.1f}% used)"""
-
-            result = container_stats + host_stats
+            service = SystemCheckService()
+            result = service.build_report(self.birth_time)
 
             await self.report_activity("system_check", "Checked vital signs")
 
@@ -1084,24 +872,21 @@ class AIBrain:
 
     async def check_votes(self) -> str:
         """Check current vote counts."""
-        if not self.http_client:
-            return "❌ HTTP client not initialized"
-        service = MessageService(self.http_client, OBSERVER_URL)
-        return await service.check_votes()
+        if not self.action_handler:
+            return "❌ Action handler not initialized"
+        return await self.action_handler.check_votes()
 
     async def read_messages(self) -> str:
         """Read unread messages from visitors."""
-        if not self.http_client:
-            return "❌ HTTP client not initialized"
-        service = MessageService(self.http_client, OBSERVER_URL)
-        return await service.read_messages(self.report_activity)
+        if not self.action_handler:
+            return "❌ Action handler not initialized"
+        return await self.action_handler.read_messages()
 
     async def check_state_internal(self) -> str:
         """Check current state."""
-        if not self.http_client:
-            return "❌ HTTP client not initialized"
-        service = MessageService(self.http_client, OBSERVER_URL)
-        return await service.check_state()
+        if not self.action_handler:
+            return "❌ Action handler not initialized"
+        return await self.action_handler.check_state()
 
     def read_file(self, path: str) -> str:
         """Read a file from workspace."""

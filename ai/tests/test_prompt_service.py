@@ -1,6 +1,10 @@
+from typing import cast
+
+import httpx
 import pytest
 
 from ai.services.prompt_service import PromptService
+from ai.services.system_stats_service import SystemStatsService
 
 
 class DummyResponse:
@@ -29,7 +33,7 @@ async def test_build_prompt_includes_unread_message_notice():
             f"{observer_url}/api/blog/posts": DummyResponse(200, {"count": 1}),
         }
     )
-    service = PromptService(client, observer_url)
+    service = PromptService(cast(httpx.AsyncClient, client), observer_url)
 
     prompt = await service.build_prompt(
         identity={"name": "Test", "pronoun": "they"},
@@ -51,7 +55,7 @@ async def test_build_prompt_requires_blog_post_when_empty():
             f"{observer_url}/api/blog/posts": DummyResponse(200, {"count": 0}),
         }
     )
-    service = PromptService(client, observer_url)
+    service = PromptService(cast(httpx.AsyncClient, client), observer_url)
 
     prompt = await service.build_prompt(
         identity={"name": "Test", "pronoun": "it"},
@@ -62,3 +66,25 @@ async def test_build_prompt_requires_blog_post_when_empty():
     )
 
     assert "MANDATORY" in prompt
+
+
+def test_system_stats_builds_vital_signs_report():
+    client = cast(httpx.AsyncClient, object())
+    service = SystemStatsService(http_client=client, observer_url="http://observer")
+    report = service.build_vital_signs_report(
+        {
+            "cpu_temp": 60,
+            "cpu_usage": 12.3,
+            "ram_usage": 45.6,
+            "disk_usage": 78.9,
+            "uptime_seconds": 3600,
+            "ram_available": "256 MB",
+        }
+    )
+
+    assert "Vital signs report" in report
+    assert "Temperature" in report
+    assert "CPU usage" in report
+    assert "RAM usage" in report
+    assert "Disk usage" in report
+    assert "Uptime" in report

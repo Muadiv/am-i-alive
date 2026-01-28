@@ -1,15 +1,13 @@
-import httpx
+from __future__ import annotations
 
 
 class MessageService:
-    def __init__(self, http_client: httpx.AsyncClient, observer_url: str) -> None:
-        self.http_client = http_client
-        self.observer_url = observer_url
+    def __init__(self, observer_client) -> None:
+        self.observer_client = observer_client
 
     async def check_votes(self) -> str:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/votes")
-            votes = response.json()
+            votes = await self.observer_client.fetch_votes()
 
             live = int(votes.get("live", 0))
             die = int(votes.get("die", 0))
@@ -27,8 +25,7 @@ class MessageService:
 
     async def read_messages(self, report_activity) -> str:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/messages")
-            data = response.json()
+            data = await self.observer_client.fetch_messages()
             messages_list = data.get("messages", [])
 
             if not messages_list:
@@ -48,7 +45,7 @@ class MessageService:
                 result += f"Time: {timestamp}\n"
                 result += "---\n"
 
-            await self.http_client.post(f"{self.observer_url}/api/messages/read", json={"ids": message_ids})
+            await self.observer_client.mark_messages_read(message_ids)
             await report_activity("messages_read", f"Read {len(messages_list)} messages")
             return result
         except Exception as e:
@@ -56,8 +53,7 @@ class MessageService:
 
     async def check_state(self) -> str:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/state")
-            state = response.json()
+            state = await self.observer_client.fetch_state()
 
             votes_live = state.get("votes", {}).get("live", 0)
             votes_die = state.get("votes", {}).get("die", 0)

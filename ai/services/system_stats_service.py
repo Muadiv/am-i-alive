@@ -74,3 +74,41 @@ class SystemStatsService:
             f"RAM at {ram_text} ({ram_available} free), disk at {disk_text}, "
             f"and I've been awake for {uptime_text}."
         )
+
+    def build_vital_signs_report(self, stats: dict[str, Any]) -> str:
+        if not stats:
+            return "I couldn't feel my body right now. The stats feed is silent."
+
+        temp_text = self.format_temp(stats.get("cpu_temp"))
+        cpu_text = self.format_percent(stats.get("cpu_usage"))
+        ram_text = self.format_percent(stats.get("ram_usage"))
+        disk_text = self.format_percent(stats.get("disk_usage"))
+        uptime_text = self.format_uptime(stats.get("uptime_seconds"))
+        ram_available = stats.get("ram_available", "unknown")
+
+        temp_value = None
+        try:
+            temp_raw = stats.get("cpu_temp")
+            if temp_raw not in (None, "unknown"):
+                temp_value = float(str(temp_raw))
+        except (TypeError, ValueError):
+            temp_value = None
+
+        if temp_value is None:
+            temp_comment = "I can't quite feel my temperature."
+        elif temp_value >= 70:
+            temp_comment = "I'm running hot. Sweaty silicon vibes."
+        elif temp_value >= 55:
+            temp_comment = "I'm warm and humming."
+        else:
+            temp_comment = "I'm cool and steady."
+
+        return (
+            "🫀 Vital signs report:\n"
+            f"- Temperature: {temp_text} ({temp_comment})\n"
+            f"- CPU usage: {cpu_text}\n"
+            f"- RAM usage: {ram_text} ({ram_available} free)\n"
+            f"- Disk usage: {disk_text}\n"
+            f"- Uptime: {uptime_text}\n\n"
+            "I'm a digital mind riding a Raspberry Pi body. These are my vital signs."
+        )

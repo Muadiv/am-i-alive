@@ -138,7 +138,7 @@ ALLOWED_ATTRIBUTES = {
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# AI container API
+# AI API
 AI_API_URL = os.getenv("AI_API_URL", "http://127.0.0.1:8000")
 
 # Admin and internal API auth
@@ -443,7 +443,7 @@ async def get_activity(limit: int = 50):
 
 
 # =============================================================================
-# AI COMMUNICATION API (called by AI container)
+# AI COMMUNICATION API (called by AI)
 # =============================================================================
 
 
@@ -626,7 +626,7 @@ async def respawn_ai(request: Request):
     new_life = await db.start_new_life()
     await db.log_activity("birth", f"A new life begins (Life #{new_life['life_number']})")
 
-    # Notify AI container to wake up
+    # Notify AI to wake up
     await notify_ai_birth(new_life)
 
     return {"success": True, "life": new_life}
@@ -642,7 +642,7 @@ async def force_alive(request: Request):
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{AI_API_URL}/state", timeout=5.0)
             if response.status_code != 200:
-                return {"success": False, "message": "AI container not responding"}
+                return {"success": False, "message": "AI not responding"}
 
             ai_state = response.json()
     except Exception as e:
@@ -677,7 +677,7 @@ async def execute_death(cause: str, vote_counts: Optional[dict] = None, final_vo
     await db.record_death(cause, summary, vote_counts=vote_counts, final_vote_result=final_vote_result)
     await db.log_activity("death", f"AI died: {cause}")
 
-    # Stop the AI container (in production, we'd actually stop it)
+    # Stop the AI process (in production, we'd actually stop it)
     try:
         async with httpx.AsyncClient() as client:
             headers = {"X-Internal-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}
@@ -707,7 +707,7 @@ async def schedule_respawn():
 
 
 async def notify_ai_birth(life_info: dict) -> bool:
-    """Notify the AI container that it's time to wake up."""
+    """Notify the AI that it's time to wake up."""
     # BE-002: Add retry logic and logging
     # BE-003: Ensure life_number is always included (Observer is source of truth).
     life_number = life_info.get("life_number")
@@ -1308,7 +1308,7 @@ async def admin_cleanup(request: Request):
 @app.get("/api/budget")
 async def get_budget():
     """Get AI's credit/budget status."""
-    # This would connect to the AI container to get its credit tracker status
+    # This would connect to the AI to get its credit tracker status
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{AI_API_URL}/budget", timeout=5.0)
