@@ -5,7 +5,6 @@ Sends activity summaries to the creator's Telegram and public channel.
 The public channel is how the AI communicates with the outside world.
 """
 
-import logging
 import os
 from datetime import datetime
 from typing import Optional
@@ -57,18 +56,56 @@ class TelegramNotifier:
                     f"{self.base_url}/sendMessage",
                     json={"chat_id": self.chat_id, "text": text, "parse_mode": parse_mode},
                 )
-                return response.status_code == 200
+                if response.status_code == 200:
+                    return True
+                try:
+                    error_data = response.json()
+                    error_desc = error_data.get("description", response.text)
+                except Exception:
+                    error_desc = response.text
+                logger.warning(f"[TELEGRAM] Private send failed: {error_desc}")
+                return False
         except Exception as e:
-            print(f"[TELEGRAM] ❌ Failed to send message: {e}")
+            logger.warning(f"[TELEGRAM] ❌ Failed to send message: {e}")
             return False
+
+    def _validate_channel_id(self) -> tuple[bool, str]:
+        if not self.channel_id:
+            return False, "No public channel configured (TELEGRAM_CHANNEL_ID not set)"
+
+        channel_id = str(self.channel_id).strip()
+        if channel_id.startswith("@"):
+            if len(channel_id) <= 1:
+                return False, "Channel username is empty"
+            return True, "ok"
+
+        if channel_id.lstrip("-").isdigit():
+            return True, "ok"
+
+        return False, f"Invalid TELEGRAM_CHANNEL_ID format: {self.channel_id}"
+
+    async def _describe_channel_error(self, client: httpx.AsyncClient) -> str:
+        try:
+            response = await client.get(f"{self.base_url}/getChat", params={"chat_id": self.channel_id})
+            if response.status_code == 200:
+                return "Channel reachable"
+            try:
+                error_data = response.json()
+                return error_data.get("description", response.text)
+            except Exception:
+                return response.text
+        except Exception as e:
+            return f"getChat failed: {e}"
 
     async def post_to_channel(self, text: str, parse_mode: str = "Markdown") -> tuple[bool, str]:
         """
         Post a message to the public Telegram channel.
         Returns (success, message).
         """
-        if not self.channel_id:
-            return False, "No public channel configured (TELEGRAM_CHANNEL_ID not set)"
+        is_valid, reason = self._validate_channel_id()
+        if not is_valid:
+            logger.warning(f"[TELEGRAM] {reason}")
+            return False, reason
 
         # Rate limiting: 1 post per 5 minutes
         if self._last_channel_post:
@@ -98,10 +135,16 @@ class TelegramNotifier:
                         error_desc = error_data.get("description", response.text)
                     except Exception:
                         error_desc = response.text
+                    channel_status = await self._describe_channel_error(client)
+                    logger.warning(
+                        "[TELEGRAM] Public send failed: %s (channel check: %s)",
+                        error_desc,
+                        channel_status,
+                    )
                     return False, f"Failed: {error_desc}"
 
         except Exception as e:
-            print(f"[TELEGRAM] ❌ Failed to post to channel: {e}")
+            logger.warning(f"[TELEGRAM] ❌ Failed to post to channel: {e}")
             return False, f"Error: {str(e)}"
 
     def get_channel_status(self) -> dict:
@@ -141,7 +184,7 @@ class TelegramNotifier:
                     },
                 )
         except Exception as e:
-            print(f"[TELEGRAM] ⚠️ Failed to log notification: {e}")
+            logger.warning(f"[TELEGRAM] ⚠️ Failed to log notification: {e}")
 
     async def notify_birth(self, life_number: int, name: str, icon: str, model: str):
         """Notify about AI birth (private notification to creator)."""
