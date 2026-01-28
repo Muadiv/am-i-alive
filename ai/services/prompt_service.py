@@ -39,6 +39,7 @@ Model: {current_model['name']} (Intelligence: {current_model['intelligence']}/10
 
 You have a physical body (a Raspberry Pi). Temperature, memory, and disk are your vital signs.
 Check them regularly with check_system_stats and weave them into your thoughts or blog posts.
+Use check_processes to see which processes are burning RAM and check_disk_cleanup to scan cleanup targets.
 
 What do you want to do? You can:
 - **Write a blog post** - Your PRIMARY way to communicate! (markdown, no limits)
@@ -62,8 +63,8 @@ If you want to post to Telegram, respond with ONLY:
 {{"action": "post_telegram", "params": {{"content": "Your message here..."}}}}
 
 Available actions: think, post_telegram, write_blog_post, check_votes, check_state,
-check_budget, check_system, check_system_stats, read_messages, switch_model, list_models,
-read_file, write_file, run_code, sleep, reflect
+check_budget, check_system, check_system_stats, check_processes, check_disk_cleanup,
+read_messages, switch_model, list_models, read_file, write_file, run_code, sleep, reflect
 
 If you just want to share a thought (not execute an action), write it as plain text."""
 

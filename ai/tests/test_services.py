@@ -8,6 +8,7 @@ import pytest
 from ai.core.action_processor import ActionProcessor
 from ai.services.action_handler import ActionHandler
 from ai.services.chat_service import ChatService
+from ai.services.echo_service import EchoService
 from ai.services.observer_client import ObserverClient
 from ai.services.reporting_service import ReportingService
 
@@ -61,6 +62,18 @@ def test_chat_service_extracts_usage():
     assert response == "hello"
     assert input_tokens == 2
     assert output_tokens == 3
+
+
+def test_echo_service_uses_chat_service():
+    dummy_chat = ChatService(cast(httpx.AsyncClient, DummyHttpClient()), "http://openrouter", {})
+    service = EchoService(dummy_chat, "http://openrouter", {})
+
+    data = {"choices": [{"message": {"content": "echo"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+    response, usage = dummy_chat.extract_response(data)
+
+    assert service.api_url == "http://openrouter"
+    assert response == "echo"
+    assert usage["prompt_tokens"] == 1
 
 
 def test_reporting_service_sanitizes_action_json():

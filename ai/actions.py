@@ -1,29 +1,26 @@
-import json
 from typing import Protocol
 
 
 class BrainInterface(Protocol):
-    async def report_activity(
-        self, action: str, details: str | None = None
-    ) -> None: ...
+    async def report_activity(self, action: str, details: str | None = None) -> None: ...
 
-    async def report_thought(
-        self, content: str, thought_type: str = "thought"
-    ) -> None: ...
+    async def report_thought(self, content: str, thought_type: str = "thought") -> None: ...
 
     async def ask_echo(self, question: str) -> str: ...
 
     async def post_to_telegram(self, content: str) -> str: ...
 
-    async def write_blog_post(
-        self, title: str, content: str, tags: list[str]
-    ) -> str: ...
+    async def write_blog_post(self, title: str, content: str, tags: list[str]) -> str: ...
 
     async def check_votes(self) -> str: ...
 
     async def check_system(self) -> str: ...
 
     async def check_system_stats(self) -> str: ...
+
+    async def check_processes(self) -> str: ...
+
+    async def check_disk_cleanup(self) -> str: ...
 
     async def check_state_internal(self) -> str: ...
 
@@ -80,6 +77,12 @@ class ActionExecutor:
 
         if action == "check_system_stats":
             return await self.brain.check_system_stats()
+
+        if action == "check_processes":
+            return await self.brain.check_processes()
+
+        if action == "check_disk_cleanup":
+            return await self.brain.check_disk_cleanup()
 
         if action == "check_state":
             return await self.brain.check_state_internal()

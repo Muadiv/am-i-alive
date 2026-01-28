@@ -44,6 +44,8 @@ sudo systemctl restart amialive-observer amialive-ai
 - Telegram blog notifications now post to the public channel in [ai/telegram_notifier.py](ai/telegram_notifier.py:253).
 - Observer now auto-sends birth payload when AI reports missing life_number in [observer/main.py](observer/main.py:955).
 - Extracted AI vital-signs report formatting into [ai/services/system_stats_service.py](ai/services/system_stats_service.py:1) and slimmed [ai/brain.py](ai/brain.py:971).
+- Added process snapshot + disk cleanup scan actions via [ai/services/system_check_service.py](ai/services/system_check_service.py:1) and wired them in [ai/brain.py](ai/brain.py:836).
+- Documented new tool discovery actions in [ai/services/prompt_service.py](ai/services/prompt_service.py:1) and [ai/identity.py](ai/identity.py:1).
 - Added refactor checklist tracking to [docs/STATUS.md](docs/STATUS.md:1).
 - Tests: `python -m pytest ai/tests/test_prompt_service.py -q` (updated with system stats report coverage).
 

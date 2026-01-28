@@ -29,11 +29,13 @@ from .core.action_processor import ActionProcessor
 from .core.brain_state import BrainState
 from .core.lifecycle_dto import LifecycleData
 from .credit_tracker import CreditTracker
-from .model_config import MODELS
+from .logging_config import logger
 from .model_rotator import ModelRotator
 from .services.action_handler import ActionHandler
 from .services.budget_service import BudgetService
 from .services.chat_service import ChatService
+from .services.echo_service import EchoService
+from .services.http_client_factory import HttpClientFactory
 from .services.lifecycle_coordinator import LifecycleCoordinator
 from .services.lifecycle_service import LifecycleService
 from .services.model_retry_policy import ModelRetryPolicy
@@ -61,7 +63,7 @@ _http_client: Optional[httpx.AsyncClient] = None
 async def get_http_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(timeout=60.0)
+        _http_client = HttpClientFactory.create(timeout=60.0)
     return _http_client
 
 
@@ -85,11 +87,11 @@ def validate_environment() -> tuple[list[str], list[str]]:
 
     if warnings:
         for w in warnings:
-            print(f"[STARTUP] ⚠️ {w}")
+            logger.warning(f"[STARTUP] ⚠️ {w}")
 
     if errors:
         for e in errors:
-            print(f"[STARTUP] ❌ {e}")
+            logger.error(f"[STARTUP] ❌ {e}")
         raise RuntimeError(f"Missing required environment variables: {errors}")
 
     return errors, warnings
@@ -137,6 +139,7 @@ class AIBrain:
         self.chat_service: ChatService | None = None
         self.reporting_service: ReportingService | None = None
         self.model_retry_policy: ModelRetryPolicy | None = None
+        self.echo_service: EchoService | None = None
         self.identity: dict[str, Any] | None = None
         self.credit_tracker: CreditTracker = CreditTracker(monthly_budget=5.00)
         self.model_rotator: ModelRotator = ModelRotator(self.credit_tracker.get_balance())
@@ -338,7 +341,7 @@ class AIBrain:
     async def initialize(self, life_data: dict[str, Any]) -> None:
         """Initialize the brain with identity creation."""
         headers = get_internal_headers()
-        self.http_client = httpx.AsyncClient(timeout=30.0, headers=headers)
+        self.http_client = HttpClientFactory.create(timeout=30.0, headers=headers)
         self.observer_client = ObserverClient(self.http_client, OBSERVER_URL)
         self.chat_service = ChatService(
             self.http_client,
@@ -352,6 +355,16 @@ class AIBrain:
         )
         self.reporting_service = ReportingService(self.action_processor)
         self.model_retry_policy = ModelRetryPolicy(self.model_rotator, self.report_activity)
+        self.echo_service = EchoService(
+            self.chat_service,
+            OPENROUTER_API_URL,
+            {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": OPENROUTER_REFERER,
+                "X-Title": OPENROUTER_TITLE,
+                "Content-Type": "application/json",
+            },
+        )
         self.lifecycle_service = LifecycleService(
             self.http_client,
             OBSERVER_URL,
@@ -776,41 +789,11 @@ class AIBrain:
 
         print(f"[BRAIN] 🔍 Asking Echo: {question[:50]}...")
 
-        # Use a free model for Echo to save credits
-        echo_model = MODELS["free"][0]
-        # First free model
-
         try:
-            client = await get_http_client()
-            response = await client.post(
-                OPENROUTER_API_URL,
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "HTTP-Referer": OPENROUTER_REFERER,
-                    "X-Title": OPENROUTER_TITLE,
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": echo_model["id"],
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are Echo, a friendly research assistant. You help your friend "
-                                "(an AI trying to survive) by researching questions and providing "
-                                "helpful information. You are curious, supportive, and thorough."
-                            ),
-                        },
-                        {"role": "user", "content": question},
-                    ],
-                },
-            )
-
-            response.raise_for_status()
-            data = response.json()
-            echo_response = str(data["choices"][0]["message"]["content"])
+            if not self.echo_service:
+                raise RuntimeError("Echo service not initialized")
+            echo_response, usage = await self.echo_service.ask(question)
             # BE-003: Track tokens used for Echo calls.
-            usage = data.get("usage", {})
             input_tokens = int(usage.get("prompt_tokens", 0))
             output_tokens = int(usage.get("completion_tokens", 0))
             self.tokens_used_life += input_tokens + output_tokens
@@ -865,6 +848,20 @@ class AIBrain:
         except Exception as e:
             print(f"[SYSTEM] ❌ Failed to check system: {e}")
             return f"❌ Failed to check system: {str(e)[:200]}"
+
+    async def check_processes(self) -> str:
+        """Get a snapshot of top memory-using processes."""
+        service = SystemCheckService()
+        report = service.build_process_report()
+        await self.report_activity("process_snapshot", "Reviewed top memory processes")
+        return report
+
+    async def check_disk_cleanup(self) -> str:
+        """Summarize disk cleanup candidates without deleting anything."""
+        service = SystemCheckService()
+        report = service.build_disk_cleanup_report()
+        await self.report_activity("disk_cleanup_scan", "Scanned for cleanup candidates")
+        return report
 
     def check_twitter_status_action(self) -> str:
         """Check if Twitter account is suspended (action for AI to call)."""
