@@ -24,6 +24,7 @@ class Config:
 
     # AI communication
     AI_API_URL: str = os.getenv("AI_API_URL", "http://127.0.0.1:8000")
+    BUDGET_API_URL: str = os.getenv("BUDGET_API_URL", "http://127.0.0.1:8001")
     INTERNAL_API_KEY: Optional[str] = os.getenv("INTERNAL_API_KEY")
 
     # Admin and security

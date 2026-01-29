@@ -103,10 +103,14 @@ async def history(request: Request):
 async def budget_page(request: Request):
     """View AI's budget and spending."""
     AI_API_URL, _, _, _, _, templates = _get_context()
+    try:
+        from config import Config
+    except ImportError:
+        from ..config import Config
     budget_data = {}
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{AI_API_URL}/budget", timeout=5.0)
+            response = await client.get(f"{Config.BUDGET_API_URL}/budget", timeout=5.0)
             budget_data = response.json()
             budget_data.setdefault("models", [])
             budget_data.setdefault(

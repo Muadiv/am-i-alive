@@ -10,11 +10,11 @@ from fastapi import APIRouter, HTTPException
 
 try:
     from config import Config
-    from database import get_current_state, init_db
+    from database import get_current_state
     from logging_config import logger
 except ImportError:
     from .config import Config
-    from .database import get_current_state, init_db
+    from .database import get_current_state
     from .logging_config import logger
 
 router = APIRouter()
@@ -57,7 +57,7 @@ async def ai_health():
             ai_state = response.json()
 
         # Check if we can also reach the budget server
-        budget_url = f"{Config.AI_API_URL}/budget"
+        budget_url = f"{Config.BUDGET_API_URL}/budget"
         async with httpx.AsyncClient() as client:
             budget_response = await client.get(budget_url, timeout=5.0)
             budget_response.raise_for_status()

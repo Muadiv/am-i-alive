@@ -39,6 +39,8 @@ sudo systemctl restart amialive-observer amialive-ai
 ## SUMMARY OF PROGRESS - 2026-01-28
 
 ### Accomplishments
+- Wired Observer budget fetches to the dedicated budget server URL via [observer/config.py](observer/config.py:26), [observer/routes/public.py](observer/routes/public.py:102), and [observer/health.py](observer/health.py:46); documented env update in [scripts/deploy.env.example](scripts/deploy.env.example:23).
+- Tests: `cd observer && python -m pytest tests/test_budget_display.py -q` (4 passed; Starlette TemplateResponse deprecation warning).
 - Registered custom sqlite datetime adapters/converters and updated tests to pass detect_types flags (removes deprecation warnings) in [observer/database.py](observer/database.py:27), [observer/tests/conftest.py](observer/tests/conftest.py:12), and observer tests.
 - Tests: `cd observer && python -m pytest tests/test_voting_system.py -q` (9 passed), `tests/test_messages.py` (6 passed), `tests/test_visitor_tracking.py` (4 passed), `tests/test_god_mode.py` (3 passed).
 - Styled the message-to-AI panel to match the vote card and expanded the textbox in [observer/static/style.css](observer/static/style.css:251).
