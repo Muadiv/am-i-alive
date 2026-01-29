@@ -50,6 +50,7 @@ from .services.self_model_service import SelfModelService
 from .services.system_check_service import SystemCheckService
 from .services.system_stats_service import SystemStatsService
 from .services.twitter_service import TwitterService, get_twitter_status
+from .services.weather_service import WeatherService
 from .telegram_notifier import notifier
 
 # Environment
@@ -60,6 +61,8 @@ OBSERVER_URL = Config.OBSERVER_URL
 AI_COMMAND_PORT = Config.AI_COMMAND_PORT
 BOOTSTRAP_MODE = Config.BOOTSTRAP_MODE
 INTERNAL_API_KEY = Config.INTERNAL_API_KEY
+WEATHER_LAT = Config.WEATHER_LAT
+WEATHER_LON = Config.WEATHER_LON
 
 _http_client: Optional[httpx.AsyncClient] = None
 
@@ -879,6 +882,16 @@ class AIBrain:
         )
         report = await health_service.build_report()
         await self.report_activity("health_check", "Ran combined health check")
+        return report
+
+    async def check_weather(self) -> str:
+        """Check local weather via Open-Meteo."""
+        if not self.http_client:
+            return "❌ Weather check unavailable."
+        service = WeatherService(self.http_client, WEATHER_LAT, WEATHER_LON)
+        data = await service.fetch_weather()
+        report = service.build_report(data)
+        await self.report_activity("weather_checked", "Checked local weather")
         return report
 
     async def check_system(self) -> str:

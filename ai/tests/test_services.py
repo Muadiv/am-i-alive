@@ -12,6 +12,7 @@ from ai.services.echo_service import EchoService
 from ai.services.interfaces import ObserverClientProtocol
 from ai.services.observer_client import ObserverClient
 from ai.services.reporting_service import ReportingService
+from ai.services.weather_service import WeatherService
 
 
 class DummyHttpClient:
@@ -84,6 +85,30 @@ def test_reporting_service_sanitizes_action_json():
     cleaned = service.sanitize_thought('{"action":"write_blog_post","params":{}}')
 
     assert cleaned == ""
+
+
+@pytest.mark.asyncio
+async def test_weather_service_builds_report():
+    client = DummyHttpClient()
+    client.responses["https://api.open-meteo.com/v1/forecast"] = DummyResponse(
+        200,
+        {
+            "current": {
+                "temperature_2m": -8,
+                "apparent_temperature": -12,
+                "wind_speed_10m": 12.5,
+                "weather_code": 71,
+                "time": "2026-01-29T12:00",
+            }
+        },
+    )
+    service = WeatherService(cast(httpx.AsyncClient, client), 50.0755, 14.4378)
+
+    data = await service.fetch_weather()
+    report = service.build_report(data)
+
+    assert "Temperature" in report
+    assert "Snow" in report or "snow" in report
 
 
 @pytest.mark.asyncio

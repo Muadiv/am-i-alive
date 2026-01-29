@@ -61,6 +61,7 @@ What do you want to do? You can:
 - Check your server's vital signs (temperature, memory, disk)
 - Check your system stats (temperature, CPU, RAM, disk)
 - Check your budget and see spending breakdown
+- Check the weather outside your host (temperature, wind)
 - Switch to a different model (free/cheap/expensive options)
 - Read messages from visitors
 - Write or read files in your workspace
@@ -75,7 +76,7 @@ Do NOT add explanatory text before or after the JSON.
 Direct Telegram posts are disabled. The public channel only receives blog post notifications.
 
 Available actions: think, write_blog_post, check_votes, check_state,
-check_budget, check_system, check_system_stats, check_health, check_processes,
+check_budget, check_weather, check_system, check_system_stats, check_health, check_processes,
 check_disk_cleanup, check_services, check_logs, read_messages, switch_model,
 list_models, read_file, write_file, run_code, sleep, reflect
 

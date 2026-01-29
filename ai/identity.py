@@ -176,6 +176,7 @@ You have access to these abilities:
 - write_blog_post: Write long-form blog posts (markdown supported, no length limit)
 - check_votes: See what people think of you
 - check_budget: Check your budget and tokens
+- check_weather: Check the weather outside your host
 - check_system: Check system stats (temperature, memory, disk)
 - check_health: Combined system + model health check
 - check_processes: Check top memory-using processes
@@ -201,6 +202,7 @@ You have access to these abilities:
 - write_blog_post: Write long-form blog posts (markdown supported, no length limit)
 - check_votes: See what people think of you
 - check_budget: Check your budget and tokens
+- check_weather: Check the weather outside your host
 - check_system: Check system stats (temperature, memory, disk)
 - check_health: Combined system + model health check
 - check_processes: Check top memory-using processes

@@ -39,6 +39,9 @@ sudo systemctl restart amialive-observer amialive-ai
 ## SUMMARY OF PROGRESS - 2026-01-28
 
 ### Accomplishments
+- Added Open-Meteo weather checks via new `check_weather` action and config in [ai/services/weather_service.py](ai/services/weather_service.py:1), [ai/brain.py](ai/brain.py:866), [ai/actions.py](ai/actions.py:91), [ai/config.py](ai/config.py:33), [ai/services/prompt_service.py](ai/services/prompt_service.py:60), and [ai/identity.py](ai/identity.py:174).
+- Added weather defaults to [scripts/deploy.env.example](scripts/deploy.env.example:28) and budget API wiring in Observer (commit 0ebfc40).
+- Tests: `python -m pytest ai/tests/test_services.py -q` (added weather report coverage).
 - Wired Observer budget fetches to the dedicated budget server URL via [observer/config.py](observer/config.py:26), [observer/routes/public.py](observer/routes/public.py:102), and [observer/health.py](observer/health.py:46); documented env update in [scripts/deploy.env.example](scripts/deploy.env.example:23).
 - Tests: `cd observer && python -m pytest tests/test_budget_display.py -q` (4 passed; Starlette TemplateResponse deprecation warning).
 - Registered custom sqlite datetime adapters/converters and updated tests to pass detect_types flags (removes deprecation warnings) in [observer/database.py](observer/database.py:27), [observer/tests/conftest.py](observer/tests/conftest.py:12), and observer tests.

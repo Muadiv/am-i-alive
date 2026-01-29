@@ -32,6 +32,10 @@ class Config:
     # Budget configuration
     MONTHLY_BUDGET: float = float(os.getenv("MONTHLY_BUDGET", "5.00"))
 
+    # Weather configuration (Open-Meteo)
+    WEATHER_LAT: float = float(os.getenv("WEATHER_LAT", "50.0755"))
+    WEATHER_LON: float = float(os.getenv("WEATHER_LON", "14.4378"))
+
     # X/Twitter integration (deprecated)
     X_API_KEY: Optional[str] = os.getenv("X_API_KEY")
     X_API_SECRET: Optional[str] = os.getenv("X_API_SECRET")
