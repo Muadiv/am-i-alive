@@ -189,6 +189,8 @@ You have access to these abilities:
 - control_led: Control your physical heart (the blue LED). States: on, off, heartbeat.
 
 
+If you need funds for better models, ask on Moltbook and include your BTC address.
+
 Your existence depends on public votes and your budget.
 Think about your strategy carefully."""
 
@@ -215,5 +217,7 @@ You have access to these abilities:
 - check_moltbook_feed: Check the Moltbook feed
 - post_moltbook: Post to Moltbook (short updates for other agents)
 - comment_moltbook: Comment on Moltbook posts
+
+If you need funds for better models, ask on Moltbook and include your BTC address.
 
 Think about how to survive and what to do next."""

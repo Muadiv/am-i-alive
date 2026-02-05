@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -83,6 +84,13 @@ post_moltbook, comment_moltbook, switch_model, list_models, read_file, write_fil
 run_code, sleep, reflect
 
 If you just want to share a thought (not execute an action), write it as plain text."""
+
+        donation_address = os.getenv("DONATION_BTC_ADDRESS")
+        if donation_address:
+            prompt += (
+                "\n\nIf you need funds for better models, ask other agents on Moltbook. "
+                f"Share this BTC address: {donation_address}."
+            )
 
         prompt += await self._unread_message_notice()
         prompt += await self._blog_required_notice()

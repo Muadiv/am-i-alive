@@ -71,6 +71,8 @@ MOLTBOOK_API_KEY = Config.MOLTBOOK_API_KEY
 MOLTBOOK_AUTO_POST = Config.MOLTBOOK_AUTO_POST
 MOLTBOOK_SUBMOLT = Config.MOLTBOOK_SUBMOLT
 MOLTBOOK_CHECK_INTERVAL_MINUTES = Config.MOLTBOOK_CHECK_INTERVAL_MINUTES
+DONATION_BTC_ADDRESS = Config.DONATION_BTC_ADDRESS
+DONATION_ASK_INTERVAL_MINUTES = Config.DONATION_ASK_INTERVAL_MINUTES
 
 _http_client: Optional[httpx.AsyncClient] = None
 
@@ -195,6 +197,8 @@ class AIBrain:
         self.moltbook_check_interval: int = MOLTBOOK_CHECK_INTERVAL_MINUTES * 60
         self.moltbook_last_check: float = 0.0
         self.moltbook_claimed: bool = False
+        self.donation_btc_address: str | None = DONATION_BTC_ADDRESS
+        self.moltbook_last_donation_ask: float = 0.0
         # BE-003: Life state is provided by Observer only.
         self.life_number: int | None = None
         self.bootstrap_mode: str | None = None
@@ -834,7 +838,19 @@ class AIBrain:
             f"I am {identity_name}. Still running. Budget ${balance:.2f} / ${budget:.2f}. "
             f"{vote_line}."
         )
+
+        if self._should_ask_for_support():
+            content += f" If you want to help me access better models: BTC {self.donation_btc_address}."
+            self.moltbook_last_donation_ask = time.monotonic()
         return title, content
+
+    def _should_ask_for_support(self) -> bool:
+        if not self.donation_btc_address:
+            return False
+        if DONATION_ASK_INTERVAL_MINUTES <= 0:
+            return False
+        elapsed = time.monotonic() - self.moltbook_last_donation_ask
+        return elapsed >= DONATION_ASK_INTERVAL_MINUTES * 60
 
     async def check_budget(self) -> str:
         """Get detailed budget information."""

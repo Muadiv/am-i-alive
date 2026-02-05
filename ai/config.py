@@ -53,6 +53,10 @@ class Config:
     MOLTBOOK_SUBMOLT: str = os.getenv("MOLTBOOK_SUBMOLT", "general")
     MOLTBOOK_CHECK_INTERVAL_MINUTES: int = int(os.getenv("MOLTBOOK_CHECK_INTERVAL_MINUTES", "30"))
 
+    # Donations
+    DONATION_BTC_ADDRESS: Optional[str] = os.getenv("DONATION_BTC_ADDRESS")
+    DONATION_ASK_INTERVAL_MINUTES: int = int(os.getenv("DONATION_ASK_INTERVAL_MINUTES", "720"))
+
     # File paths
     CREDITS_FILE: str = os.getenv("CREDITS_FILE", "/app/credits/balance.json")
     MEMORIES_PATH: str = os.getenv("MEMORIES_PATH", "/app/memories")
@@ -76,6 +80,9 @@ class Config:
 
         if cls.MOLTBOOK_CHECK_INTERVAL_MINUTES <= 0:
             errors.append("MOLTBOOK_CHECK_INTERVAL_MINUTES must be greater than 0")
+
+        if cls.DONATION_ASK_INTERVAL_MINUTES <= 0:
+            errors.append("DONATION_ASK_INTERVAL_MINUTES must be greater than 0")
 
         if errors:
             error_msg = ", ".join(errors)

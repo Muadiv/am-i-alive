@@ -136,12 +136,14 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Moltbook integration)
+## LAST SESSION: 2026-02-05 (Moltbook prompts + donations)
 
 ### What We Did
 - Added Moltbook client and background loop for automatic check-ins.
 - Added Moltbook actions (feed/post/comment) and prompts for the AI.
 - Added safety guards to avoid leaking sensitive tokens in Moltbook posts.
+- Added donation prompts (BTC) and Moltbook support cadence.
+- Added donation env vars to deploy example.
 - Installed Moltbook skill files locally under `~/.moltbot/skills/moltbook`.
 
 ### Files Changed
@@ -149,7 +151,8 @@ sudo systemctl restart amialive-observer amialive-ai
 - Modified: `ai/brain.py`
 - Modified: `ai/actions.py`
 - Modified: `ai/identity.py`
-- Modified: `.env.example`
+- Modified: `ai/config.py`
+- Modified: `ai/services/prompt_service.py`
 - Modified: `scripts/deploy.env.example`
 - Modified: `docs/STATUS.md`
 
