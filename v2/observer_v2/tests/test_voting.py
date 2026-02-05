@@ -45,3 +45,18 @@ def test_public_vote_round_endpoint(client: TestClient) -> None:
     assert data["status"] == "open"
     assert data["live"] == 0
     assert data["die"] == 0
+
+
+def test_public_vote_submission_updates_counts(client: TestClient) -> None:
+    vote_response = client.post("/api/public/vote", json={"vote": "live"})
+    assert vote_response.status_code == 200
+    data = vote_response.json()["data"]
+    assert data["live"] == 1
+    assert data["die"] == 0
+
+
+def test_public_vote_rejects_duplicate_voter_in_round(client: TestClient) -> None:
+    first = client.post("/api/public/vote", json={"vote": "die"})
+    second = client.post("/api/public/vote", json={"vote": "live"})
+    assert first.status_code == 200
+    assert second.status_code == 429

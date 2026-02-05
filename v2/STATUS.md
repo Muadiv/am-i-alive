@@ -15,10 +15,11 @@ Last updated: 2026-02-05
 - [x] Persisted life state, open vote round, and donations in v2 SQLite storage.
 - [x] Added internal donation ingest endpoint with validation.
 - [x] Added lifecycle transition API backed by persistence.
+- [x] Added vote casting endpoint, duplicate-vote protection, and due-round close flow.
 
 ## In Progress
 
-- [ ] Add vote casting and round-close scheduler for 24h adjudication.
+- [ ] Harden vote scheduler behavior and life-state transitions under edge conditions.
 
 ## Waiting
 

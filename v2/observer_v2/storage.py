@@ -63,6 +63,19 @@ class SqliteStorage:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS votes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    round_id INTEGER NOT NULL,
+                    voter_fingerprint TEXT NOT NULL,
+                    vote TEXT NOT NULL,
+                    reason TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(round_id, voter_fingerprint)
+                )
+                """
+            )
             conn.commit()
 
     def bootstrap_defaults(self) -> None:
