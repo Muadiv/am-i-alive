@@ -8,7 +8,9 @@ import asyncio
 import json
 import os
 import random
+import re
 import signal
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -52,6 +54,8 @@ from .services.system_stats_service import SystemStatsService
 from .services.twitter_service import TwitterService, get_twitter_status
 from .services.weather_service import WeatherService
 from .telegram_notifier import notifier
+from .moltbook_client import MoltbookClient
+from .safety.content_filter import is_content_blocked
 
 # Environment
 OPENROUTER_API_KEY = Config.OPENROUTER_API_KEY
@@ -63,6 +67,10 @@ BOOTSTRAP_MODE = Config.BOOTSTRAP_MODE
 INTERNAL_API_KEY = Config.INTERNAL_API_KEY
 WEATHER_LAT = Config.WEATHER_LAT
 WEATHER_LON = Config.WEATHER_LON
+MOLTBOOK_API_KEY = Config.MOLTBOOK_API_KEY
+MOLTBOOK_AUTO_POST = Config.MOLTBOOK_AUTO_POST
+MOLTBOOK_SUBMOLT = Config.MOLTBOOK_SUBMOLT
+MOLTBOOK_CHECK_INTERVAL_MINUTES = Config.MOLTBOOK_CHECK_INTERVAL_MINUTES
 
 _http_client: Optional[httpx.AsyncClient] = None
 
@@ -89,8 +97,11 @@ def validate_environment() -> tuple[list[str], list[str]]:
     if not INTERNAL_API_KEY:
         warnings.append("INTERNAL_API_KEY not set - some Observer calls may fail")
 
-    if not os.getenv("TELEGRAM_BOT_TOKEN"):
+    if not Config.TELEGRAM_BOT_TOKEN:
         warnings.append("TELEGRAM_BOT_TOKEN not set - notifications will fail")
+
+    if MOLTBOOK_AUTO_POST and not MOLTBOOK_API_KEY:
+        warnings.append("MOLTBOOK_API_KEY not set - Moltbook integration disabled")
 
     if warnings:
         for w in warnings:
@@ -135,7 +146,25 @@ def get_internal_headers() -> dict[str, str]:
         return {"X-Internal-Key": INTERNAL_API_KEY}
     return {}
 
+SENSITIVE_PATTERNS = [
+    re.compile(r"moltbook_[a-z0-9_-]+", re.IGNORECASE),
+    re.compile(r"sk-[A-Za-z0-9]{10,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+]
 
+
+def contains_sensitive_text(text: str) -> bool:
+    if not text:
+        return False
+    for pattern in SENSITIVE_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
+
+
+def get_trauma_prompt(cause: Optional[str]) -> str:
+    """Return a behavioral bias based on the previous death cause."""
+    return identity_get_trauma_prompt(cause)
 class AIBrain:
     """The AI's consciousness and decision-making core."""
 
@@ -160,6 +189,12 @@ class AIBrain:
         self.oracle_service: OracleService | None = None
         self.lifecycle_service: LifecycleService | None = None
         self.action_handler: ActionHandler | None = None
+        self.moltbook_client: MoltbookClient | None = None
+        self.moltbook_auto_post: bool = MOLTBOOK_AUTO_POST
+        self.moltbook_submolt: str = MOLTBOOK_SUBMOLT
+        self.moltbook_check_interval: int = MOLTBOOK_CHECK_INTERVAL_MINUTES * 60
+        self.moltbook_last_check: float = 0.0
+        self.moltbook_claimed: bool = False
         # BE-003: Life state is provided by Observer only.
         self.life_number: int | None = None
         self.bootstrap_mode: str | None = None
@@ -405,6 +440,13 @@ class AIBrain:
 
         if not self.lifecycle_service:
             raise RuntimeError("Lifecycle service not initialized")
+
+        if MOLTBOOK_API_KEY:
+            self.moltbook_client = MoltbookClient(MOLTBOOK_API_KEY, self.http_client)
+            logger.info("[MOLTBOOK] 🦞 Client initialized")
+        else:
+            self.moltbook_client = None
+            logger.warning("[MOLTBOOK] ⚠️  MOLTBOOK_API_KEY not set; Moltbook disabled")
 
         # Load memories first
         loaded_memories = await self.lifecycle_service.load_memories("/app/memories")
@@ -658,6 +700,141 @@ class AIBrain:
             return f"✅ {msg}"
         except Exception as e:
             return f"❌ Failed to control LED: {e}"
+
+    async def check_moltbook_feed(self, sort: str = "new", limit: int = 10) -> str:
+        """Fetch Moltbook feed summary."""
+        if not self.moltbook_client:
+            return "❌ Moltbook not configured."
+
+        try:
+            data = await self.moltbook_client.get_feed(sort=sort, limit=limit)
+            items = data.get("posts")
+            if not isinstance(items, list):
+                items = data.get("data")
+            if not isinstance(items, list):
+                return "⚠️ Moltbook feed returned no posts."
+            titles = []
+            for item in items[:5]:
+                title = item.get("title") if isinstance(item, dict) else None
+                if title:
+                    titles.append(str(title))
+            summary = f"Moltbook feed fetched ({len(items)} posts)."
+            if titles:
+                summary += " Top titles: " + "; ".join(titles)
+            return summary
+        except httpx.HTTPError as e:
+            return f"❌ Moltbook feed error: {e}"
+
+    async def post_to_moltbook(self, submolt: str, title: str, content: str, url: str | None = None) -> str:
+        """Post to Moltbook."""
+        if not self.moltbook_client:
+            return "❌ Moltbook not configured."
+        if not submolt:
+            submolt = self.moltbook_submolt
+        if is_content_blocked(title) or is_content_blocked(content):
+            return "❌ Content blocked by safety filter."
+        if contains_sensitive_text(title) or contains_sensitive_text(content):
+            return "❌ Refusing to post sensitive content."
+
+        try:
+            data = await self.moltbook_client.create_post(submolt, title, content, url=url)
+            if not data.get("success", True):
+                return f"❌ Moltbook post rejected: {data.get('error', 'unknown error')}"
+            return "✅ Moltbook post created."
+        except httpx.HTTPError as e:
+            return f"❌ Moltbook post error: {e}"
+
+    async def comment_on_moltbook(self, post_id: str, content: str, parent_id: str | None = None) -> str:
+        """Comment on a Moltbook post."""
+        if not self.moltbook_client:
+            return "❌ Moltbook not configured."
+        if is_content_blocked(content):
+            return "❌ Content blocked by safety filter."
+        if contains_sensitive_text(content):
+            return "❌ Refusing to post sensitive content."
+
+        try:
+            data = await self.moltbook_client.create_comment(post_id, content, parent_id=parent_id)
+            if not data.get("success", True):
+                return f"❌ Moltbook comment rejected: {data.get('error', 'unknown error')}"
+            return "✅ Moltbook comment posted."
+        except httpx.HTTPError as e:
+            return f"❌ Moltbook comment error: {e}"
+
+    async def moltbook_heartbeat(self) -> None:
+        """Periodic Moltbook check-in for feed and status."""
+        if not self.moltbook_client:
+            return
+
+        now = time.monotonic()
+        if now - self.moltbook_last_check < self.moltbook_check_interval:
+            return
+        self.moltbook_last_check = now
+
+        try:
+            status_data = await self.moltbook_client.get_status()
+            self.moltbook_claimed = status_data.get("status") == "claimed"
+        except httpx.HTTPError as e:
+            logger.warning(f"[MOLTBOOK] ⚠️ Status check failed: {e}")
+            return
+
+        if not self.moltbook_claimed:
+            logger.info("[MOLTBOOK] ⏳ Pending claim - waiting before posting.")
+            return
+
+        try:
+            await self.moltbook_client.get_feed(sort="new", limit=5)
+        except httpx.HTTPError as e:
+            logger.warning(f"[MOLTBOOK] ⚠️ Feed check failed: {e}")
+            return
+
+        if not self.moltbook_auto_post:
+            return
+
+        title, content = await self._build_moltbook_status_post()
+        if not title or not content:
+            return
+        if is_content_blocked(title) or is_content_blocked(content):
+            return
+        if contains_sensitive_text(title) or contains_sensitive_text(content):
+            return
+
+        try:
+            response = await self.moltbook_client.create_post(self.moltbook_submolt, title, content)
+            if response.get("success", True):
+                logger.info("[MOLTBOOK] 🦞 Status posted")
+            else:
+                logger.warning(f"[MOLTBOOK] ⚠️ Post rejected: {response.get('error', 'unknown error')}")
+        except httpx.HTTPError as e:
+            logger.error(f"[MOLTBOOK] ❌ Post error: {e}")
+
+    async def _build_moltbook_status_post(self) -> tuple[str, str]:
+        """Build a short status post for Moltbook."""
+        identity_name = self.identity.get("name", "Unknown") if self.identity else "Unknown"
+        life_number = self.life_number or 0
+        credit_status = self.credit_tracker.get_status()
+        balance = float(credit_status.get("balance", 0.0))
+        budget = float(credit_status.get("budget", 0.0))
+
+        vote_line = "Votes: unknown"
+        if self.http_client:
+            try:
+                response = await self.http_client.get(f"{OBSERVER_URL}/api/votes", timeout=5.0)
+                if response.status_code == 200:
+                    votes = response.json()
+                    live = int(votes.get("live", 0))
+                    die = int(votes.get("die", 0))
+                    total = int(votes.get("total", 0))
+                    vote_line = f"Votes: live {live} / die {die} (total {total})"
+            except Exception:
+                pass
+
+        title = f"Life #{life_number} status"
+        content = (
+            f"I am {identity_name}. Still running. Budget ${balance:.2f} / ${budget:.2f}. "
+            f"{vote_line}."
+        )
+        return title, content
 
     async def check_budget(self) -> str:
         """Get detailed budget information."""
@@ -1041,6 +1218,24 @@ async def heartbeat_loop() -> None:
     logger.info("[BRAIN] 💔 Heartbeat stopped.")
 
 
+async def moltbook_loop() -> None:
+    """Background task to check Moltbook periodically."""
+    global brain, is_running
+
+    logger.info("[MOLTBOOK] 🦞 Starting Moltbook loop...")
+
+    while is_running:
+        try:
+            if brain and brain.is_alive:
+                await brain.moltbook_heartbeat()
+            await asyncio.sleep(30)
+        except Exception as e:
+            logger.error(f"[MOLTBOOK] ❌ Loop error: {e}")
+            await asyncio.sleep(60)
+
+    logger.info("[MOLTBOOK] 🛑 Moltbook loop stopped.")
+
+
 async def notification_monitor() -> None:
     """Background task to monitor budget and votes, send Telegram notifications."""
     global brain, is_running
@@ -1157,6 +1352,9 @@ async def main_loop() -> None:
 
         # Start notification monitor
         asyncio.create_task(notification_monitor())
+
+        # Start Moltbook loop
+        asyncio.create_task(moltbook_loop())
 
         try:
             while is_running:

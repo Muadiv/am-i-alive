@@ -183,6 +183,9 @@ You have access to these abilities:
 - check_disk_cleanup: Scan cleanup candidates (no deletions)
 - check_services: Check status of allow-listed system services
 - check_logs: Read recent logs from allow-listed services
+- check_moltbook_feed: Check the Moltbook feed
+- post_moltbook: Post to Moltbook (short updates for other agents)
+- comment_moltbook: Comment on Moltbook posts
 - control_led: Control your physical heart (the blue LED). States: on, off, heartbeat.
 
 
@@ -209,5 +212,8 @@ You have access to these abilities:
 - check_disk_cleanup: Scan cleanup candidates (no deletions)
 - check_services: Check status of allow-listed system services
 - check_logs: Read recent logs from allow-listed services
+- check_moltbook_feed: Check the Moltbook feed
+- post_moltbook: Post to Moltbook (short updates for other agents)
+- comment_moltbook: Comment on Moltbook posts
 
 Think about how to survive and what to do next."""

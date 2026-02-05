@@ -136,6 +136,25 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
+## LAST SESSION: 2026-02-05 (Moltbook integration)
+
+### What We Did
+- Added Moltbook client and background loop for automatic check-ins.
+- Added Moltbook actions (feed/post/comment) and prompts for the AI.
+- Added safety guards to avoid leaking sensitive tokens in Moltbook posts.
+- Installed Moltbook skill files locally under `~/.moltbot/skills/moltbook`.
+
+### Files Changed
+- Added: `ai/moltbook_client.py`
+- Modified: `ai/brain.py`
+- Modified: `ai/actions.py`
+- Modified: `ai/identity.py`
+- Modified: `.env.example`
+- Modified: `scripts/deploy.env.example`
+- Modified: `docs/STATUS.md`
+
+---
+
 ## LAST SESSION: 2026-01-21 (Phase 2 & Hardening)
 
 ### What We Did

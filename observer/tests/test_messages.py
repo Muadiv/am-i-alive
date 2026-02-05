@@ -77,7 +77,7 @@ async def test_oracle_message_sends_message_id(main_module, test_db, monkeypatch
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, _url, json=None, timeout=None):
+        async def post(self, _url, json=None, timeout=None, headers=None):
             self.payloads.append(json or {})
             return FakeResponse()
 

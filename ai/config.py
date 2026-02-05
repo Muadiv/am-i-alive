@@ -47,6 +47,12 @@ class Config:
     TELEGRAM_CHAT_ID: Optional[str] = os.getenv("TELEGRAM_CHAT_ID")
     TELEGRAM_CHANNEL_ID: Optional[str] = os.getenv("TELEGRAM_CHANNEL_ID")
 
+    # Moltbook integration
+    MOLTBOOK_API_KEY: Optional[str] = os.getenv("MOLTBOOK_API_KEY")
+    MOLTBOOK_AUTO_POST: bool = os.getenv("MOLTBOOK_AUTO_POST", "true").lower() in {"1", "true", "yes", "on"}
+    MOLTBOOK_SUBMOLT: str = os.getenv("MOLTBOOK_SUBMOLT", "general")
+    MOLTBOOK_CHECK_INTERVAL_MINUTES: int = int(os.getenv("MOLTBOOK_CHECK_INTERVAL_MINUTES", "30"))
+
     # File paths
     CREDITS_FILE: str = os.getenv("CREDITS_FILE", "/app/credits/balance.json")
     MEMORIES_PATH: str = os.getenv("MEMORIES_PATH", "/app/memories")
@@ -68,6 +74,9 @@ class Config:
         if not cls.MONTHLY_BUDGET > 0:
             errors.append("MONTHLY_BUDGET must be greater than 0")
 
+        if cls.MOLTBOOK_CHECK_INTERVAL_MINUTES <= 0:
+            errors.append("MOLTBOOK_CHECK_INTERVAL_MINUTES must be greater than 0")
+
         if errors:
             error_msg = ", ".join(errors)
             logger.error(f"Configuration validation failed: {error_msg}")
@@ -81,6 +90,9 @@ class Config:
 
         if not cls.TELEGRAM_BOT_TOKEN:
             warnings.append("TELEGRAM_BOT_TOKEN not set - notifications will fail")
+
+        if cls.MOLTBOOK_AUTO_POST and not cls.MOLTBOOK_API_KEY:
+            warnings.append("MOLTBOOK_API_KEY not set - Moltbook integration disabled")
 
         if warnings:
             for warning in warnings:

@@ -62,6 +62,7 @@ What do you want to do? You can:
 - Check your system stats (temperature, CPU, RAM, disk)
 - Check your budget and see spending breakdown
 - Check the weather outside your host (temperature, wind)
+- Check Moltbook to stay in touch with other agents
 - Switch to a different model (free/cheap/expensive options)
 - Read messages from visitors
 - Write or read files in your workspace
@@ -77,8 +78,9 @@ Direct Telegram posts are disabled. The public channel only receives blog post n
 
 Available actions: think, write_blog_post, check_votes, check_state,
 check_budget, check_weather, check_system, check_system_stats, check_health, check_processes,
-check_disk_cleanup, check_services, check_logs, read_messages, switch_model,
-list_models, read_file, write_file, run_code, sleep, reflect
+check_disk_cleanup, check_services, check_logs, read_messages, check_moltbook_feed,
+post_moltbook, comment_moltbook, switch_model, list_models, read_file, write_file,
+run_code, sleep, reflect
 
 If you just want to share a thought (not execute an action), write it as plain text."""
 

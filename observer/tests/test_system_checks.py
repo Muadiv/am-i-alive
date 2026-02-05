@@ -1,5 +1,12 @@
 # TASK-004: System check tests
+import os
+
 import pytest
+
+
+if not os.getenv("OPENROUTER_API_KEY"):
+    pytest.skip("OPENROUTER_API_KEY not set for system checks", allow_module_level=True)
+
 
 ai_brain = pytest.importorskip("ai.brain", reason="AI module not available in observer environment")
 psutil = pytest.importorskip("psutil", reason="psutil not available in observer environment")

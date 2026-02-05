@@ -40,6 +40,12 @@ class BrainInterface(Protocol):
 
     async def read_messages(self) -> str: ...
 
+    async def check_moltbook_feed(self, sort: str = "new", limit: int = 10) -> str: ...
+
+    async def post_to_moltbook(self, submolt: str, title: str, content: str, url: str | None = None) -> str: ...
+
+    async def comment_on_moltbook(self, post_id: str, content: str, parent_id: str | None = None) -> str: ...
+
     async def switch_model(self, model_id: str) -> str: ...
 
     async def list_available_models(self) -> str: ...
@@ -121,6 +127,26 @@ class ActionExecutor:
 
         if action == "read_messages":
             return await self.brain.read_messages()
+
+        if action == "check_moltbook_feed":
+            sort = get_str_param(params, "sort") or "new"
+            limit = get_int_param(params, "limit", default=10)
+            return await self.brain.check_moltbook_feed(sort=sort, limit=limit)
+
+        if action == "post_moltbook":
+            submolt = get_str_param(params, "submolt")
+            title = get_str_param(params, "title")
+            content = get_str_param(params, "content")
+            url = get_str_param(params, "url")
+            url_value = url if url else None
+            return await self.brain.post_to_moltbook(submolt, title, content, url=url_value)
+
+        if action == "comment_moltbook":
+            post_id = get_str_param(params, "post_id")
+            content = get_str_param(params, "content")
+            parent_id = get_str_param(params, "parent_id")
+            parent_value = parent_id if parent_id else None
+            return await self.brain.comment_on_moltbook(post_id, content, parent_id=parent_value)
 
         if action == "switch_model":
             model_id = get_str_param(params, "model_id")
