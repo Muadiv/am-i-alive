@@ -78,7 +78,12 @@ class BrainLifecycleMixin:
             },
             self.bootstrap_mode or BOOTSTRAP_MODE,
         )
-        self.oracle_service = OracleService(self.http_client, self.observer_client)
+        self.oracle_service = OracleService(
+            self.send_message,
+            self.report_thought,
+            OBSERVER_URL,
+            self.http_client,
+        )
         self.action_handler = ActionHandler(
             self.http_client,
             OBSERVER_URL,
