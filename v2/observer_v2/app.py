@@ -10,6 +10,7 @@ from .config import Config
 from .funding_monitor import FundingMonitor, WalletExplorerClient
 from .intention_engine import IntentionEngine
 from .moments import MomentsStore
+from .narrator_engine import NarratorEngine
 from .routes import register_routes
 from .storage import SqliteStorage
 from .vote_rounds import VoteRoundService
@@ -19,6 +20,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
     app_storage = storage or SqliteStorage(Config.DATABASE_PATH)
     vote_round_service = VoteRoundService(app_storage.database_path)
     intention_engine = IntentionEngine(app_storage.database_path)
+    narrator_engine = NarratorEngine(minimum_interval_seconds=Config.NARRATION_TICK_INTERVAL_SECONDS)
     moments_store = MomentsStore(app_storage.database_path)
     app_funding_monitor = funding_monitor or FundingMonitor(
         storage=app_storage,
@@ -88,6 +90,34 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             )
         return intention
 
+    async def tick_narrator_once() -> dict[str, object] | None:
+        state = app_storage.get_life_state()
+        active_intention = intention_engine.get_active_intention()
+        donations = app_storage.list_donations(limit=10)
+        vote_round = None
+        try:
+            vote_round = app_storage.get_open_vote_round()
+        except RuntimeError:
+            vote_round = None
+
+        latest_narration = moments_store.latest(moment_type="narration")
+        last_at = None if not latest_narration else str(latest_narration.get("created_at", ""))
+        if not narrator_engine.should_emit(last_created_at=last_at or None):
+            return None
+
+        title, content = narrator_engine.build_narration(
+            life_state=state,
+            vote_round=vote_round,
+            active_intention=active_intention,
+            donations_count=len(donations),
+        )
+        return moments_store.add_moment(
+            life_number=int(state["life_number"]),
+            moment_type="narration",
+            title=title,
+            content=content,
+        )
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         app_storage.init_schema()
@@ -106,6 +136,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             asyncio.create_task(_watch_vote_rounds(check_vote_rounds_once)),
             asyncio.create_task(_watch_funding(sync_funding_once)),
             asyncio.create_task(_watch_intentions(tick_intention_once)),
+            asyncio.create_task(_watch_narration(tick_narrator_once)),
         ]
         yield
         for task in tasks:
@@ -122,6 +153,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         check_vote_rounds_once=check_vote_rounds_once,
         sync_funding_once=sync_funding_once,
         tick_intention_once=tick_intention_once,
+        tick_narrator_once=tick_narrator_once,
     )
     return app
 
@@ -142,6 +174,12 @@ async def _watch_intentions(tick_intention_once: Callable[[], Awaitable[dict[str
     while True:
         await asyncio.sleep(Config.INTENTION_TICK_INTERVAL_SECONDS)
         await tick_intention_once()
+
+
+async def _watch_narration(tick_narrator_once: Callable[[], Awaitable[dict[str, object] | None]]) -> None:
+    while True:
+        await asyncio.sleep(Config.NARRATION_TICK_INTERVAL_SECONDS)
+        await tick_narrator_once()
 
 
 app = create_app()

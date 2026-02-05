@@ -22,6 +22,7 @@ def register_routes(
     check_vote_rounds_once: Callable[[], Awaitable[dict[str, object]]],
     sync_funding_once: Callable[[], Awaitable[dict[str, object]]],
     tick_intention_once: Callable[[], Awaitable[dict[str, object] | None]],
+    tick_narrator_once: Callable[[], Awaitable[dict[str, object] | None]],
 ) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -165,6 +166,12 @@ def register_routes(
                 content=f"{closed['kind']} closed with outcome: {outcome}",
             )
         return {"success": True, "data": closed}
+
+    @app.post("/api/internal/narrator/tick")
+    async def tick_narrator(x_internal_key: str | None = Header(default=None)) -> dict[str, object]:
+        _require_internal_auth(x_internal_key)
+        moment = await tick_narrator_once()
+        return {"success": True, "data": moment}
 
     @app.post("/api/internal/lifecycle/transition")
     async def transition_lifecycle(

@@ -29,10 +29,11 @@ Last updated: 2026-02-05
 - [x] Executed shadow soak on DietPi (6 iterations, 100% success).
 - [x] Executed cutover readiness evaluator on DietPi (`ready: true`).
 - [x] Added explicit cutover/rollback runbook for production switch.
+- [x] Added autonomous narrator loop that posts periodic pulse updates.
 
 ## In Progress
 
-- [ ] Await explicit cutover approval window.
+- [ ] Tune narrator cadence/content quality based on live feedback.
 
 ## Waiting
 

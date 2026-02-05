@@ -74,6 +74,33 @@ class MomentsStore:
             ).fetchall()
         return [self._serialize(row) for row in rows]
 
+    def latest(self, moment_type: str | None = None) -> dict[str, object] | None:
+        with sqlite3.connect(self.database_path) as conn:
+            if moment_type:
+                row = conn.execute(
+                    """
+                    SELECT id, life_number, moment_type, title, content, visibility, created_at
+                    FROM moments
+                    WHERE visibility = 'public' AND moment_type = ?
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (moment_type,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT id, life_number, moment_type, title, content, visibility, created_at
+                    FROM moments
+                    WHERE visibility = 'public'
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+        if not row:
+            return None
+        return self._serialize(row)
+
     def _serialize(self, row: tuple) -> dict[str, object]:
         return {
             "id": int(row[0]),
