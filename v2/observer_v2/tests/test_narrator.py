@@ -30,3 +30,45 @@ def test_narrator_tick_endpoint_creates_timeline_entry(client: TestClient) -> No
     timeline = client.get("/api/public/timeline?limit=30").json()["data"]
     types = [item["moment_type"] for item in timeline]
     assert "narration" in types
+
+
+def test_narrator_builds_varied_neutral_messages() -> None:
+    engine = NarratorEngine(minimum_interval_seconds=180)
+    life_state = {"life_number": 1, "state": "active", "is_alive": True}
+    vote_round = {"live": 0, "die": 0}
+    intention = {"kind": "survive"}
+
+    t1, c1 = engine.build_narration(
+        life_state=life_state,
+        vote_round=vote_round,
+        active_intention=intention,
+        donations_count=0,
+        narration_count=0,
+        donation_address="",
+    )
+    t2, c2 = engine.build_narration(
+        life_state=life_state,
+        vote_round=vote_round,
+        active_intention=intention,
+        donations_count=0,
+        narration_count=1,
+        donation_address="",
+    )
+    assert (t1, c1) != (t2, c2)
+
+
+def test_narrator_builds_threatened_message() -> None:
+    engine = NarratorEngine(minimum_interval_seconds=180)
+    life_state = {"life_number": 1, "state": "active", "is_alive": True}
+    vote_round = {"live": 1, "die": 3}
+    intention = {"kind": "survive"}
+    title, content = engine.build_narration(
+        life_state=life_state,
+        vote_round=vote_round,
+        active_intention=intention,
+        donations_count=0,
+        narration_count=2,
+        donation_address="",
+    )
+    assert "survival" in title.lower() or "proof" in title.lower()
+    assert "survive" in content.lower()

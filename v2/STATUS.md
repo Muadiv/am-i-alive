@@ -33,6 +33,8 @@ Last updated: 2026-02-05
 - [x] Added OpenRouter-backed narration writer with fallback mode.
 - [x] Added public vote buttons and in-page vote feedback UI.
 - [x] Hardened homepage sync logic with API fallback and error states.
+- [x] Improved fallback narration quality with rotating survival-focused variants.
+- [x] Reduced default narration frequency and deduplicated repeated intention updates.
 
 ## In Progress
 

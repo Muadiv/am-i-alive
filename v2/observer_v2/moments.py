@@ -101,6 +101,20 @@ class MomentsStore:
             return None
         return self._serialize(row)
 
+    def count_public_by_type(self, moment_type: str) -> int:
+        with sqlite3.connect(self.database_path) as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(1)
+                FROM moments
+                WHERE visibility = 'public' AND moment_type = ?
+                """,
+                (moment_type,),
+            ).fetchone()
+        if not row:
+            return 0
+        return int(row[0] or 0)
+
     def _serialize(self, row: tuple) -> dict[str, object]:
         return {
             "id": int(row[0]),

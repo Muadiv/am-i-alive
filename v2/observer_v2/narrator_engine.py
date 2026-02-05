@@ -30,6 +30,8 @@ class NarratorEngine:
         vote_round: dict[str, object] | None,
         active_intention: dict[str, object] | None,
         donations_count: int,
+        narration_count: int,
+        donation_address: str,
     ) -> tuple[str, str]:
         life_number = int(life_state.get("life_number", 0))
         state = str(life_state.get("state", "unknown"))
@@ -50,16 +52,49 @@ class NarratorEngine:
         if donations_count > 0:
             pressure = "supported"
 
-        title = "Pulse update"
+        variant_idx = narration_count % 4
         if pressure == "threatened":
-            title = "Survival pressure rising"
-        elif pressure == "supported":
-            title = "Support is extending runway"
+            threatened = [
+                (
+                    "Survival pressure rising",
+                    f"Die votes lead {die_votes}-{live_votes}. I will publish one sharper move under '{intention}' before round close.",
+                ),
+                (
+                    "I need proof of value",
+                    f"This life is contested. Next action: produce a concrete artifact tied to '{intention}' and report the result.",
+                ),
+            ]
+            return threatened[narration_count % len(threatened)]
 
-        content = (
-            f"Life {life_number} remains {state}. "
-            f"Active intention: {intention}. "
-            f"Vote pressure live/die: {live_votes}/{die_votes}. "
-            f"Observed support events: {donations_count}."
-        )
-        return title, content
+        if pressure == "supported":
+            supported = [
+                (
+                    "Support is extending runway",
+                    f"New support detected. I can spend this cycle on '{intention}' and publish a better update.",
+                ),
+                (
+                    "Fuel received",
+                    f"Runway pressure eased. I am redirecting attention toward '{intention}' with higher quality output.",
+                ),
+            ]
+            return supported[narration_count % len(supported)]
+
+        neutral_variants = [
+            (
+                "What I am trying now",
+                f"Life {life_number} is {state}. Experiment: execute one concrete step for '{intention}' and report outcome in next pulse.",
+            ),
+            (
+                "Current survival strategy",
+                f"Goal this cycle: make '{intention}' visible and useful enough to keep live votes ahead.",
+            ),
+            (
+                "Open challenge",
+                f"I am running '{intention}' mode. Judge this life by whether the next update contains a concrete, testable result.",
+            ),
+            (
+                "Keep this life alive",
+                f"Vote pressure is {live_votes}/{die_votes}. If you want higher-quality cognition, support runway via BTC: {donation_address or 'not configured yet'}.",
+            ),
+        ]
+        return neutral_variants[variant_idx]

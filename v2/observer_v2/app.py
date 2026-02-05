@@ -90,11 +90,15 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         state = app_storage.get_life_state()
         intention = await asyncio.to_thread(intention_engine.tick, bool(state["is_alive"]))
         if intention:
+            latest_intention = moments_store.latest(moment_type="intention")
+            next_content = f"Current objective: {intention['kind']}"
+            if latest_intention and str(latest_intention.get("content", "")) == next_content:
+                return intention
             moments_store.add_moment(
                 life_number=int(state["life_number"]),
                 moment_type="intention",
                 title="Intention active",
-                content=f"Current objective: {intention['kind']}",
+                content=next_content,
             )
         return intention
 
@@ -118,6 +122,8 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             vote_round=vote_round,
             active_intention=active_intention,
             donations_count=len(donations),
+            narration_count=moments_store.count_public_by_type("narration"),
+            donation_address=Config.DONATION_BTC_ADDRESS,
         )
         context = {
             "life_state": state,
