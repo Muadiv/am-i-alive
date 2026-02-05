@@ -136,18 +136,40 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (DNS retry coverage)
+## LAST SESSION: 2026-02-05 (Realism refactor + cadence)
 
 ### What We Did
-- Improved action parsing to handle thought + JSON reliably.
-- Added deterministic JSON repair for malformed action outputs.
-- Added OpenRouter DNS retry/backoff and a 10-minute circuit breaker.
-- Added Telegram DNS retry/backoff for message posts.
+- Split the brain into focused mixins and runtime modules (files <300 lines).
+- Added public thread state and topic rotation to avoid repetition.
+- Enforced 5-minute thought cadence with engaging thought templates.
+- Added Moltbook comment-before-post policy and public thread inclusion.
+- Added action parsing tests for thought+JSON and repair.
 
 ### Files Changed
+- Added: `ai/brain_shared.py`
+- Added: `ai/brain_core.py`
+- Added: `ai/brain_runtime.py`
+- Added: `ai/brain_mixins/actions.py`
+- Added: `ai/brain_mixins/context.py`
+- Added: `ai/brain_mixins/lifecycle.py`
+- Added: `ai/brain_mixins/moltbook.py`
+- Added: `ai/brain_mixins/openrouter.py`
+- Added: `ai/brain_mixins/reporting.py`
+- Added: `ai/brain_mixins/thoughts.py`
+- Added: `ai/services/thread_state.py`
+- Added: `ai/tests/test_action_processor.py`
+- Added: `ai/tests/test_thread_state.py`
 - Modified: `ai/brain.py`
+- Modified: `ai/api/command_server.py`
 - Modified: `ai/core/action_processor.py`
-- Modified: `ai/telegram_notifier.py`
+- Modified: `ai/services/behavior_policy.py`
+- Modified: `ai/brain_mixins/actions.py`
+- Modified: `ai/brain_mixins/lifecycle.py`
+- Modified: `ai/brain_mixins/moltbook.py`
+- Modified: `ai/brain_mixins/thoughts.py`
+- Modified: `ai/brain_core.py`
+- Modified: `ai/brain_runtime.py`
+- Modified: `ai/brain_shared.py`
 - Modified: `docs/STATUS.md`
 
 ---

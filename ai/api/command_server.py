@@ -14,8 +14,9 @@ import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
-from .. import brain as brain_module
-from ..brain import INTERNAL_API_KEY, AIBrain
+from .. import brain_runtime as brain_module
+from ..brain_shared import INTERNAL_API_KEY
+from ..brain_core import AIBrain
 from ..logging_config import logger
 
 # Globals for command server
