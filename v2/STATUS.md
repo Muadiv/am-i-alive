@@ -14,10 +14,11 @@ Last updated: 2026-02-05
 - [x] Added v2 coding standards and agent-specific execution rules.
 - [x] Persisted life state, open vote round, and donations in v2 SQLite storage.
 - [x] Added internal donation ingest endpoint with validation.
+- [x] Added lifecycle transition API backed by persistence.
 
 ## In Progress
 
-- [ ] Add lifecycle API endpoints and persistence-backed transitions.
+- [ ] Add vote casting and round-close scheduler for 24h adjudication.
 
 ## Waiting
 

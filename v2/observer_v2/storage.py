@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import sqlite3
 
+from .lifecycle import LifeState, transition
 from .voting import ROUND_DURATION_HOURS
 
 
@@ -52,11 +53,66 @@ class SqliteStorage:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS life_cycles (
+                    life_number INTEGER PRIMARY KEY,
+                    born_at TEXT NOT NULL,
+                    died_at TEXT,
+                    death_cause TEXT
+                )
+                """
+            )
             conn.commit()
 
     def bootstrap_defaults(self) -> None:
         self._ensure_life_state()
+        self._ensure_life_cycle()
         self._ensure_open_vote_round()
+
+    def transition_life_state(
+        self,
+        next_state: str,
+        current_intention: str | None = None,
+        death_cause: str | None = None,
+    ) -> dict[str, object]:
+        current_state = self.get_life_state()
+        life_state = LifeState(state=str(current_state["state"]))
+        transition(life_state, next_state=next_state, death_cause=death_cause)
+
+        life_number = int(current_state["life_number"])
+        is_alive = 1
+        if next_state in {"dead", "rebirth_pending"}:
+            is_alive = 0
+
+        if next_state == "born":
+            life_number += 1
+            self._insert_life_cycle(life_number)
+            is_alive = 1
+
+        with sqlite3.connect(self.database_path) as conn:
+            conn.execute(
+                """
+                UPDATE life_state
+                SET life_number = ?, is_alive = ?, state = ?, current_intention = ?, updated_at = ?
+                WHERE id = 1
+                """,
+                (
+                    life_number,
+                    is_alive,
+                    next_state,
+                    current_intention or str(current_state["current_intention"]),
+                    utc_now_iso(),
+                ),
+            )
+            if next_state == "dead":
+                conn.execute(
+                    "UPDATE life_cycles SET died_at = ?, death_cause = ? WHERE life_number = ?",
+                    (utc_now_iso(), death_cause, int(current_state["life_number"])),
+                )
+            conn.commit()
+
+        return self.get_life_state()
 
     def get_life_state(self) -> dict[str, object]:
         self._ensure_life_state()
@@ -178,6 +234,25 @@ class SqliteStorage:
                 VALUES (1, 1, 1, 'active', 'bootstrap', ?)
                 """,
                 (utc_now_iso(),),
+            )
+            conn.commit()
+
+    def _ensure_life_cycle(self) -> None:
+        with sqlite3.connect(self.database_path) as conn:
+            row = conn.execute("SELECT life_number FROM life_cycles WHERE life_number = 1").fetchone()
+            if row:
+                return
+            conn.execute(
+                "INSERT INTO life_cycles (life_number, born_at, died_at, death_cause) VALUES (1, ?, NULL, NULL)",
+                (utc_now_iso(),),
+            )
+            conn.commit()
+
+    def _insert_life_cycle(self, life_number: int) -> None:
+        with sqlite3.connect(self.database_path) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO life_cycles (life_number, born_at, died_at, death_cause) VALUES (?, ?, NULL, NULL)",
+                (life_number, utc_now_iso()),
             )
             conn.commit()
 

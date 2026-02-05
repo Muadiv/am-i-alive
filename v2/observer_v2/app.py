@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Header, HTTPException
 
 from .config import Config
@@ -7,13 +9,15 @@ from .storage import SqliteStorage
 
 
 def create_app(storage: SqliteStorage | None = None) -> FastAPI:
-    app = FastAPI(title=Config.APP_NAME, version=Config.APP_VERSION)
     app_storage = storage or SqliteStorage(Config.DATABASE_PATH)
 
-    @app.on_event("startup")
-    async def startup() -> None:
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
         app_storage.init_schema()
         app_storage.bootstrap_defaults()
+        yield
+
+    app = FastAPI(title=Config.APP_NAME, version=Config.APP_VERSION, lifespan=lifespan)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -70,6 +74,31 @@ def create_app(storage: SqliteStorage | None = None) -> FastAPI:
 
         donation = app_storage.upsert_donation(txid=txid, amount_btc=amount_btc, confirmations=confirmations)
         return {"success": True, "data": donation}
+
+    @app.post("/api/internal/lifecycle/transition")
+    async def transition_lifecycle(
+        payload: dict[str, object],
+        x_internal_key: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        if Config.INTERNAL_API_KEY and x_internal_key != Config.INTERNAL_API_KEY:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
+        next_state = str(payload.get("next_state", "")).strip()
+        current_intention = str(payload.get("current_intention", "")).strip() or None
+        death_cause = str(payload.get("death_cause", "")).strip() or None
+        if not next_state:
+            raise HTTPException(status_code=400, detail="next_state is required")
+
+        try:
+            state = app_storage.transition_life_state(
+                next_state=next_state,
+                current_intention=current_intention,
+                death_cause=death_cause,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return {"success": True, "data": state}
 
     return app
 
