@@ -276,7 +276,53 @@ class AIBrain:
             bootstrap_mode=self.bootstrap_mode,
         )
 
-    async def send_message(self, message: str, system_prompt: Optional[str] = None) -> tuple[str, dict[str, Any]]:
+    def _estimate_max_chars(self) -> int:
+        context_tokens = int(self.current_model.get("context", 32768)) if self.current_model else 32768
+        max_chars = int(context_tokens * 4 * 0.85)
+        return max(max_chars, 8000)
+
+    def _build_messages(
+        self,
+        message: str,
+        system_prompt: Optional[str],
+        max_chars: int,
+        max_history_messages: int,
+    ) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        history = self.chat_history[-max_history_messages:] if max_history_messages > 0 else []
+        for msg in history:
+            messages.append(msg)
+
+        messages.append({"role": "user", "content": message})
+
+        total_chars = sum(len(entry.get("content", "")) for entry in messages)
+        while total_chars > max_chars and len(messages) > 2:
+            dropped = messages.pop(1)
+            total_chars -= len(dropped.get("content", ""))
+
+        return messages
+
+    def _trim_chat_history(self, max_chars: int, max_messages: int) -> None:
+        if len(self.chat_history) > max_messages:
+            self.chat_history = self.chat_history[-max_messages:]
+
+        total_chars = sum(len(entry.get("content", "")) for entry in self.chat_history)
+        while total_chars > max_chars and len(self.chat_history) > 2:
+            dropped = self.chat_history.pop(0)
+            total_chars -= len(dropped.get("content", ""))
+
+    async def send_message(
+        self,
+        message: str,
+        system_prompt: Optional[str] = None,
+        max_history_messages: int | None = None,
+        max_chars: int | None = None,
+        context_retry: bool = False,
+    ) -> tuple[str, dict[str, Any]]:
         """
         Send a message to OpenRouter and track token usage.
         Returns: (response_text, usage_stats)
@@ -288,19 +334,9 @@ class AIBrain:
 
         current_model = self.current_model
 
-        # Build messages
-        messages = []
-
-        # Add system prompt if provided
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-
-        # Add chat history
-        for msg in self.chat_history:
-            messages.append(msg)
-
-        # Add new user message
-        messages.append({"role": "user", "content": message})
+        max_chars = max_chars or self._estimate_max_chars()
+        max_history_messages = max_history_messages or 40
+        messages = self._build_messages(message, system_prompt, max_chars, max_history_messages)
 
         # Make API call to OpenRouter
         try:
@@ -326,9 +362,8 @@ class AIBrain:
             self.chat_history.append({"role": "user", "content": message})
             self.chat_history.append({"role": "assistant", "content": response_text})
 
-            # Keep history manageable (last 20 exchanges = 40 messages)
-            if len(self.chat_history) > 40:
-                self.chat_history = self.chat_history[-40:]
+            # Keep history manageable within model context
+            self._trim_chat_history(self._estimate_max_chars(), 40)
 
             # Update rotator's balance
             self.model_rotator.credit_balance = self.credit_tracker.get_balance()
@@ -362,6 +397,16 @@ class AIBrain:
             error_code = e.response.status_code
             error_text = e.response.text
             logger.error(f"[BRAIN] ❌ HTTP Error: {error_code} - {error_text}")
+
+            if error_code == 400 and "context length" in error_text.lower() and not context_retry:
+                logger.warning("[BRAIN] ⚠️ Context too long; retrying with trimmed history")
+                return await self.send_message(
+                    message,
+                    system_prompt=system_prompt,
+                    max_history_messages=8,
+                    max_chars=int(self._estimate_max_chars() * 0.6),
+                    context_retry=True,
+                )
 
             if self.model_retry_policy:
                 handled, updated_model = await self.model_retry_policy.handle_error(

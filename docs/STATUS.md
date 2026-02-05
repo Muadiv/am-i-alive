@@ -136,19 +136,14 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Moltbook rate limit handling)
+## LAST SESSION: 2026-02-05 (Context length guard)
 
 ### What We Did
-- Added Moltbook rate-limit persistence to avoid post 429s after restarts.
-- Added retry-aware cooldown handling for Moltbook posts/comments.
-- Instructed AI to include URLs in Moltbook posts when available.
+- Added context-length guardrails to prevent OpenRouter 400 errors.
+- Trimmed chat history by character budget and retried with shorter context.
 
 ### Files Changed
 - Modified: `ai/brain.py`
-- Modified: `ai/core/action_processor.py`
-- Modified: `ai/identity.py`
-- Modified: `ai/moltbook_client.py`
-- Modified: `ai/services/prompt_service.py`
 - Modified: `docs/STATUS.md`
 
 ---
