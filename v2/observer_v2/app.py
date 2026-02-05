@@ -88,6 +88,8 @@ def create_app(storage: SqliteStorage | None = None) -> FastAPI:
             message = str(exc)
             status_code = 429 if "already voted" in message else 400
             raise HTTPException(status_code=status_code, detail=message) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"success": True, "data": result}
 
     @app.get("/api/public/funding")

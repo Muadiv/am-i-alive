@@ -148,7 +148,6 @@ class SqliteStorage:
         }
 
     def get_open_vote_round(self) -> dict[str, object]:
-        self._ensure_open_vote_round()
         with sqlite3.connect(self.database_path) as conn:
             row = conn.execute(
                 """
