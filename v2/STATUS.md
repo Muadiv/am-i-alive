@@ -8,10 +8,11 @@ Last updated: 2026-02-05
 - [x] Defined architecture, roadmap, deployment strategy, and test plan docs.
 - [x] Built minimal `observer_v2` service skeleton.
 - [x] Added baseline tests for health and public state endpoints.
+- [x] Added lifecycle state machine scaffolding and transition tests.
 
 ## In Progress
 
-- [ ] Add v2 lifecycle state machine scaffolding.
+- [ ] Add 24h vote round scaffolding and tests.
 
 ## Waiting
 
