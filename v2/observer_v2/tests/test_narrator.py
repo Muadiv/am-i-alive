@@ -22,10 +22,11 @@ def test_narrator_respects_min_interval() -> None:
 
 
 def test_narrator_tick_endpoint_creates_timeline_entry(client: TestClient) -> None:
-    response = client.post("/api/internal/narrator/tick")
+    response = client.post("/api/internal/narrator/tick", json={"force": True})
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
+    assert payload["data"] is not None
 
     timeline = client.get("/api/public/timeline?limit=30").json()["data"]
     types = [item["moment_type"] for item in timeline]

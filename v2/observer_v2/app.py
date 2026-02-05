@@ -102,7 +102,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             )
         return intention
 
-    async def tick_narrator_once() -> dict[str, object] | None:
+    async def tick_narrator_once(force: bool = False) -> dict[str, object] | None:
         state = app_storage.get_life_state()
         active_intention = intention_engine.get_active_intention()
         donations = app_storage.list_donations(limit=10)
@@ -114,7 +114,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
 
         latest_narration = moments_store.latest(moment_type="narration")
         last_at = None if not latest_narration else str(latest_narration.get("created_at", ""))
-        if not narrator_engine.should_emit(last_created_at=last_at or None):
+        if not force and not narrator_engine.should_emit(last_created_at=last_at or None):
             return None
 
         title, content = narrator_engine.build_narration(
@@ -201,10 +201,10 @@ async def _watch_intentions(tick_intention_once: Callable[[], Awaitable[dict[str
         await tick_intention_once()
 
 
-async def _watch_narration(tick_narrator_once: Callable[[], Awaitable[dict[str, object] | None]]) -> None:
+async def _watch_narration(tick_narrator_once: Callable[[bool], Awaitable[dict[str, object] | None]]) -> None:
     while True:
         await asyncio.sleep(Config.NARRATION_TICK_INTERVAL_SECONDS)
-        await tick_narrator_once()
+        await tick_narrator_once(False)
 
 
 app = create_app()

@@ -35,6 +35,7 @@ Last updated: 2026-02-05
 - [x] Hardened homepage sync logic with API fallback and error states.
 - [x] Improved fallback narration quality with rotating survival-focused variants.
 - [x] Reduced default narration frequency and deduplicated repeated intention updates.
+- [x] Added force option for narrator tick to validate content updates instantly.
 
 ## In Progress
 
