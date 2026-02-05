@@ -25,14 +25,15 @@ Last updated: 2026-02-05
 - [x] Deployed `amialive-v2-observer` on DietPi (port 8080) in parallel with v1.
 - [x] Added automated soak-check script for parallel v1/v2 validation.
 - [x] Added shadow soak runner that records structured stability reports.
+- [x] Added cutover readiness evaluator and checklist doc.
 
 ## In Progress
 
-- [ ] Run v1/v2 parallel soak checks and collect stability metrics.
+- [ ] Run extended shadow soak and gather readiness evidence for cutover decision.
 
 ## Waiting
 
-- [ ] Run shadow soak tests and cutover readiness checks.
+- [ ] Final cutover switch and v1 decommission (after explicit approval).
 
 ## Risks / Notes
 

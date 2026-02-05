@@ -23,6 +23,7 @@ Systemd assets committed in:
 - `v2/deploy/install_observer_service.sh`
 - `v2/deploy/soak_check.sh`
 - `v2/deploy/shadow_soak_runner.py`
+- `v2/deploy/cutover_readiness.py`
 
 ## Suggested Ports
 
