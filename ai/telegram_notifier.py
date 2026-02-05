@@ -21,10 +21,7 @@ TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")  # Public channel for AI 
 OBSERVER_URL = os.getenv("OBSERVER_URL", "http://127.0.0.1")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
-if not TELEGRAM_BOT_TOKEN:
-    raise ValueError("TELEGRAM_BOT_TOKEN environment variable must be set")
-if not TELEGRAM_CHAT_ID:
-    raise ValueError("TELEGRAM_CHAT_ID environment variable must be set")
+TELEGRAM_ENABLED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
 # TELEGRAM_CHANNEL_ID is optional - AI can still function without public channel
 
 
@@ -52,6 +49,9 @@ class TelegramNotifier:
 
     async def send_message(self, text: str, parse_mode: str = "Markdown") -> bool:
         """Send a text message to private Telegram chat."""
+        if not TELEGRAM_ENABLED:
+            logger.warning("[TELEGRAM] ⚠️ Telegram not configured; skipping private message")
+            return False
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await self._post_with_retry(
@@ -132,6 +132,8 @@ class TelegramNotifier:
         Post a message to the public Telegram channel.
         Returns (success, message).
         """
+        if not TELEGRAM_ENABLED:
+            return False, "Telegram not configured"
         is_valid, reason = self._validate_channel_id()
         if not is_valid:
             logger.warning(f"[TELEGRAM] {reason}")

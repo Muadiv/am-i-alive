@@ -76,6 +76,7 @@ class BrainLifecycleMixin:
                 "X-Title": OPENROUTER_TITLE,
                 "Content-Type": "application/json",
             },
+            self.bootstrap_mode or BOOTSTRAP_MODE,
         )
         self.oracle_service = OracleService(self.http_client, self.observer_client)
         self.action_handler = ActionHandler(

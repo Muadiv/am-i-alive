@@ -20,7 +20,13 @@ class ObserverClient(ObserverClientProtocol):
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         url = f"{self.observer_url}{path}"
-        return await self.http_client.request(method, url, timeout=self.timeout, **kwargs)
+        if hasattr(self.http_client, "request"):
+            return await self.http_client.request(method, url, timeout=self.timeout, **kwargs)
+        if method.upper() == "GET" and hasattr(self.http_client, "get"):
+            return await self.http_client.get(url, timeout=self.timeout, **kwargs)
+        if method.upper() == "POST" and hasattr(self.http_client, "post"):
+            return await self.http_client.post(url, timeout=self.timeout, **kwargs)
+        raise AttributeError("http_client does not support request")
 
     async def report_thought(self, payload: dict[str, Any]) -> None:
         try:

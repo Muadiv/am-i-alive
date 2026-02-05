@@ -144,6 +144,9 @@ sudo systemctl restart amialive-observer amialive-ai
 - Enforced 5-minute thought cadence with engaging thought templates.
 - Added Moltbook comment-before-post policy and public thread inclusion.
 - Added action parsing tests for thought+JSON and repair.
+- Fixed LifecycleService initialization after refactor.
+- Made Telegram notifier tolerate missing env vars during tests.
+- Added fallback request method for observer client test doubles.
 
 ### Files Changed
 - Added: `ai/brain_shared.py`
@@ -170,6 +173,10 @@ sudo systemctl restart amialive-observer amialive-ai
 - Modified: `ai/brain_core.py`
 - Modified: `ai/brain_runtime.py`
 - Modified: `ai/brain_shared.py`
+- Modified: `ai/brain_mixins/lifecycle.py`
+- Modified: `ai/core/action_processor.py`
+- Modified: `ai/services/observer_client.py`
+- Modified: `ai/telegram_notifier.py`
 - Modified: `docs/STATUS.md`
 
 ---

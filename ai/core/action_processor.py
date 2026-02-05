@@ -66,7 +66,8 @@ class ActionProcessor:
     def _attempt_repair(content: str) -> Optional[str]:
         cleaned = re.sub(r"```[a-z]*", "", content)
         cleaned = cleaned.replace("```", "")
-        start = cleaned.rfind("{")
+        action_idx = cleaned.rfind("\"action\"")
+        start = cleaned.rfind("{", 0, action_idx if action_idx != -1 else None)
         if start == -1:
             return None
 
