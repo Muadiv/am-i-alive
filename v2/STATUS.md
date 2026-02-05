@@ -11,6 +11,7 @@ Last updated: 2026-02-05
 - [x] Added lifecycle state machine scaffolding and transition tests.
 - [x] Added 24h vote round scaffolding and adjudication tests.
 - [x] Added funding scaffolding (static address endpoint + donation ledger module).
+- [x] Added v2 coding standards and agent-specific execution rules.
 
 ## In Progress
 

@@ -16,6 +16,8 @@ See `v2/STATUS.md` for detailed progress tracking.
 
 ## Documentation Index
 
+- `v2/AGENTS.md`: agent operating rules for v2 work
+- `v2/CODING_STANDARDS.md`: coding best-practices baseline for v2
 - `v2/STATUS.md`: live progress board (done, in progress, waiting)
 - `v2/ARCHITECTURE.md`: target services and boundaries
 - `v2/ROADMAP.md`: phased execution plan
