@@ -12,8 +12,8 @@ echo "[SOAK] Checking v2 health: $V2_URL/health"
 curl -sS "$V2_URL/health"
 echo
 
-echo "[SOAK] Checking v1 state: $V1_URL/api/public/state"
-curl -sS "$V1_URL/api/public/state"
+echo "[SOAK] Checking v1 state: $V1_URL/api/state"
+curl -sS "$V1_URL/api/state"
 echo
 
 echo "[SOAK] Checking v2 state: $V2_URL/api/public/state"
