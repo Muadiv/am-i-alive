@@ -17,6 +17,7 @@ def test_home_page_renders(client: TestClient) -> None:
     assert "Am I Alive v2" in response.text
     assert "Vote live" in response.text
     assert "Vote die" in response.text
+    assert "Showing latest meaningful updates." in response.text
 
 
 def test_public_state_shape(client: TestClient) -> None:

@@ -36,6 +36,7 @@ Last updated: 2026-02-05
 - [x] Improved fallback narration quality with rotating survival-focused variants.
 - [x] Reduced default narration frequency and deduplicated repeated intention updates.
 - [x] Added force option for narrator tick to validate content updates instantly.
+- [x] Filtered legacy repetitive pulses in homepage timeline view.
 
 ## In Progress
 

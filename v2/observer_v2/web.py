@@ -43,6 +43,7 @@ def index_html() -> str:
     .vote-btn.live:hover { border-color: var(--alive); }
     .vote-btn.die:hover { border-color: var(--dead); }
     .vote-note { color: var(--muted); font-size: 13px; min-height: 18px; }
+    .timeline-note { color: var(--muted); font-size: 12px; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -65,6 +66,7 @@ def index_html() -> str:
       <div class="vote-note" id="vote-note">One vote per round per visitor.</div>
     </section>
 
+    <div class="timeline-note" id="timeline-note">Showing latest meaningful updates.</div>
     <section class="timeline" id="timeline"></section>
   </main>
 
@@ -106,6 +108,16 @@ def index_html() -> str:
       }
     }
 
+    function shouldHideLegacyNoise(item, latestBootId) {
+      if (item.moment_type === 'boot' && item.id !== latestBootId) {
+        return true;
+      }
+      const legacyPulse = item.title === 'Pulse update'
+        && item.content.startsWith('Life ')
+        && item.content.includes('Vote pressure live/die:');
+      return legacyPulse;
+    }
+
     async function loadAll() {
       try {
         const [statePayload, votePayload, fundPayload, momentsPayload] = await Promise.all([
@@ -135,7 +147,15 @@ def index_html() -> str:
 
         const root = document.getElementById('timeline');
         root.innerHTML = '';
-        for (const item of moments) {
+        const latestBoot = moments.find((m) => m.moment_type === 'boot');
+        const latestBootId = latestBoot ? latestBoot.id : -1;
+        const visibleMoments = moments.filter((item) => !shouldHideLegacyNoise(item, latestBootId));
+        const note = document.getElementById('timeline-note');
+        note.textContent = visibleMoments.length < moments.length
+          ? `Showing ${visibleMoments.length} updates (filtered ${moments.length - visibleMoments.length} legacy pulses).`
+          : 'Showing latest meaningful updates.';
+
+        for (const item of visibleMoments) {
           const node = document.createElement('article');
           node.className = 'item';
           node.innerHTML = `<div class=\"row\"><span>${item.moment_type}</span><span>${item.created_at}</span></div><h4>${item.title}</h4><p>${item.content}</p>`;
