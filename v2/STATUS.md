@@ -26,10 +26,12 @@ Last updated: 2026-02-05
 - [x] Added automated soak-check script for parallel v1/v2 validation.
 - [x] Added shadow soak runner that records structured stability reports.
 - [x] Added cutover readiness evaluator and checklist doc.
+- [x] Executed shadow soak on DietPi (6 iterations, 100% success).
+- [x] Executed cutover readiness evaluator on DietPi (`ready: true`).
 
 ## In Progress
 
-- [ ] Run extended shadow soak and gather readiness evidence for cutover decision.
+- [ ] Prepare final production cutover change set (proxy/DNS switch + rollback window).
 
 ## Waiting
 
