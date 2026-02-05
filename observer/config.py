@@ -30,6 +30,7 @@ class Config:
     # Admin and security
     ADMIN_TOKEN: Optional[str] = os.getenv("ADMIN_TOKEN")
     IP_SALT: str = os.getenv("IP_SALT", "default_salt_change_me")
+    OBSERVER_ENV: str = os.getenv("OBSERVER_ENV", "development").lower()
 
     # Local network configuration
     LOCAL_NETWORK_CIDR: str = os.getenv("LOCAL_NETWORK_CIDR", "192.168.0.0/24")
@@ -99,8 +100,17 @@ class Config:
         if not cls.INTERNAL_API_KEY:
             warnings.append("INTERNAL_API_KEY not set - AI calls may not be authenticated")
 
+        env_ranges = os.getenv("CLOUDFLARE_IP_RANGES")
+        if env_ranges:
+            ranges = [value.strip() for value in env_ranges.split(",") if value.strip()]
+            if ranges:
+                cls.CLOUDFLARE_IP_RANGES = ranges
+
         if cls.IP_SALT == "default_salt_change_me":
-            warnings.append("IP_SALT not set - using default salt (insecure)")
+            if cls.OBSERVER_ENV in {"production", "prod"}:
+                errors.append("IP_SALT must be set for production")
+            else:
+                warnings.append("IP_SALT not set - using default salt (insecure)")
 
         if warnings:
             for warning in warnings:

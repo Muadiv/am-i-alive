@@ -1,3 +1,5 @@
+import logging
+
 import bleach
 import httpx
 import markdown2
@@ -34,6 +36,7 @@ except ImportError:
     from ..database import track_visitor as track_visitor_db
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _get_context():
@@ -166,7 +169,8 @@ async def blog_page(request: Request):
                 if previous_life and previous_life[0].get("summary"):
                     summary = previous_life[0]["summary"]
                     memories = [s.strip() for s in summary.split(";") if s.strip()]
-        except Exception:
+        except Exception as exc:
+            logger.warning(f"[PUBLIC] ⚠️ Failed to load memory summary: {exc}")
             memories = []
 
     return templates.TemplateResponse(
@@ -175,10 +179,16 @@ async def blog_page(request: Request):
 
 
 @router.get("/blog/history", response_class=HTMLResponse)
-async def blog_history(request: Request):
+async def blog_history(request: Request, page: int = 1, page_size: int = 50):
     """Archive of ALL blog posts from all lives."""
     _, _, _, _, _, templates = _get_context()
-    all_posts = await get_all_blog_posts_db(limit=100)
+    page = max(page, 1)
+    page_size = max(10, min(page_size, 100))
+    offset = (page - 1) * page_size
+    all_posts = await get_all_blog_posts_db(limit=page_size + 1, offset=offset)
+    has_more = len(all_posts) > page_size
+    if has_more:
+        all_posts = all_posts[:page_size]
 
     posts_by_life = {}
     for post in all_posts:
@@ -188,7 +198,17 @@ async def blog_history(request: Request):
         posts_by_life[life].append(post)
 
     return templates.TemplateResponse(
-        "blog_history.html", {"request": request, "posts_by_life": posts_by_life, "total_posts": len(all_posts)}
+        "blog_history.html",
+        {
+            "request": request,
+            "posts_by_life": posts_by_life,
+            "total_posts": len(all_posts),
+            "page": page,
+            "page_size": page_size,
+            "has_more": has_more,
+            "next_page": page + 1 if has_more else None,
+            "prev_page": page - 1 if page > 1 else None,
+        },
     )
 
 

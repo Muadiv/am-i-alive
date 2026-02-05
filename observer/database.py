@@ -1179,6 +1179,8 @@ async def get_unread_messages() -> list:
 
 async def mark_messages_read(message_ids: list):
     """Mark messages as read."""
+    if not message_ids:
+        return
     db = await get_db()
     placeholders = ",".join("?" * len(message_ids))
     await db.execute(
@@ -1889,59 +1891,6 @@ async def can_send_message(ip_hash: str) -> tuple[bool, Optional[int]]:
             return False, remaining
 
         return True, None
-
-
-async def submit_visitor_message(from_name: str, message: str, ip_hash: str) -> dict:
-    """Submit a message from a visitor to the AI."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute(
-            """
-            INSERT INTO visitor_messages (from_name, message, ip_hash)
-            VALUES (?, ?, ?)
-        """,
-            (from_name, message, ip_hash),
-        )
-        await db.commit()
-        # TASK-004: Return message id for tests and follow-up actions.
-        return {"success": True, "message": "Message sent to the AI", "id": cursor.lastrowid}
-
-
-async def get_unread_messages() -> list:
-    """Get all unread messages for the AI."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """
-            SELECT id, from_name, message, timestamp
-            FROM visitor_messages
-            WHERE read = 0
-            ORDER BY timestamp ASC
-        """
-        ) as cursor:
-            return [dict(row) for row in await cursor.fetchall()]
-
-
-async def mark_messages_read(message_ids: list):
-    """Mark messages as read."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        placeholders = ",".join("?" * len(message_ids))
-        await db.execute(
-            f"""
-            UPDATE visitor_messages
-            SET read = 1
-            WHERE id IN ({placeholders})
-        """,
-            message_ids,
-        )
-        await db.commit()
-
-
-async def get_unread_message_count() -> int:
-    """Get count of unread messages."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("SELECT COUNT(*) FROM visitor_messages WHERE read = 0") as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else 0
 
 
 async def submit_oracle_message(message: str, message_type: str) -> dict:

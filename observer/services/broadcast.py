@@ -1,4 +1,8 @@
 import asyncio
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class BroadcastManager:
@@ -28,5 +32,6 @@ class BroadcastManager:
         for q in list(self.subscribers):
             try:
                 q.put_nowait(message)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(f"[OBSERVER] ⚠️ Dropping dead subscriber: {exc}")
+                self.subscribers.discard(q)

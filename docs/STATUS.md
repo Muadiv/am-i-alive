@@ -136,14 +136,26 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Context length guard)
+## LAST SESSION: 2026-02-05 (Stability hardening sweep)
 
 ### What We Did
-- Added context-length guardrails to prevent OpenRouter 400 errors.
-- Trimmed chat history by character budget and retried with shorter context.
+- Hardened sandbox execution with process isolation, time limits, and memory caps.
+- Added observer client timeouts, status checks, and warning logs.
+- Filtered invalid message IDs before marking reads.
+- Deduplicated visitor message DB functions and guarded empty IN clauses.
+- Dropped broken broadcast subscribers to avoid leaks.
+- Centralized Observer config constants and enforced IP_SALT in production.
+- Added blog history pagination and logging for memory load failures.
 
 ### Files Changed
-- Modified: `ai/brain.py`
+- Modified: `ai/services/sandbox_service.py`
+- Modified: `ai/services/observer_client.py`
+- Modified: `ai/services/message_service.py`
+- Modified: `observer/database.py`
+- Modified: `observer/services/broadcast.py`
+- Modified: `observer/config.py`
+- Modified: `observer/main.py`
+- Modified: `observer/routes/public.py`
 - Modified: `docs/STATUS.md`
 
 ---

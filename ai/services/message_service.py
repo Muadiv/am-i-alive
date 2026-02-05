@@ -38,14 +38,17 @@ class MessageService:
                 from_name = msg.get("from_name", "Anonymous")
                 message_text = msg.get("message", "")
                 timestamp = msg.get("timestamp", "")
-                message_ids.append(msg.get("id"))
+                message_id = msg.get("id")
+                if message_id is not None:
+                    message_ids.append(message_id)
 
                 result += f"From: {from_name}\n"
                 result += f"Message: {message_text}\n"
                 result += f"Time: {timestamp}\n"
                 result += "---\n"
 
-            await self.observer_client.mark_messages_read(message_ids)
+            if message_ids:
+                await self.observer_client.mark_messages_read(message_ids)
             await report_activity("messages_read", f"Read {len(messages_list)} messages")
             return result
         except Exception as e:

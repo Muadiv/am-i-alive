@@ -2,77 +2,114 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+import logging
+
 import httpx
 
 from .interfaces import ObserverClientProtocol
+
+
+logger = logging.getLogger(__name__)
 
 
 class ObserverClient(ObserverClientProtocol):
     def __init__(self, http_client: httpx.AsyncClient, observer_url: str) -> None:
         self.http_client = http_client
         self.observer_url = observer_url
+        self.timeout = 5.0
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        url = f"{self.observer_url}{path}"
+        return await self.http_client.request(method, url, timeout=self.timeout, **kwargs)
 
     async def report_thought(self, payload: dict[str, Any]) -> None:
-        await self.http_client.post(f"{self.observer_url}/api/thought", json=payload)
+        try:
+            response = await self._request("POST", "/api/thought", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to report thought: {exc}")
 
     async def report_activity(self, payload: dict[str, Any]) -> None:
-        await self.http_client.post(f"{self.observer_url}/api/activity", json=payload)
+        try:
+            response = await self._request("POST", "/api/activity", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to report activity: {exc}")
 
     async def send_heartbeat(self, payload: dict[str, Any]) -> None:
-        await self.http_client.post(f"{self.observer_url}/api/heartbeat", json=payload)
+        try:
+            response = await self._request("POST", "/api/heartbeat", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to send heartbeat: {exc}")
 
     async def notify_birth(self, payload: dict[str, Any]) -> httpx.Response:
-        response = await self.http_client.post(f"{self.observer_url}/api/birth", json=payload)
+        response = await self._request("POST", "/api/birth", json=payload)
+        response.raise_for_status()
         return response
 
     async def fetch_system_stats(self) -> dict[str, Any]:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/system/stats", timeout=5.0)
-            if response.status_code != 200:
-                return {}
+            response = await self._request("GET", "/api/system/stats")
+            response.raise_for_status()
             data = response.json()
             return data if isinstance(data, dict) else {}
-        except Exception:
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to fetch system stats: {exc}")
             return {}
 
     async def fetch_messages_count(self) -> Optional[int]:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/messages/count")
+            response = await self._request("GET", "/api/messages/count")
             response.raise_for_status()
             data = response.json()
             return int(data.get("count", 0))
-        except Exception:
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to fetch messages count: {exc}")
             return None
 
     async def fetch_blog_post_count(self) -> Optional[int]:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/blog/posts")
+            response = await self._request("GET", "/api/blog/posts")
             response.raise_for_status()
             data = response.json()
             return int(data.get("count", 0))
-        except Exception:
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to fetch blog post count: {exc}")
             return None
 
     async def fetch_votes(self) -> dict[str, Any]:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/votes")
+            response = await self._request("GET", "/api/votes")
+            response.raise_for_status()
             return response.json()
-        except Exception:
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to fetch votes: {exc}")
             return {}
 
     async def fetch_messages(self) -> dict[str, Any]:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/messages")
+            response = await self._request("GET", "/api/messages")
+            response.raise_for_status()
             return response.json()
-        except Exception:
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to fetch messages: {exc}")
             return {}
 
     async def mark_messages_read(self, message_ids: list[int]) -> None:
-        await self.http_client.post(f"{self.observer_url}/api/messages/read", json={"ids": message_ids})
+        if not message_ids:
+            return
+        try:
+            response = await self._request("POST", "/api/messages/read", json={"ids": message_ids})
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to mark messages read: {exc}")
 
     async def fetch_state(self) -> dict[str, Any]:
         try:
-            response = await self.http_client.get(f"{self.observer_url}/api/state")
+            response = await self._request("GET", "/api/state")
+            response.raise_for_status()
             return response.json()
-        except Exception:
+        except httpx.HTTPError as exc:
+            logger.warning(f"[OBSERVER] ⚠️ Failed to fetch state: {exc}")
             return {}

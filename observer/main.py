@@ -25,6 +25,11 @@ from routes.system import router as system_router
 from services.broadcast import BroadcastManager
 from sse_starlette.sse import EventSourceResponse
 
+try:
+    from config import Config
+except ImportError:
+    from .config import Config
+
 # Global broadcasters
 activity_broadcaster = BroadcastManager()
 thought_broadcaster = BroadcastManager()
@@ -139,80 +144,31 @@ ALLOWED_ATTRIBUTES = {
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # AI API
-AI_API_URL = os.getenv("AI_API_URL", "http://127.0.0.1:8000")
+AI_API_URL = Config.AI_API_URL
 
 # Admin and internal API auth
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
-IP_SALT = os.getenv("IP_SALT", "default_salt_change_me")
+ADMIN_TOKEN = Config.ADMIN_TOKEN
+INTERNAL_API_KEY = Config.INTERNAL_API_KEY
+IP_SALT = Config.IP_SALT
 
-
-def validate_environment():
-    """Validate that required environment variables are set."""
-    warnings = []
-
-    if not AI_API_URL:
-        warnings.append("AI_API_URL not set - using default, may fail to reach AI")
-
-    if not ADMIN_TOKEN:
-        warnings.append("ADMIN_TOKEN not set - God mode will only work from local network")
-
-    if not INTERNAL_API_KEY:
-        warnings.append("INTERNAL_API_KEY not set - AI calls may not be authenticated")
-
-    if IP_SALT == "default_salt_change_me":
-        warnings.append("IP_SALT not set - using default salt (insecure)")
-
-    if warnings:
-        for w in warnings:
-            print(f"[STARTUP] ⚠️ {w}")
-
-
-# Run validation at module load
-validate_environment()
-
-# Voting window duration (1 hour)
-VOTING_WINDOW_SECONDS = 3600
+# Voting window duration (seconds)
+VOTING_WINDOW_SECONDS = Config.VOTING_WINDOW_SECONDS
 
 # Minimum votes required for death by voting
-MIN_VOTES_FOR_DEATH = 3
+MIN_VOTES_FOR_DEATH = Config.MIN_VOTES_FOR_DEATH
 
 # Respawn delay range (seconds)
-# BE-002: Reduce respawn delay for testing
-RESPAWN_DELAY_MIN = 10
-RESPAWN_DELAY_MAX = 60
-# BE-003: State sync validator interval (seconds)
-STATE_SYNC_INTERVAL_SECONDS = 30
+RESPAWN_DELAY_MIN = Config.RESPAWN_DELAY_MIN
+RESPAWN_DELAY_MAX = Config.RESPAWN_DELAY_MAX
+
+# State sync validator interval (seconds)
+STATE_SYNC_INTERVAL_SECONDS = Config.STATE_SYNC_INTERVAL_SECONDS
 
 # Local network for God mode access
-LOCAL_NETWORK = ipaddress.ip_network(os.getenv("LOCAL_NETWORK_CIDR", "192.168.0.0/24"))
+LOCAL_NETWORK = ipaddress.ip_network(Config.LOCAL_NETWORK_CIDR)
 
 # Cloudflare proxy IPs (used to trust forwarded headers)
-CLOUDFLARE_IP_RANGES = [
-    "173.245.48.0/20",
-    "103.21.244.0/22",
-    "103.22.200.0/22",
-    "103.31.4.0/22",
-    "141.101.64.0/18",
-    "108.162.192.0/18",
-    "190.93.240.0/20",
-    "188.114.96.0/20",
-    "197.234.240.0/22",
-    "198.41.128.0/17",
-    "162.158.0.0/15",
-    "104.16.0.0/13",
-    "104.24.0.0/14",
-    "172.64.0.0/13",
-    "131.0.72.0/22",
-    "2400:cb00::/32",
-    "2606:4700::/32",
-    "2803:f800::/32",
-    "2405:b500::/32",
-    "2405:8100::/32",
-    "2a06:98c0::/29",
-    "2c0f:f248::/32",
-]
-CLOUDFLARE_NETWORKS = [ipaddress.ip_network(cidr) for cidr in CLOUDFLARE_IP_RANGES]
+CLOUDFLARE_NETWORKS = [ipaddress.ip_network(cidr) for cidr in Config.CLOUDFLARE_IP_RANGES]
 
 
 def is_local_request(request: Request) -> bool:
