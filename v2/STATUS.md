@@ -22,10 +22,12 @@ Last updated: 2026-02-05
 - [x] Added planner/intention engine skeleton with persistence, tick/close APIs, and watcher.
 - [x] Added public timeline store + events and v2 web homepage.
 - [x] Added DietPi systemd deployment assets for observer v2.
+- [x] Deployed `amialive-v2-observer` on DietPi (port 8080) in parallel with v1.
+- [x] Added automated soak-check script for parallel v1/v2 validation.
 
 ## In Progress
 
-- [ ] Deploy v2 observer service on DietPi in parallel with v1.
+- [ ] Run v1/v2 parallel soak checks and collect stability metrics.
 
 ## Waiting
 

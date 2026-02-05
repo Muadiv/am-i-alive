@@ -21,6 +21,7 @@ Systemd assets committed in:
 - `v2/deploy/systemd/amialive-v2-observer.service`
 - `v2/deploy/systemd/amialive-v2-observer.env.example`
 - `v2/deploy/install_observer_service.sh`
+- `v2/deploy/soak_check.sh`
 
 ## Suggested Ports
 
