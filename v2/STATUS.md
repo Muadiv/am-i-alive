@@ -9,10 +9,11 @@ Last updated: 2026-02-05
 - [x] Built minimal `observer_v2` service skeleton.
 - [x] Added baseline tests for health and public state endpoints.
 - [x] Added lifecycle state machine scaffolding and transition tests.
+- [x] Added 24h vote round scaffolding and adjudication tests.
 
 ## In Progress
 
-- [ ] Add 24h vote round scaffolding and tests.
+- [ ] Add funding engine scaffolding (static address + donation ledger).
 
 ## Waiting
 
