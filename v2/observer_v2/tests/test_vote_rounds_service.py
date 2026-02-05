@@ -45,3 +45,13 @@ def test_vote_round_close_due_with_die_verdict(tmp_path: Path) -> None:
     assert result["closed"] is True
     assert result["verdict"] == "die"
     assert result["total"] == 3
+
+
+def test_reset_rounds_for_new_life_opens_clean_round(tmp_path: Path) -> None:
+    _storage, service, _db_path = _prepare_services(tmp_path)
+    service.cast_vote(voter_fingerprint="user-a", vote="live")
+
+    service.reset_rounds_for_new_life()
+    result = service.cast_vote(voter_fingerprint="user-a", vote="die")
+    assert result["live"] == 0
+    assert result["die"] == 1

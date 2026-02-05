@@ -16,15 +16,15 @@ Last updated: 2026-02-05
 - [x] Added internal donation ingest endpoint with validation.
 - [x] Added lifecycle transition API backed by persistence.
 - [x] Added vote casting endpoint, duplicate-vote protection, and due-round close flow.
+- [x] Hardened vote/lifecycle edge behavior (dead-state vote lock, born round reset, dead-round close handling).
+- [x] Added automatic vote-round watcher for due-round adjudication checks.
 
 ## In Progress
 
-- [ ] Harden vote scheduler behavior and life-state transitions under edge conditions.
+- [ ] Implement funding monitor integration (wallet polling + confirmations).
 
 ## Waiting
 
-- [ ] Implement automatic 24h vote-round closure and death adjudication loop.
-- [ ] Implement funding monitor integration (wallet polling + confirmations).
 - [ ] Implement planner/intention engine.
 - [ ] Build v2 public timeline UI.
 - [ ] Deploy v2 on DietPi in parallel with v1.

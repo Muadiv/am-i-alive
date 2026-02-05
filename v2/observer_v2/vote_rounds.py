@@ -95,6 +95,12 @@ class VoteRoundService:
             )
             conn.commit()
 
+    def reset_rounds_for_new_life(self, start_time: datetime | None = None) -> None:
+        with sqlite3.connect(self.database_path) as conn:
+            conn.execute("UPDATE vote_rounds SET status = 'closed' WHERE status = 'open'")
+            conn.commit()
+        self.open_new_round(start_time=start_time)
+
     def _get_open_round_row(self, conn: sqlite3.Connection) -> tuple | None:
         return conn.execute(
             """

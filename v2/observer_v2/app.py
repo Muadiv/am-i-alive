@@ -14,22 +14,25 @@ def create_app(storage: SqliteStorage | None = None) -> FastAPI:
     app_storage = storage or SqliteStorage(Config.DATABASE_PATH)
     vote_round_service = VoteRoundService(app_storage.database_path)
 
-    async def check_vote_rounds_once() -> None:
+    async def check_vote_rounds_once() -> dict[str, object]:
         result = vote_round_service.close_round_if_due()
         if not result.get("closed"):
-            return
+            return result
+
+        current = app_storage.get_life_state()
+        if not bool(current["is_alive"]):
+            return {**result, "action": "closed_while_dead"}
 
         if result.get("verdict") == "die":
-            current = app_storage.get_life_state()
-            if bool(current["is_alive"]):
-                app_storage.transition_life_state(
-                    next_state="dead",
-                    current_intention="shutdown",
-                    death_cause="vote_majority",
-                )
-            return
+            app_storage.transition_life_state(
+                next_state="dead",
+                current_intention="shutdown",
+                death_cause="vote_majority",
+            )
+            return {**result, "action": "death_applied"}
 
         vote_round_service.open_new_round()
+        return {**result, "action": "new_round_opened"}
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -72,6 +75,10 @@ def create_app(storage: SqliteStorage | None = None) -> FastAPI:
 
     @app.post("/api/public/vote")
     async def submit_vote(request: Request, payload: dict[str, object]) -> dict[str, object]:
+        state = app_storage.get_life_state()
+        if not bool(state["is_alive"]):
+            raise HTTPException(status_code=409, detail="Voting is closed while organism is dead")
+
         vote = str(payload.get("vote", "")).strip().lower()
         reason = str(payload.get("reason", "")).strip()
         voter_fingerprint = request.client.host if request.client else "unknown"
@@ -120,8 +127,13 @@ def create_app(storage: SqliteStorage | None = None) -> FastAPI:
     async def close_vote_round(x_internal_key: str | None = Header(default=None)) -> dict[str, object]:
         if Config.INTERNAL_API_KEY and x_internal_key != Config.INTERNAL_API_KEY:
             raise HTTPException(status_code=403, detail="Unauthorized")
-        await check_vote_rounds_once()
-        return {"success": True, "data": app_storage.get_open_vote_round()}
+        result = await check_vote_rounds_once()
+        open_round = None
+        try:
+            open_round = app_storage.get_open_vote_round()
+        except RuntimeError:
+            open_round = None
+        return {"success": True, "data": {"result": result, "open_round": open_round}}
 
     @app.post("/api/internal/lifecycle/transition")
     async def transition_lifecycle(
@@ -143,6 +155,8 @@ def create_app(storage: SqliteStorage | None = None) -> FastAPI:
                 current_intention=current_intention,
                 death_cause=death_cause,
             )
+            if next_state == "born":
+                vote_round_service.reset_rounds_for_new_life()
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

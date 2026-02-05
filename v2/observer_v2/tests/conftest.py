@@ -11,8 +11,12 @@ from observer_v2.storage import SqliteStorage
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
-    db_path = tmp_path / "observer_v2_test.db"
-    app: FastAPI = create_app(storage=SqliteStorage(str(db_path)))
+def database_path(tmp_path: Path) -> Path:
+    return tmp_path / "observer_v2_test.db"
+
+
+@pytest.fixture
+def client(database_path: Path) -> TestClient:
+    app: FastAPI = create_app(storage=SqliteStorage(str(database_path)))
     with TestClient(app) as test_client:
         yield test_client

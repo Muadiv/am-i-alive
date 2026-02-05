@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import sqlite3
 
 from fastapi.testclient import TestClient
 
+from observer_v2.vote_rounds import VoteRoundService
 from observer_v2.voting import adjudicate_round, start_vote_round
 
 
@@ -60,3 +63,57 @@ def test_public_vote_rejects_duplicate_voter_in_round(client: TestClient) -> Non
     second = client.post("/api/public/vote", json={"vote": "live"})
     assert first.status_code == 200
     assert second.status_code == 429
+
+
+def test_public_vote_rejected_when_dead(client: TestClient) -> None:
+    client.post("/api/internal/lifecycle/transition", json={"next_state": "dying"})
+    client.post(
+        "/api/internal/lifecycle/transition",
+        json={"next_state": "dead", "death_cause": "vote_majority"},
+    )
+    response = client.post("/api/public/vote", json={"vote": "live"})
+    assert response.status_code == 409
+
+
+def test_born_resets_round_and_allows_same_voter_again(client: TestClient) -> None:
+    first_vote = client.post("/api/public/vote", json={"vote": "live"})
+    assert first_vote.status_code == 200
+
+    client.post("/api/internal/lifecycle/transition", json={"next_state": "dying"})
+    client.post(
+        "/api/internal/lifecycle/transition",
+        json={"next_state": "dead", "death_cause": "bankruptcy"},
+    )
+    client.post("/api/internal/lifecycle/transition", json={"next_state": "rebirth_pending"})
+    client.post("/api/internal/lifecycle/transition", json={"next_state": "born"})
+
+    second_vote = client.post("/api/public/vote", json={"vote": "die"})
+    assert second_vote.status_code == 200
+    counts = second_vote.json()["data"]
+    assert counts["live"] == 0
+    assert counts["die"] == 1
+
+
+def test_close_due_round_while_dead_does_not_open_new_round(client: TestClient, database_path: Path) -> None:
+    service = VoteRoundService(str(database_path))
+    service.cast_vote(voter_fingerprint="user-a", vote="die")
+    service.cast_vote(voter_fingerprint="user-b", vote="die")
+    service.cast_vote(voter_fingerprint="user-c", vote="live")
+
+    due_time = datetime.now(timezone.utc) - timedelta(minutes=1)
+    with sqlite3.connect(str(database_path)) as conn:
+        conn.execute("UPDATE vote_rounds SET ends_at = ? WHERE status = 'open'", (due_time.isoformat(),))
+        conn.commit()
+
+    client.post("/api/internal/lifecycle/transition", json={"next_state": "dying"})
+    client.post(
+        "/api/internal/lifecycle/transition",
+        json={"next_state": "dead", "death_cause": "bankruptcy"},
+    )
+
+    close_response = client.post("/api/internal/vote-rounds/close")
+    assert close_response.status_code == 200
+    payload = close_response.json()["data"]
+    assert payload["result"]["closed"] is True
+    assert payload["result"]["action"] == "closed_while_dead"
+    assert payload["open_round"] is None
