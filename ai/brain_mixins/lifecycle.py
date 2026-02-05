@@ -123,14 +123,20 @@ class BrainLifecycleMixin:
         logger.info(f"[BRAIN] 👶 Beginning birth sequence for Life #{self.life_number}...")
         self.birth_time = datetime.now(timezone.utc)
 
-        if not self.prompt_service:
-            raise RuntimeError("Prompt service not initialized")
+        if not self.lifecycle_service:
+            raise RuntimeError("Lifecycle service not initialized")
 
-        bootstrap = await self.prompt_service.build_bootstrap_prompt(
+        credit_status = self.credit_tracker.get_status()
+        current_model = self.current_model or {"name": "unknown", "input_cost": 0.0, "output_cost": 0.0}
+        previous_death_cause = life_data.get("death_summary")
+        previous_life = life_data.get("previous_life")
+
+        bootstrap = await self.lifecycle_service.bootstrap_prompt(
             identity,
-            life_data.get("birth_story", ""),
-            life_data.get("death_summary", ""),
-            life_data.get("previous_life", {}),
+            credit_status,
+            current_model,
+            previous_death_cause,
+            previous_life,
         )
         first_response, _ = await self.send_message(bootstrap)
         await self.report_thought(first_response, thought_type="awakening")
