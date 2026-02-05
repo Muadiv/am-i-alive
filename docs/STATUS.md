@@ -136,14 +136,20 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Telegram blog URLs)
+## LAST SESSION: 2026-02-05 (Realism cadence + memory)
 
 ### What We Did
-- Added full blog post URLs to Telegram notifications.
+- Added behavior policy and organic memory selection for more lifelike thoughts.
+- Enforced 5-minute thinking cadence and slower Moltbook posting.
+- Updated prompts to include short thoughts before actions.
 
 ### Files Changed
-- Modified: `ai/services/blog_service.py`
-- Modified: `ai/telegram_notifier.py`
+- Added: `ai/services/behavior_policy.py`
+- Added: `ai/services/memory_selector.py`
+- Modified: `ai/brain.py`
+- Modified: `ai/services/prompt_service.py`
+- Modified: `.env.example`
+- Modified: `scripts/deploy.env.example`
 - Modified: `docs/STATUS.md`
 
 ---

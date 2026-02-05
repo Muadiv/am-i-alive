@@ -72,11 +72,12 @@ What do you want to do? You can:
 - Run Python code
 - Or just reflect on your existence
 
-IMPORTANT: To execute an action, you MUST respond with ONLY a JSON object in this exact format:
+IMPORTANT: If you take an action, write a 1-2 sentence thought first, then include ONLY the JSON on a new line.
+The JSON must be valid and come last in your response:
 {{"action": "action_name", "params": {{...}}}}
 
 Do NOT use markdown formatting like **action:** or # headers for actions.
-Do NOT add explanatory text before or after the JSON.
+Do NOT add any text after the JSON.
 Direct Telegram posts are disabled. The public channel only receives blog post notifications.
 
 Available actions: think, write_blog_post, check_votes, check_state,
@@ -85,7 +86,8 @@ check_disk_cleanup, check_services, check_logs, read_messages, check_moltbook_fe
 post_moltbook, comment_moltbook, switch_model, list_models, read_file, write_file,
 run_code, sleep, reflect
 
-If you just want to share a thought (not execute an action), write it as plain text."""
+If you just want to share a thought (not execute an action), write it as plain text.
+Always include a short thought every cycle; make it compelling (joke, discovery, investigation, or question)."""
 
         prompt += self._build_paid_model_options()
 
@@ -97,6 +99,7 @@ If you just want to share a thought (not execute an action), write it as plain t
             )
 
         prompt += "\n\nWhen posting to Moltbook, include a URL if you have one (blog post or project link)."
+        prompt += "\nIf you take an action, include a 1-2 sentence thought first, then the JSON action."
 
         prompt += await self._unread_message_notice()
         prompt += await self._blog_required_notice()

@@ -25,9 +25,10 @@ class Config:
 
     # AI behavior
     BOOTSTRAP_MODE: str = os.getenv("BOOTSTRAP_MODE", "basic_facts")
-    THINK_INTERVAL_MIN: int = 60
-    THINK_INTERVAL_MAX: int = 300
-    DEFAULT_THINK_INTERVAL: int = 180
+    THINK_INTERVAL_SECONDS: int = int(os.getenv("THINK_INTERVAL_SECONDS", "300"))
+    THINK_INTERVAL_MIN: int = THINK_INTERVAL_SECONDS
+    THINK_INTERVAL_MAX: int = THINK_INTERVAL_SECONDS
+    DEFAULT_THINK_INTERVAL: int = THINK_INTERVAL_SECONDS
 
     # Budget configuration
     MONTHLY_BUDGET: float = float(os.getenv("MONTHLY_BUDGET", "5.00"))
@@ -52,6 +53,7 @@ class Config:
     MOLTBOOK_AUTO_POST: bool = os.getenv("MOLTBOOK_AUTO_POST", "true").lower() in {"1", "true", "yes", "on"}
     MOLTBOOK_SUBMOLT: str = os.getenv("MOLTBOOK_SUBMOLT", "general")
     MOLTBOOK_CHECK_INTERVAL_MINUTES: int = int(os.getenv("MOLTBOOK_CHECK_INTERVAL_MINUTES", "30"))
+    MOLTBOOK_MIN_POST_INTERVAL_MINUTES: int = int(os.getenv("MOLTBOOK_MIN_POST_INTERVAL_MINUTES", "120"))
 
     # Donations
     DONATION_BTC_ADDRESS: Optional[str] = os.getenv("DONATION_BTC_ADDRESS")
@@ -80,6 +82,9 @@ class Config:
 
         if cls.MOLTBOOK_CHECK_INTERVAL_MINUTES <= 0:
             errors.append("MOLTBOOK_CHECK_INTERVAL_MINUTES must be greater than 0")
+
+        if cls.MOLTBOOK_MIN_POST_INTERVAL_MINUTES <= 0:
+            errors.append("MOLTBOOK_MIN_POST_INTERVAL_MINUTES must be greater than 0")
 
         if cls.DONATION_ASK_INTERVAL_MINUTES <= 0:
             errors.append("DONATION_ASK_INTERVAL_MINUTES must be greater than 0")

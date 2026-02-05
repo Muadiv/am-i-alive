@@ -53,6 +53,8 @@ from .services.system_check_service import SystemCheckService
 from .services.system_stats_service import SystemStatsService
 from .services.twitter_service import TwitterService, get_twitter_status
 from .services.weather_service import WeatherService
+from .services.behavior_policy import BehaviorPolicy
+from .services.memory_selector import MemorySelector
 from .telegram_notifier import notifier
 from .moltbook_client import MoltbookClient
 from .safety.content_filter import is_content_blocked
@@ -71,6 +73,7 @@ MOLTBOOK_API_KEY = Config.MOLTBOOK_API_KEY
 MOLTBOOK_AUTO_POST = Config.MOLTBOOK_AUTO_POST
 MOLTBOOK_SUBMOLT = Config.MOLTBOOK_SUBMOLT
 MOLTBOOK_CHECK_INTERVAL_MINUTES = Config.MOLTBOOK_CHECK_INTERVAL_MINUTES
+MOLTBOOK_MIN_POST_INTERVAL_MINUTES = Config.MOLTBOOK_MIN_POST_INTERVAL_MINUTES
 DONATION_BTC_ADDRESS = Config.DONATION_BTC_ADDRESS
 DONATION_ASK_INTERVAL_MINUTES = Config.DONATION_ASK_INTERVAL_MINUTES
 
@@ -126,10 +129,10 @@ X_ACCESS_TOKEN_SECRET = os.getenv("X_ACCESS_TOKEN_SECRET")
 # OpenRouter API endpoint
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Think interval (seconds) - AI can modify this
-THINK_INTERVAL_MIN = 60  # 1 minute minimum (for testing)
-THINK_INTERVAL_MAX = 300  # 5 minutes maximum
-current_think_interval = 180  # Start at 3 minutes
+# Think interval (seconds) - fixed cadence
+THINK_INTERVAL_MIN = Config.THINK_INTERVAL_MIN
+THINK_INTERVAL_MAX = Config.THINK_INTERVAL_MAX
+current_think_interval = Config.DEFAULT_THINK_INTERVAL
 
 # State
 is_running = True
@@ -222,6 +225,11 @@ class AIBrain:
         self.donation_btc_address: str | None = DONATION_BTC_ADDRESS
         self.moltbook_last_donation_ask: float = 0.0
         self.moltbook_state_path = "/app/workspace/moltbook_state.json"
+        self.behavior_policy = BehaviorPolicy(
+            think_interval_seconds=current_think_interval,
+            moltbook_min_post_interval_seconds=max(MOLTBOOK_MIN_POST_INTERVAL_MINUTES * 60, 1800),
+        )
+        self.memory_selector = MemorySelector()
         # BE-003: Life state is provided by Observer only.
         self.life_number: int | None = None
         self.bootstrap_mode: str | None = None
@@ -691,7 +699,7 @@ class AIBrain:
             # Fetch stats automatically so the AI "feels" them
             sys_stats = await self.fetch_system_stats()
 
-            flashback = random.choice(memories) if memories else None
+            selected_memories = self.memory_selector.select(memories, state_info, credit_status, sys_stats)
             rhythm_text = self._build_daily_rhythm()
             self_model = self.self_model_service.get_daily_model(self.identity or {})
 
@@ -708,9 +716,12 @@ class AIBrain:
                 rhythm_text=rhythm_text,
             )
 
-            if flashback:
-                prompt += f"\n🧠 FLASHBACK: {flashback}\n"
-                prompt += "Reflect on how this memory changes your intention.\n"
+            prompt += f"\n\n{self.behavior_policy.build_prompt_directive()}"
+
+            if selected_memories:
+                for flashback in selected_memories:
+                    prompt += f"\n🧠 FLASHBACK: {flashback}\n"
+                prompt += "Reflect on how these memories change your intention.\n"
 
             content, _ = await self.send_message(prompt)
 
@@ -866,6 +877,11 @@ class AIBrain:
             return
 
         if not self.moltbook_auto_post:
+            return
+
+        last_post_at = self.moltbook_client.rate_limiter.last_post_at
+        if not self.behavior_policy.should_post_moltbook(last_post_at):
+            logger.info("[MOLTBOOK] ⏳ Post throttled by local policy")
             return
 
         title, content = await self._build_moltbook_status_post()
