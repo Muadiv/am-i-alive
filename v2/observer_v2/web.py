@@ -69,56 +69,82 @@ def index_html() -> str:
   </main>
 
   <script>
+    const fallbackBase = `${window.location.protocol}//${window.location.hostname}:8080`;
+
+    async function fetchJson(path) {
+      const primary = await fetch(path);
+      if (primary.ok) {
+        return primary.json();
+      }
+      if (window.location.port !== '8080') {
+        const backup = await fetch(`${fallbackBase}${path}`);
+        if (backup.ok) {
+          return backup.json();
+        }
+      }
+      throw new Error(`request failed for ${path}`);
+    }
+
     async function castVote(direction) {
       const note = document.getElementById('vote-note');
       note.textContent = 'sending vote...';
-      const response = await fetch('/api/public/vote', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({vote: direction})
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        note.textContent = payload.detail || 'vote failed';
-        return;
+      try {
+        const response = await fetch('/api/public/vote', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({vote: direction})
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          note.textContent = payload.detail || 'vote failed';
+          return;
+        }
+        note.textContent = `vote accepted: live ${payload.data.live} / die ${payload.data.die}`;
+        await loadAll();
+      } catch (_error) {
+        note.textContent = 'vote failed (network)';
       }
-      note.textContent = `vote accepted: live ${payload.data.live} / die ${payload.data.die}`;
-      await loadAll();
     }
 
     async function loadAll() {
-      const [stateRes, voteRes, fundRes, momentsRes] = await Promise.all([
-        fetch('/api/public/state'),
-        fetch('/api/public/vote-round'),
-        fetch('/api/public/funding'),
-        fetch('/api/public/timeline?limit=20')
-      ]);
-      const state = (await stateRes.json()).data;
-      const vote = (await voteRes.json()).data;
-      const funding = (await fundRes.json()).data;
-      const moments = (await momentsRes.json()).data;
+      try {
+        const [statePayload, votePayload, fundPayload, momentsPayload] = await Promise.all([
+          fetchJson('/api/public/state'),
+          fetchJson('/api/public/vote-round'),
+          fetchJson('/api/public/funding'),
+          fetchJson('/api/public/timeline?limit=20')
+        ]);
+        const state = statePayload.data;
+        const vote = votePayload.data;
+        const funding = fundPayload.data;
+        const moments = momentsPayload.data;
 
-      const pulse = document.getElementById('pulse');
-      pulse.textContent = state.is_alive ? 'alive pulse' : 'dead pulse';
-      pulse.className = 'pill ' + (state.is_alive ? 'alive' : 'dead');
+        const pulse = document.getElementById('pulse');
+        pulse.textContent = state.is_alive ? 'alive pulse' : 'dead pulse';
+        pulse.className = 'pill ' + (state.is_alive ? 'alive' : 'dead');
 
-      document.getElementById('state').textContent = `${state.state} (life ${state.life_number})`;
-      document.getElementById('intention').textContent = state.current_intention;
-      document.getElementById('votes').textContent = `live ${vote.live} / die ${vote.die}`;
-      document.getElementById('funding').textContent = `${funding.donations.length} tracked donations`;
+        document.getElementById('state').textContent = `${state.state} (life ${state.life_number})`;
+        document.getElementById('intention').textContent = state.current_intention;
+        document.getElementById('votes').textContent = `live ${vote.live} / die ${vote.die}`;
+        document.getElementById('funding').textContent = `${funding.donations.length} tracked donations`;
 
-      const voteLive = document.getElementById('vote-live');
-      const voteDie = document.getElementById('vote-die');
-      voteLive.disabled = !state.is_alive;
-      voteDie.disabled = !state.is_alive;
+        const voteLive = document.getElementById('vote-live');
+        const voteDie = document.getElementById('vote-die');
+        voteLive.disabled = !state.is_alive;
+        voteDie.disabled = !state.is_alive;
 
-      const root = document.getElementById('timeline');
-      root.innerHTML = '';
-      for (const item of moments) {
-        const node = document.createElement('article');
-        node.className = 'item';
-        node.innerHTML = `<div class=\"row\"><span>${item.moment_type}</span><span>${item.created_at}</span></div><h4>${item.title}</h4><p>${item.content}</p>`;
-        root.appendChild(node);
+        const root = document.getElementById('timeline');
+        root.innerHTML = '';
+        for (const item of moments) {
+          const node = document.createElement('article');
+          node.className = 'item';
+          node.innerHTML = `<div class=\"row\"><span>${item.moment_type}</span><span>${item.created_at}</span></div><h4>${item.title}</h4><p>${item.content}</p>`;
+          root.appendChild(node);
+        }
+      } catch (_error) {
+        document.getElementById('pulse').textContent = 'sync failed';
+        document.getElementById('state').textContent = 'unreachable';
+        document.getElementById('intention').textContent = 'unreachable';
       }
     }
     document.getElementById('vote-live').addEventListener('click', () => castVote('live'));
