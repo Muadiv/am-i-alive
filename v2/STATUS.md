@@ -20,14 +20,14 @@ Last updated: 2026-02-05
 - [x] Added automatic vote-round watcher for due-round adjudication checks.
 - [x] Added funding monitor integration (wallet polling and internal sync endpoint).
 - [x] Added planner/intention engine skeleton with persistence, tick/close APIs, and watcher.
+- [x] Added public timeline store + events and v2 web homepage.
 
 ## In Progress
 
-- [ ] Build v2 public timeline UI.
+- [ ] Prepare DietPi parallel systemd deployment assets for v2 services.
 
 ## Waiting
 
-- [ ] Build v2 public timeline UI.
 - [ ] Deploy v2 on DietPi in parallel with v1.
 - [ ] Run shadow soak tests and cutover readiness checks.
 
