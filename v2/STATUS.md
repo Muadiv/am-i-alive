@@ -21,14 +21,14 @@ Last updated: 2026-02-05
 - [x] Added funding monitor integration (wallet polling and internal sync endpoint).
 - [x] Added planner/intention engine skeleton with persistence, tick/close APIs, and watcher.
 - [x] Added public timeline store + events and v2 web homepage.
+- [x] Added DietPi systemd deployment assets for observer v2.
 
 ## In Progress
 
-- [ ] Prepare DietPi parallel systemd deployment assets for v2 services.
+- [ ] Deploy v2 observer service on DietPi in parallel with v1.
 
 ## Waiting
 
-- [ ] Deploy v2 on DietPi in parallel with v1.
 - [ ] Run shadow soak tests and cutover readiness checks.
 
 ## Risks / Notes

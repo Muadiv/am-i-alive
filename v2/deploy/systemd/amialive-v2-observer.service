@@ -1,0 +1,20 @@
+[Unit]
+Description=Am I Alive v2 Observer API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/am-i-alive/v2
+Environment=PYTHONPATH=/opt/am-i-alive/v2
+Environment=V2_DATABASE_PATH=/var/lib/am-i-alive-v2/observer_v2.db
+EnvironmentFile=-/etc/am-i-alive-v2/observer.env
+ExecStart=/opt/am-i-alive/venv-observer/bin/python -m observer_v2.main
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

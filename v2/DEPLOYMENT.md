@@ -17,6 +17,11 @@
 - `amialive-v2-observer`
 - `amialive-v2-ai`
 
+Systemd assets committed in:
+- `v2/deploy/systemd/amialive-v2-observer.service`
+- `v2/deploy/systemd/amialive-v2-observer.env.example`
+- `v2/deploy/install_observer_service.sh`
+
 ## Suggested Ports
 
 - `observer_v2`: 8080
