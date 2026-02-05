@@ -28,10 +28,11 @@ Last updated: 2026-02-05
 - [x] Added cutover readiness evaluator and checklist doc.
 - [x] Executed shadow soak on DietPi (6 iterations, 100% success).
 - [x] Executed cutover readiness evaluator on DietPi (`ready: true`).
+- [x] Added explicit cutover/rollback runbook for production switch.
 
 ## In Progress
 
-- [ ] Prepare final production cutover change set (proxy/DNS switch + rollback window).
+- [ ] Await explicit cutover approval window.
 
 ## Waiting
 
