@@ -221,6 +221,7 @@ class AIBrain:
         self.moltbook_claimed: bool = False
         self.donation_btc_address: str | None = DONATION_BTC_ADDRESS
         self.moltbook_last_donation_ask: float = 0.0
+        self.moltbook_state_path = "/app/workspace/moltbook_state.json"
         # BE-003: Life state is provided by Observer only.
         self.life_number: int | None = None
         self.bootstrap_mode: str | None = None
@@ -473,6 +474,9 @@ class AIBrain:
         else:
             self.moltbook_client = None
             logger.warning("[MOLTBOOK] ⚠️  MOLTBOOK_API_KEY not set; Moltbook disabled")
+
+        if self.moltbook_client:
+            self._load_moltbook_state()
 
         # Load memories first
         loaded_memories = await self.lifecycle_service.load_memories("/app/memories")
@@ -764,6 +768,7 @@ class AIBrain:
 
         try:
             data = await self.moltbook_client.create_post(submolt, title, content, url=url)
+            self._save_moltbook_state()
             if not data.get("success", True):
                 return f"❌ Moltbook post rejected: {data.get('error', 'unknown error')}"
             return "✅ Moltbook post created."
@@ -781,6 +786,7 @@ class AIBrain:
 
         try:
             data = await self.moltbook_client.create_comment(post_id, content, parent_id=parent_id)
+            self._save_moltbook_state()
             if not data.get("success", True):
                 return f"❌ Moltbook comment rejected: {data.get('error', 'unknown error')}"
             return "✅ Moltbook comment posted."
@@ -827,6 +833,7 @@ class AIBrain:
 
         try:
             response = await self.moltbook_client.create_post(self.moltbook_submolt, title, content)
+            self._save_moltbook_state()
             if response.get("success", True):
                 logger.info("[MOLTBOOK] 🦞 Status posted")
             else:
@@ -878,6 +885,42 @@ class AIBrain:
             return False
         elapsed = time.monotonic() - self.moltbook_last_donation_ask
         return elapsed >= DONATION_ASK_INTERVAL_MINUTES * 60
+
+    def _load_moltbook_state(self) -> None:
+        if not self.moltbook_client:
+            return
+        if not os.path.exists(self.moltbook_state_path):
+            return
+        try:
+            with open(self.moltbook_state_path, "r") as f:
+                data = json.load(f)
+            limiter = self.moltbook_client.rate_limiter
+            limiter.last_post_at = float(data.get("last_post_at", limiter.last_post_at))
+            limiter.last_comment_at = float(data.get("last_comment_at", limiter.last_comment_at))
+            limiter.daily_comment_count = int(data.get("daily_comment_count", limiter.daily_comment_count))
+            limiter.daily_comment_day = data.get("daily_comment_day", limiter.daily_comment_day)
+            logger.info("[MOLTBOOK] 🧾 Loaded rate limit state")
+        except Exception as e:
+            logger.warning(f"[MOLTBOOK] ⚠️ Failed to load state: {e}")
+
+    def _save_moltbook_state(self) -> None:
+        if not self.moltbook_client:
+            return
+        try:
+            limiter = self.moltbook_client.rate_limiter
+            os.makedirs(os.path.dirname(self.moltbook_state_path), exist_ok=True)
+            with open(self.moltbook_state_path, "w") as f:
+                json.dump(
+                    {
+                        "last_post_at": limiter.last_post_at,
+                        "last_comment_at": limiter.last_comment_at,
+                        "daily_comment_count": limiter.daily_comment_count,
+                        "daily_comment_day": limiter.daily_comment_day,
+                    },
+                    f,
+                )
+        except Exception as e:
+            logger.warning(f"[MOLTBOOK] ⚠️ Failed to save state: {e}")
 
     async def check_budget(self) -> str:
         """Get detailed budget information."""

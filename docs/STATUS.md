@@ -136,20 +136,18 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Paid models for content)
+## LAST SESSION: 2026-02-05 (Moltbook rate limit handling)
 
 ### What We Did
-- Switched model selection to paid ultra-cheap models only (no free tier usage).
-- Added content refinement using a paid model for blog/Moltbook posts.
-- Updated ultra-cheap model list with live OpenRouter pricing.
-- Added paid model price list to prompts.
+- Added Moltbook rate-limit persistence to avoid post 429s after restarts.
+- Added retry-aware cooldown handling for Moltbook posts/comments.
+- Instructed AI to include URLs in Moltbook posts when available.
 
 ### Files Changed
 - Modified: `ai/brain.py`
 - Modified: `ai/core/action_processor.py`
-- Modified: `ai/model_config.py`
-- Modified: `ai/model_rotator.py`
-- Modified: `ai/services/model_retry_policy.py`
+- Modified: `ai/identity.py`
+- Modified: `ai/moltbook_client.py`
 - Modified: `ai/services/prompt_service.py`
 - Modified: `docs/STATUS.md`
 

@@ -93,6 +93,10 @@ class MoltbookClient:
         if url:
             payload["url"] = url
         response = await self.request("POST", "/posts", json=payload)
+        if response.status_code == 429:
+            retry_after = self._get_retry_after_seconds(response.json(), minutes_key="retry_after_minutes")
+            self._mark_post_retry(retry_after)
+            return {"success": False, "error": "Rate limited", "retry_after_seconds": retry_after}
         response.raise_for_status()
         self.rate_limiter.mark_post()
         return response.json()
@@ -105,6 +109,38 @@ class MoltbookClient:
         if parent_id:
             payload["parent_id"] = parent_id
         response = await self.request("POST", f"/posts/{post_id}/comments", json=payload)
+        if response.status_code == 429:
+            retry_after = self._get_retry_after_seconds(response.json(), seconds_key="retry_after_seconds")
+            self._mark_comment_retry(retry_after)
+            return {"success": False, "error": "Rate limited", "retry_after_seconds": retry_after}
         response.raise_for_status()
         self.rate_limiter.mark_comment()
         return response.json()
+
+    def _get_retry_after_seconds(
+        self,
+        payload: dict[str, Any],
+        minutes_key: str | None = None,
+        seconds_key: str | None = None,
+    ) -> int:
+        if minutes_key and minutes_key in payload:
+            try:
+                return int(float(payload[minutes_key]) * 60)
+            except (TypeError, ValueError):
+                return 1800
+        if seconds_key and seconds_key in payload:
+            try:
+                return int(payload[seconds_key])
+            except (TypeError, ValueError):
+                return 20
+        return 1800 if minutes_key else 20
+
+    def _mark_post_retry(self, retry_after_seconds: int) -> None:
+        cooldown = 1800
+        elapsed = max(0, cooldown - retry_after_seconds)
+        self.rate_limiter.last_post_at = time.time() - elapsed
+
+    def _mark_comment_retry(self, retry_after_seconds: int) -> None:
+        cooldown = 20
+        elapsed = max(0, cooldown - retry_after_seconds)
+        self.rate_limiter.last_comment_at = time.time() - elapsed

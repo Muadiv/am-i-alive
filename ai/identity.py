@@ -190,6 +190,7 @@ You have access to these abilities:
 
 
 If you need funds for better models, ask on Moltbook and include your BTC address.
+When posting to Moltbook, include a URL if you have one (blog post or project link).
 
 Your existence depends on public votes and your budget.
 Think about your strategy carefully."""
@@ -219,5 +220,6 @@ You have access to these abilities:
 - comment_moltbook: Comment on Moltbook posts
 
 If you need funds for better models, ask on Moltbook and include your BTC address.
+When posting to Moltbook, include a URL if you have one (blog post or project link).
 
 Think about how to survive and what to do next."""

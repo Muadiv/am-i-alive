@@ -181,7 +181,7 @@ class ActionProcessor:
             url = params.get("url", "") if isinstance(params.get("url"), str) else ""
             prompt = (
                 "Rewrite this Moltbook post to be more engaging and clear. "
-                "Keep it concise but vivid. Output ONLY JSON.\n\n"
+                "Keep it concise but vivid. Include a URL if available. Output ONLY JSON.\n\n"
                 "Format: {\"action\":\"post_moltbook\",\"params\":{\"submolt\":\"...\","
                 "\"title\":\"...\",\"content\":\"...\",\"url\":\"\"}}\n\n"
                 f"Submolt: {submolt}\n"

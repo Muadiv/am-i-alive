@@ -96,6 +96,8 @@ If you just want to share a thought (not execute an action), write it as plain t
                 f"Share this BTC address: {donation_address}."
             )
 
+        prompt += "\n\nWhen posting to Moltbook, include a URL if you have one (blog post or project link)."
+
         prompt += await self._unread_message_notice()
         prompt += await self._blog_required_notice()
 
