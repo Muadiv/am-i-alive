@@ -6,13 +6,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, HTTPException, Request
 
 from .config import Config
+from .funding_monitor import FundingMonitor, WalletExplorerClient
 from .storage import SqliteStorage
 from .vote_rounds import VoteRoundService
 
 
-def create_app(storage: SqliteStorage | None = None) -> FastAPI:
+def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMonitor | None = None) -> FastAPI:
     app_storage = storage or SqliteStorage(Config.DATABASE_PATH)
     vote_round_service = VoteRoundService(app_storage.database_path)
+    app_funding_monitor = funding_monitor or FundingMonitor(
+        storage=app_storage,
+        donation_address=Config.DONATION_BTC_ADDRESS,
+        explorer_client=WalletExplorerClient(api_base=Config.FUNDING_EXPLORER_API_BASE),
+    )
 
     async def check_vote_rounds_once() -> dict[str, object]:
         result = vote_round_service.close_round_if_due()
@@ -34,19 +40,32 @@ def create_app(storage: SqliteStorage | None = None) -> FastAPI:
         vote_round_service.open_new_round()
         return {**result, "action": "new_round_opened"}
 
+    async def sync_funding_once() -> dict[str, object]:
+        try:
+            return await asyncio.to_thread(app_funding_monitor.sync_once)
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         app_storage.init_schema()
         app_storage.bootstrap_defaults()
         vote_task = asyncio.create_task(vote_round_watcher())
+        funding_task = asyncio.create_task(funding_watcher())
         yield
         vote_task.cancel()
-        await asyncio.gather(vote_task, return_exceptions=True)
+        funding_task.cancel()
+        await asyncio.gather(vote_task, funding_task, return_exceptions=True)
 
     async def vote_round_watcher() -> None:
         while True:
             await asyncio.sleep(60)
             await check_vote_rounds_once()
+
+    async def funding_watcher() -> None:
+        while True:
+            await asyncio.sleep(Config.FUNDING_POLL_INTERVAL_SECONDS)
+            await sync_funding_once()
 
     app = FastAPI(title=Config.APP_NAME, version=Config.APP_VERSION, lifespan=lifespan)
 
@@ -136,6 +155,13 @@ def create_app(storage: SqliteStorage | None = None) -> FastAPI:
         except RuntimeError:
             open_round = None
         return {"success": True, "data": {"result": result, "open_round": open_round}}
+
+    @app.post("/api/internal/funding/sync")
+    async def sync_funding(x_internal_key: str | None = Header(default=None)) -> dict[str, object]:
+        if Config.INTERNAL_API_KEY and x_internal_key != Config.INTERNAL_API_KEY:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        result = await sync_funding_once()
+        return {"success": bool(result.get("success", False)), "data": result}
 
     @app.post("/api/internal/lifecycle/transition")
     async def transition_lifecycle(

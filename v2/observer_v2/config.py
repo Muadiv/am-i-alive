@@ -9,3 +9,5 @@ class Config:
     INTERNAL_API_KEY = os.getenv("V2_INTERNAL_API_KEY", "")
     DONATION_BTC_ADDRESS = os.getenv("V2_DONATION_BTC_ADDRESS", "")
     DATABASE_PATH = os.getenv("V2_DATABASE_PATH", "v2_observer.db")
+    FUNDING_EXPLORER_API_BASE = os.getenv("V2_FUNDING_EXPLORER_API_BASE", "https://blockstream.info/api")
+    FUNDING_POLL_INTERVAL_SECONDS = int(os.getenv("V2_FUNDING_POLL_INTERVAL_SECONDS", "300"))

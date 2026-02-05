@@ -18,14 +18,14 @@ Last updated: 2026-02-05
 - [x] Added vote casting endpoint, duplicate-vote protection, and due-round close flow.
 - [x] Hardened vote/lifecycle edge behavior (dead-state vote lock, born round reset, dead-round close handling).
 - [x] Added automatic vote-round watcher for due-round adjudication checks.
+- [x] Added funding monitor integration (wallet polling and internal sync endpoint).
 
 ## In Progress
 
-- [ ] Implement funding monitor integration (wallet polling + confirmations).
+- [ ] Build planner/intention engine skeleton with persistence.
 
 ## Waiting
 
-- [ ] Implement planner/intention engine.
 - [ ] Build v2 public timeline UI.
 - [ ] Deploy v2 on DietPi in parallel with v1.
 - [ ] Run shadow soak tests and cutover readiness checks.
