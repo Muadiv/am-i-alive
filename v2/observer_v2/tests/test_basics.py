@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from observer_v2.app import app
 
-
-def test_health_ok() -> None:
-    client = TestClient(app)
+def test_health_ok(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     payload = response.json()
@@ -14,8 +11,7 @@ def test_health_ok() -> None:
     assert payload["service"] == "observer_v2"
 
 
-def test_public_state_shape() -> None:
-    client = TestClient(app)
+def test_public_state_shape(client: TestClient) -> None:
     response = client.get("/api/public/state")
     assert response.status_code == 200
     payload = response.json()

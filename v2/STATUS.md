@@ -12,16 +12,17 @@ Last updated: 2026-02-05
 - [x] Added 24h vote round scaffolding and adjudication tests.
 - [x] Added funding scaffolding (static address endpoint + donation ledger module).
 - [x] Added v2 coding standards and agent-specific execution rules.
+- [x] Persisted life state, open vote round, and donations in v2 SQLite storage.
+- [x] Added internal donation ingest endpoint with validation.
 
 ## In Progress
 
-- [ ] Persist lifecycle, vote rounds, and donation ledger in v2 database.
+- [ ] Add lifecycle API endpoints and persistence-backed transitions.
 
 ## Waiting
 
-- [ ] Implement lifecycle state machine.
-- [ ] Implement 24h vote rounds and adjudication.
-- [ ] Implement funding engine (BTC static address + donation ledger).
+- [ ] Implement automatic 24h vote-round closure and death adjudication loop.
+- [ ] Implement funding monitor integration (wallet polling + confirmations).
 - [ ] Implement planner/intention engine.
 - [ ] Build v2 public timeline UI.
 - [ ] Deploy v2 on DietPi in parallel with v1.

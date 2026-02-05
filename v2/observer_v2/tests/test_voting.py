@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from fastapi.testclient import TestClient
+
 from observer_v2.voting import adjudicate_round, start_vote_round
 
 
@@ -32,3 +34,14 @@ def test_adjudicate_round_lives_when_live_not_less_than_die() -> None:
     vote_round.live_count = 3
     vote_round.die_count = 3
     assert adjudicate_round(vote_round) == "live"
+
+
+def test_public_vote_round_endpoint(client: TestClient) -> None:
+    response = client.get("/api/public/vote-round")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    data = payload["data"]
+    assert data["status"] == "open"
+    assert data["live"] == 0
+    assert data["die"] == 0
