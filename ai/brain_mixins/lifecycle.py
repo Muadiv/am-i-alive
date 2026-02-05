@@ -113,7 +113,7 @@ class BrainLifecycleMixin:
 
         self.apply_birth_data(life_data)
         await self.load_memories()
-        if not self.identity and self.lifecycle_service:
+        if (not self.identity or not self.identity.get("name")) and self.lifecycle_service:
             identity, tokens_used = await self.lifecycle_service.birth_sequence(
                 self.life_number or 0,
                 self.memories,
