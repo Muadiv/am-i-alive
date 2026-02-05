@@ -136,20 +136,16 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Realism cadence + memory)
+## LAST SESSION: 2026-02-05 (Action parsing + DNS resilience)
 
 ### What We Did
-- Added behavior policy and organic memory selection for more lifelike thoughts.
-- Enforced 5-minute thinking cadence and slower Moltbook posting.
-- Updated prompts to include short thoughts before actions.
+- Improved action parsing to handle thought + JSON reliably.
+- Added deterministic JSON repair for malformed action outputs.
+- Added OpenRouter DNS retry/backoff and a 10-minute circuit breaker.
 
 ### Files Changed
-- Added: `ai/services/behavior_policy.py`
-- Added: `ai/services/memory_selector.py`
 - Modified: `ai/brain.py`
-- Modified: `ai/services/prompt_service.py`
-- Modified: `.env.example`
-- Modified: `scripts/deploy.env.example`
+- Modified: `ai/core/action_processor.py`
 - Modified: `docs/STATUS.md`
 
 ---

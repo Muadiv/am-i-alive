@@ -230,6 +230,8 @@ class AIBrain:
             moltbook_min_post_interval_seconds=max(MOLTBOOK_MIN_POST_INTERVAL_MINUTES * 60, 1800),
         )
         self.memory_selector = MemorySelector()
+        self.dns_failure_count: int = 0
+        self.dns_pause_until: float = 0.0
         # BE-003: Life state is provided by Observer only.
         self.life_number: int | None = None
         self.bootstrap_mode: str | None = None
@@ -323,6 +325,36 @@ class AIBrain:
             dropped = self.chat_history.pop(0)
             total_chars -= len(dropped.get("content", ""))
 
+    def _should_pause_openrouter(self) -> bool:
+        return time.monotonic() < self.dns_pause_until
+
+    def _record_dns_failure(self) -> None:
+        self.dns_failure_count += 1
+        if self.dns_failure_count >= 3:
+            self.dns_pause_until = time.monotonic() + 600
+
+    def _reset_dns_failures(self) -> None:
+        self.dns_failure_count = 0
+        self.dns_pause_until = 0.0
+
+    @staticmethod
+    def _is_dns_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "name resolution" in message or "temporary failure" in message or "name or service not known" in message
+
+    def _build_outage_response(self) -> tuple[str, dict[str, Any]]:
+        response_text = "Network is unstable. I will keep thinking and try again soon."
+        usage_stats: dict[str, Any] = {
+            "model": self.current_model["name"] if self.current_model else "unknown",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost": 0.0,
+            "balance": self.credit_tracker.get_balance(),
+            "status": "network_outage",
+        }
+        return response_text, usage_stats
+
     async def send_message(
         self,
         message: str,
@@ -351,7 +383,29 @@ class AIBrain:
             if not self.chat_service:
                 raise RuntimeError("Chat service not initialized")
 
-            data = await self.chat_service.send(current_model["id"], messages)
+            if self._should_pause_openrouter():
+                logger.warning("[BRAIN] ⚠️ DNS failures detected; skipping OpenRouter call for 10 minutes")
+                return self._build_outage_response()
+            retry_delays = [1, 3, 8]
+            data = None
+            for attempt, delay in enumerate(retry_delays, start=1):
+                try:
+                    data = await self.chat_service.send(current_model["id"], messages)
+                    self._reset_dns_failures()
+                    break
+                except httpx.RequestError as exc:
+                    if self._is_dns_error(exc):
+                        self._record_dns_failure()
+                        logger.warning(f"[BRAIN] ⚠️ DNS error (attempt {attempt}/{len(retry_delays)}): {exc}")
+                        if self._should_pause_openrouter():
+                            return self._build_outage_response()
+                        if attempt < len(retry_delays):
+                            await asyncio.sleep(delay + random.uniform(0.0, 0.5))
+                            continue
+                    raise
+
+            if data is None:
+                return self._build_outage_response()
             response_text, usage = self.chat_service.extract_response(data)
             input_tokens, output_tokens = self.chat_service.extract_usage(usage)
             # BE-003: Track per-life token usage for Observer budget checks.

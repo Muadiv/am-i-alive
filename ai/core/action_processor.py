@@ -28,13 +28,13 @@ class ActionProcessor:
         if not text:
             return None
 
+        last_payload: dict[str, Any] | None = None
         idx = text.find("{")
         while idx != -1:
             try:
                 payload, _end = decoder.raw_decode(text[idx:])
                 if isinstance(payload, dict) and payload.get("action"):
-                    logger.info(f"[BRAIN] ✓ Extracted action: {payload.get('action')}")
-                    return payload
+                    last_payload = payload
             except json.JSONDecodeError:
                 pass
             idx = text.find("{", idx + 1)
@@ -44,20 +44,44 @@ class ActionProcessor:
             try:
                 payload = json.loads(fenced.group(1))
                 if isinstance(payload, dict) and payload.get("action"):
-                    logger.info(f"[BRAIN] ✓ Extracted action from fence: {payload.get('action')}")
-                    return payload
+                    last_payload = payload
             except json.JSONDecodeError:
                 pass
 
-        try:
-            payload = json.loads(text)
-            if isinstance(payload, dict) and payload.get("action"):
-                logger.info(f"[BRAIN] ✓ Extracted action from full text: {payload.get('action')}")
-                return payload
-        except json.JSONDecodeError:
-            pass
+        if not last_payload:
+            repaired = self._attempt_repair(text)
+            if repaired:
+                try:
+                    payload = json.loads(repaired)
+                    if isinstance(payload, dict) and payload.get("action"):
+                        last_payload = payload
+                except json.JSONDecodeError:
+                    pass
 
-        return None
+        if last_payload:
+            logger.info(f"[BRAIN] ✓ Extracted action: {last_payload.get('action')}")
+        return last_payload
+
+    @staticmethod
+    def _attempt_repair(content: str) -> Optional[str]:
+        cleaned = re.sub(r"```[a-z]*", "", content)
+        cleaned = cleaned.replace("```", "")
+        start = cleaned.rfind("{")
+        if start == -1:
+            return None
+
+        end = cleaned.rfind("}")
+        if end > start:
+            candidate = cleaned[start : end + 1]
+        else:
+            candidate = cleaned[start:]
+
+        open_count = candidate.count("{")
+        close_count = candidate.count("}")
+        if close_count < open_count:
+            candidate += "}" * (open_count - close_count)
+
+        return candidate.strip()
 
     def strip_action_json(self, content: str) -> str:
         """Remove action JSON blocks from mixed responses."""
@@ -120,6 +144,27 @@ class ActionProcessor:
                             params = retry_params
                     else:
                         return "❌ Blog post failed: missing title/content"
+            if action == "post_moltbook":
+                title = params.get("title", "") if isinstance(params.get("title"), str) else ""
+                body = params.get("content", "") if isinstance(params.get("content"), str) else ""
+                if not title.strip() or len(body.strip()) < 40:
+                    logger.warning("[BRAIN] ⚠️ post_moltbook missing title/content; requesting retry")
+                    retry_prompt = (
+                        "You attempted to call post_moltbook without a proper title or content. "
+                        "Respond with ONLY JSON in this format: "
+                        '{"action":"post_moltbook","params":{'
+                        '"submolt":"general","title":"...","content":"...","url":""}}. '
+                        "Content must be at least 40 characters."
+                    )
+                    retry_content, _ = await self.send_message(retry_prompt)
+                    retry_action = self.extract_action_data(retry_content)
+                    if retry_action:
+                        action = str(retry_action.get("action", action))
+                        retry_params = retry_action.get("params", {})
+                        if isinstance(retry_params, dict):
+                            params = retry_params
+                    else:
+                        return "❌ Moltbook post failed: missing title/content"
             result = await self.action_executor.execute_action(action, params)
             narrative = self.strip_action_json(content)
             if narrative and len(narrative) > 10:
