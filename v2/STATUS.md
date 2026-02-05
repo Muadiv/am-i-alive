@@ -19,10 +19,11 @@ Last updated: 2026-02-05
 - [x] Hardened vote/lifecycle edge behavior (dead-state vote lock, born round reset, dead-round close handling).
 - [x] Added automatic vote-round watcher for due-round adjudication checks.
 - [x] Added funding monitor integration (wallet polling and internal sync endpoint).
+- [x] Added planner/intention engine skeleton with persistence, tick/close APIs, and watcher.
 
 ## In Progress
 
-- [ ] Build planner/intention engine skeleton with persistence.
+- [ ] Build v2 public timeline UI.
 
 ## Waiting
 

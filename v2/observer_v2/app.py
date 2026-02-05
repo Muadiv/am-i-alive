@@ -7,6 +7,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 
 from .config import Config
 from .funding_monitor import FundingMonitor, WalletExplorerClient
+from .intention_engine import IntentionEngine
 from .storage import SqliteStorage
 from .vote_rounds import VoteRoundService
 
@@ -14,6 +15,7 @@ from .vote_rounds import VoteRoundService
 def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMonitor | None = None) -> FastAPI:
     app_storage = storage or SqliteStorage(Config.DATABASE_PATH)
     vote_round_service = VoteRoundService(app_storage.database_path)
+    intention_engine = IntentionEngine(app_storage.database_path)
     app_funding_monitor = funding_monitor or FundingMonitor(
         storage=app_storage,
         donation_address=Config.DONATION_BTC_ADDRESS,
@@ -46,16 +48,24 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         except Exception as exc:
             return {"success": False, "error": str(exc)}
 
+    async def tick_intention_once() -> dict[str, object] | None:
+        state = app_storage.get_life_state()
+        return await asyncio.to_thread(intention_engine.tick, bool(state["is_alive"]))
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         app_storage.init_schema()
         app_storage.bootstrap_defaults()
+        intention_engine.init_schema()
+        intention_engine.bootstrap_defaults()
         vote_task = asyncio.create_task(vote_round_watcher())
         funding_task = asyncio.create_task(funding_watcher())
+        intention_task = asyncio.create_task(intention_watcher())
         yield
         vote_task.cancel()
         funding_task.cancel()
-        await asyncio.gather(vote_task, funding_task, return_exceptions=True)
+        intention_task.cancel()
+        await asyncio.gather(vote_task, funding_task, intention_task, return_exceptions=True)
 
     async def vote_round_watcher() -> None:
         while True:
@@ -66,6 +76,11 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         while True:
             await asyncio.sleep(Config.FUNDING_POLL_INTERVAL_SECONDS)
             await sync_funding_once()
+
+    async def intention_watcher() -> None:
+        while True:
+            await asyncio.sleep(Config.INTENTION_TICK_INTERVAL_SECONDS)
+            await tick_intention_once()
 
     app = FastAPI(title=Config.APP_NAME, version=Config.APP_VERSION, lifespan=lifespan)
 
@@ -122,6 +137,17 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             },
         }
 
+    @app.get("/api/public/intention")
+    async def public_intention() -> dict[str, object]:
+        active = intention_engine.get_active_intention()
+        return {"success": True, "data": active}
+
+    @app.get("/api/public/intentions")
+    async def public_intentions(limit: int = 20) -> dict[str, object]:
+        safe_limit = max(1, min(limit, 100))
+        intentions = intention_engine.list_recent(limit=safe_limit)
+        return {"success": True, "data": intentions}
+
     @app.post("/api/internal/funding/donation")
     async def ingest_donation(
         payload: dict[str, object],
@@ -163,6 +189,24 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         result = await sync_funding_once()
         return {"success": bool(result.get("success", False)), "data": result}
 
+    @app.post("/api/internal/intention/tick")
+    async def tick_intention(x_internal_key: str | None = Header(default=None)) -> dict[str, object]:
+        if Config.INTERNAL_API_KEY and x_internal_key != Config.INTERNAL_API_KEY:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        intention = await tick_intention_once()
+        return {"success": True, "data": intention}
+
+    @app.post("/api/internal/intention/close")
+    async def close_intention(
+        payload: dict[str, object],
+        x_internal_key: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        if Config.INTERNAL_API_KEY and x_internal_key != Config.INTERNAL_API_KEY:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        outcome = str(payload.get("outcome", "")).strip() or "closed_manually"
+        closed = intention_engine.close_active(outcome=outcome)
+        return {"success": True, "data": closed}
+
     @app.post("/api/internal/lifecycle/transition")
     async def transition_lifecycle(
         payload: dict[str, object],
@@ -185,6 +229,10 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             )
             if next_state == "born":
                 vote_round_service.reset_rounds_for_new_life()
+                intention_engine.close_active(outcome="rebirth_reset")
+                intention_engine.tick(is_alive=True)
+            if next_state == "dead":
+                intention_engine.close_active(outcome="life_ended")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -11,3 +11,4 @@ class Config:
     DATABASE_PATH = os.getenv("V2_DATABASE_PATH", "v2_observer.db")
     FUNDING_EXPLORER_API_BASE = os.getenv("V2_FUNDING_EXPLORER_API_BASE", "https://blockstream.info/api")
     FUNDING_POLL_INTERVAL_SECONDS = int(os.getenv("V2_FUNDING_POLL_INTERVAL_SECONDS", "300"))
+    INTENTION_TICK_INTERVAL_SECONDS = int(os.getenv("V2_INTENTION_TICK_INTERVAL_SECONDS", "600"))
