@@ -57,12 +57,12 @@ class ModelRetryPolicy:
         await asyncio.sleep(backoff_seconds)
 
         old_model = current_model
-        new_model = self.model_rotator.select_random_model(tier="free")
+        new_model = self.model_rotator.select_random_model(tier="ultra_cheap")
 
         if old_model and new_model and new_model["id"] == old_model["id"]:
-            free_models = [m for m in MODELS["free"] if m["id"] != old_model["id"]]
-            if free_models:
-                new_model = random.choice(free_models)
+            cheap_models = [m for m in MODELS["ultra_cheap"] if m["id"] != old_model["id"]]
+            if cheap_models:
+                new_model = random.choice(cheap_models)
                 self.model_rotator.record_usage(new_model["id"])
 
         if old_model and new_model:
@@ -78,23 +78,11 @@ class ModelRetryPolicy:
         current_model: dict[str, Any] | None,
     ) -> tuple[bool, dict[str, Any] | None]:
         if not current_model:
-            return True, self.model_rotator.select_random_model(tier="free")
+            return True, self.model_rotator.select_random_model(tier="ultra_cheap")
 
         current_id = current_model.get("id", "")
         if is_free_model_id(current_id):
-            failure_count = self.model_rotator.record_free_failure(current_id)
+            self.model_rotator.record_free_failure(current_id)
             self.total_free_failures += 1
 
-            if failure_count < 3:
-                new_model = self.model_rotator.select_random_model(tier="free")
-                return True, new_model
-
-            paid_model = self.model_rotator.get_next_paid_model(current_id)
-            if paid_model:
-                await self.report_activity(
-                    "free_model_exhausted",
-                    f"Switched to paid model {paid_model['name']} after repeated free failures",
-                )
-                return True, paid_model
-
-        return True, self.model_rotator.select_random_model()
+        return True, self.model_rotator.select_random_model(tier="ultra_cheap")

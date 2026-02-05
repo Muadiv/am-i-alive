@@ -75,25 +75,43 @@ MODELS = {
             "best_for": "long-form reasoning when free tier allows",
         },
     ],
-    # ULTRA-CHEAP - Best bang for buck ($0.02-0.10/1M)
+    # ULTRA-CHEAP - Paid but still low-cost (live OpenRouter pricing)
     "ultra_cheap": [
         {
+            "id": "liquid/lfm2-8b-a1b",
+            "name": "LiquidAI LFM2 8B A1B",
+            "input_cost": 0.010,
+            "output_cost": 0.020,
+            "context": 131072,
+            "intelligence": 7,
+            "best_for": "decision-making, cheap reasoning",
+        },
+        {
+            "id": "liquid/lfm-2.2-6b",
+            "name": "LiquidAI LFM2 6B",
+            "input_cost": 0.010,
+            "output_cost": 0.020,
+            "context": 131072,
+            "intelligence": 7,
+            "best_for": "planning and structured output",
+        },
+        {
             "id": "meta-llama/llama-3.2-3b-instruct",
-            "name": "Llama 3.2 3B",
+            "name": "Llama 3.2 3B Instruct",
             "input_cost": 0.020,
             "output_cost": 0.020,
             "context": 131072,
             "intelligence": 7,
-            "best_for": "social posts, creative writing, general tasks",
+            "best_for": "social posts and narrative style",
         },
         {
-            "id": "google/gemma-3-4b-it",
-            "name": "Gemma 3 4B",
-            "input_cost": 0.017,
-            "output_cost": 0.068,
+            "id": "google/gemma-3n-e4b-it",
+            "name": "Gemma 3n 4B",
+            "input_cost": 0.020,
+            "output_cost": 0.040,
             "context": 96000,
             "intelligence": 7,
-            "best_for": "conversational, thoughtful responses",
+            "best_for": "clean, compact writing",
         },
         {
             "id": "mistralai/mistral-nemo",
@@ -166,8 +184,8 @@ ROTATION_HISTORY_SIZE = 10
 # Budget thresholds for automatic tier switching
 BUDGET_THRESHOLDS = {
     "comfortable": 3.00,  # >$3 remaining: can use ultra_cheap freely
-    "cautious": 1.00,  # $1-3 remaining: stick to free tier mostly
-    "critical": 0.50,  # $0.50-1: free tier only
+    "cautious": 1.00,  # $1-3 remaining: stay on ultra_cheap
+    "critical": 0.50,  # $0.50-1: stay on ultra_cheap
     "survival": 0.10,  # <$0.50: panic mode, consider begging
 }
 
@@ -228,14 +246,9 @@ def list_paid_models_by_cost() -> list[dict[str, Any]]:
 
 def get_recommended_tier(budget_remaining: float) -> str:
     """Recommend a tier based on remaining budget."""
-    if budget_remaining > BUDGET_THRESHOLDS["comfortable"]:
+    if budget_remaining > 0:
         return "ultra_cheap"
-    elif budget_remaining > BUDGET_THRESHOLDS["cautious"]:
-        return "free"
-    elif budget_remaining > BUDGET_THRESHOLDS["critical"]:
-        return "free"
-    else:
-        return "free"  # Always free when desperate
+    return "ultra_cheap"
 
 
 def calculate_token_budget(budget_usd: float, model_id: str) -> dict:

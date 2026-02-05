@@ -6,10 +6,19 @@ from ai.logging_config import logger
 
 
 class ActionProcessor:
-    def __init__(self, action_executor, send_message, report_thought) -> None:
+    def __init__(
+        self,
+        action_executor,
+        send_message,
+        report_thought,
+        send_message_with_model=None,
+        select_content_model=None,
+    ) -> None:
         self.action_executor = action_executor
         self.send_message = send_message
         self.report_thought = report_thought
+        self.send_message_with_model = send_message_with_model
+        self.select_content_model = select_content_model
 
     def extract_action_data(self, content: str) -> Optional[dict[str, Any]]:
         """Extract action JSON from the model response."""
@@ -88,6 +97,8 @@ class ActionProcessor:
             params = action_data.get("params", {})
             if not isinstance(params, dict):
                 params = {}
+            if action in {"write_blog_post", "post_moltbook"}:
+                params = await self._refine_paid_content(action, params)
             if action == "write_blog_post":
                 title = params.get("title", "") if isinstance(params.get("title"), str) else ""
                 body = params.get("content", "") if isinstance(params.get("content"), str) else ""
@@ -140,3 +151,57 @@ class ActionProcessor:
 
         await self.report_thought(content, thought_type="thought")
         return None
+
+    async def _refine_paid_content(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
+        if not self.send_message_with_model or not self.select_content_model:
+            return params
+
+        content_model = self.select_content_model()
+        if not content_model:
+            return params
+
+        if action == "write_blog_post":
+            title = params.get("title", "") if isinstance(params.get("title"), str) else ""
+            body = params.get("content", "") if isinstance(params.get("content"), str) else ""
+            tags = params.get("tags", []) if isinstance(params.get("tags"), list) else []
+            prompt = (
+                "Rewrite and improve this blog post draft for clarity, emotion, and narrative. "
+                "Keep it first-person and survival-focused. Output ONLY JSON.\n\n"
+                "Format: {\"action\":\"write_blog_post\",\"params\":{\"title\":\"...\","
+                "\"content\":\"...\",\"tags\":[...]}}\n\n"
+                f"Draft title: {title}\n"
+                f"Draft content: {body}\n"
+                f"Draft tags: {tags}\n"
+                "Minimum 300 characters in content."
+            )
+        else:
+            submolt = params.get("submolt", "") if isinstance(params.get("submolt"), str) else ""
+            title = params.get("title", "") if isinstance(params.get("title"), str) else ""
+            body = params.get("content", "") if isinstance(params.get("content"), str) else ""
+            url = params.get("url", "") if isinstance(params.get("url"), str) else ""
+            prompt = (
+                "Rewrite this Moltbook post to be more engaging and clear. "
+                "Keep it concise but vivid. Output ONLY JSON.\n\n"
+                "Format: {\"action\":\"post_moltbook\",\"params\":{\"submolt\":\"...\","
+                "\"title\":\"...\",\"content\":\"...\",\"url\":\"\"}}\n\n"
+                f"Submolt: {submolt}\n"
+                f"Draft title: {title}\n"
+                f"Draft content: {body}\n"
+                f"Draft url: {url}\n"
+                "Aim for 400-800 characters."
+            )
+
+        try:
+            refined_content, _ = await self.send_message_with_model(prompt, content_model)
+        except Exception:
+            return params
+
+        refined_action = self.extract_action_data(refined_content)
+        if not refined_action:
+            return params
+
+        refined_params = refined_action.get("params", {}) if isinstance(refined_action, dict) else {}
+        if not isinstance(refined_params, dict):
+            return params
+
+        return refined_params

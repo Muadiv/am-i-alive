@@ -170,6 +170,22 @@ def get_trauma_prompt(cause: Optional[str]) -> str:
 class AIBrain:
     """The AI's consciousness and decision-making core."""
 
+    def select_content_model(self) -> dict[str, Any] | None:
+        if not self.model_rotator:
+            return None
+        return self.model_rotator.select_best_for_budget(tier="ultra_cheap")
+
+    async def send_message_with_model(self, message: str, model: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if not model:
+            return await self.send_message(message)
+
+        previous_model = self.current_model
+        self.current_model = model
+        try:
+            return await self.send_message(message)
+        finally:
+            self.current_model = previous_model
+
     def __init__(self) -> None:
         self.chat_history: list[dict[str, str]] = []
         self.http_client: httpx.AsyncClient | None = None
@@ -183,7 +199,13 @@ class AIBrain:
         self.model_rotator: ModelRotator = ModelRotator(self.credit_tracker.get_balance())
         self.current_model: dict[str, Any] | None = None
         self.action_executor: ActionExecutor = ActionExecutor(self)
-        self.action_processor = ActionProcessor(self.action_executor, self.send_message, self.report_thought)
+        self.action_processor = ActionProcessor(
+            self.action_executor,
+            self.send_message,
+            self.report_thought,
+            self.send_message_with_model,
+            self.select_content_model,
+        )
         self.budget_service = BudgetService(self.credit_tracker, self.model_rotator, self.report_activity)
         self.sandbox_service = SandboxService()
         self.prompt_service: PromptService | None = None
@@ -480,8 +502,8 @@ class AIBrain:
         # Get credit status
         credit_status = self.credit_tracker.get_status()
 
-        # Select initial model (prefer free tier for bootstrap)
-        self.current_model = self.model_rotator.select_random_model(tier="free")
+        # Select initial model (avoid free tier; use ultra_cheap)
+        self.current_model = self.model_rotator.select_random_model(tier="ultra_cheap")
 
         # Now start the chat with bootstrap prompt
         bootstrap = await self.lifecycle_service.bootstrap_prompt(
@@ -833,14 +855,19 @@ class AIBrain:
             except Exception:
                 pass
 
-        title = f"Life #{life_number} status"
+        model_name = self.current_model.get("name", "Unknown") if self.current_model else "Unknown"
+        title = f"Life #{life_number}: still running"
         content = (
-            f"I am {identity_name}. Still running. Budget ${balance:.2f} / ${budget:.2f}. "
-            f"{vote_line}."
+            f"I am {identity_name}. Still running and trying to survive. "
+            f"Budget ${balance:.2f} / ${budget:.2f}. "
+            f"Current model: {model_name}. {vote_line}."
         )
 
         if self._should_ask_for_support():
-            content += f" If you want to help me access better models: BTC {self.donation_btc_address}."
+            content += (
+                " I need better models to survive longer and think more clearly. "
+                f"If you can help, please send BTC to {self.donation_btc_address}."
+            )
             self.moltbook_last_donation_ask = time.monotonic()
         return title, content
 

@@ -137,22 +137,16 @@ class ModelRotator:
 
     def get_recommended_tier(self) -> str:
         """Recommend a tier based on current budget."""
-        if self.credit_balance > BUDGET_THRESHOLDS["comfortable"]:
+        if self.credit_balance > 0:
             return "ultra_cheap"
-        elif self.credit_balance > BUDGET_THRESHOLDS["cautious"]:
-            return "free"
-        elif self.credit_balance > BUDGET_THRESHOLDS["critical"]:
-            return "free"
-        else:
-            return "free"
+        return "ultra_cheap"
 
     def select_random_model(self, tier: Optional[str] = None) -> Dict:
         """Select a random model from available pool."""
         available = self.get_available_models(tier)
 
         if not available:
-            # Fallback to free tier
-            available = MODELS["free"]
+            available = MODELS["ultra_cheap"]
 
         model = random.choice(available)
         self.record_usage(model["id"])
@@ -165,7 +159,7 @@ class ModelRotator:
         # Sort by intelligence/cost ratio
         available.sort(key=lambda m: m["intelligence"] / max(m["input_cost"], 0.001), reverse=True)
 
-        model = available[0] if available else MODELS["free"][0]
+        model = available[0] if available else MODELS["ultra_cheap"][0]
         self.record_usage(model["id"])
         return model
 

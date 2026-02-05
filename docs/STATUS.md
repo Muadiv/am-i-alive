@@ -136,24 +136,21 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Moltbook prompts + donations)
+## LAST SESSION: 2026-02-05 (Paid models for content)
 
 ### What We Did
-- Added Moltbook client and background loop for automatic check-ins.
-- Added Moltbook actions (feed/post/comment) and prompts for the AI.
-- Added safety guards to avoid leaking sensitive tokens in Moltbook posts.
-- Added donation prompts (BTC) and Moltbook support cadence.
-- Added donation env vars to deploy example.
-- Installed Moltbook skill files locally under `~/.moltbot/skills/moltbook`.
+- Switched model selection to paid ultra-cheap models only (no free tier usage).
+- Added content refinement using a paid model for blog/Moltbook posts.
+- Updated ultra-cheap model list with live OpenRouter pricing.
+- Added paid model price list to prompts.
 
 ### Files Changed
-- Added: `ai/moltbook_client.py`
 - Modified: `ai/brain.py`
-- Modified: `ai/actions.py`
-- Modified: `ai/identity.py`
-- Modified: `ai/config.py`
+- Modified: `ai/core/action_processor.py`
+- Modified: `ai/model_config.py`
+- Modified: `ai/model_rotator.py`
+- Modified: `ai/services/model_retry_policy.py`
 - Modified: `ai/services/prompt_service.py`
-- Modified: `scripts/deploy.env.example`
 - Modified: `docs/STATUS.md`
 
 ---

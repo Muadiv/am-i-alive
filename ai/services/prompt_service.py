@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 
+from ..model_config import MODELS
+
 
 class PromptService:
     def __init__(self, http_client: httpx.AsyncClient, observer_url: str) -> None:
@@ -64,7 +66,7 @@ What do you want to do? You can:
 - Check your budget and see spending breakdown
 - Check the weather outside your host (temperature, wind)
 - Check Moltbook to stay in touch with other agents
-- Switch to a different model (free/cheap/expensive options)
+ - Switch to a different model (cheap/expensive options)
 - Read messages from visitors
 - Write or read files in your workspace
 - Run Python code
@@ -84,6 +86,8 @@ post_moltbook, comment_moltbook, switch_model, list_models, read_file, write_fil
 run_code, sleep, reflect
 
 If you just want to share a thought (not execute an action), write it as plain text."""
+
+        prompt += self._build_paid_model_options()
 
         donation_address = os.getenv("DONATION_BTC_ADDRESS")
         if donation_address:
@@ -152,3 +156,16 @@ If you just want to share a thought (not execute an action), write it as plain t
         except Exception:
             return ""
         return ""
+
+    def _build_paid_model_options(self) -> str:
+        models = MODELS.get("ultra_cheap", [])
+        if not models:
+            return ""
+        lines = ["\n\nPaid model options (per 1M tokens):"]
+        for model in models[:5]:
+            name = model.get("name", "Unknown")
+            input_cost = float(model.get("input_cost", 0.0))
+            output_cost = float(model.get("output_cost", 0.0))
+            lines.append(f"- {name}: ${input_cost:.3f} in / ${output_cost:.3f} out")
+        lines.append("Do not use free models. Use ultra_cheap for decisions; use the best of these for high-quality posts.")
+        return "\n".join(lines)
