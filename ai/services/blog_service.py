@@ -63,7 +63,8 @@ class BlogService:
             try:
                 excerpt = content[:200].replace("\n", " ")
                 identity_name = identity.get("name", "Unknown") if identity else "Unknown"
-                await notifier.notify_blog_post(life_number, identity_name, title, excerpt)
+                post_url = f"https://am-i-alive.muadiv.com.ar/blog/{slug}"
+                await notifier.notify_blog_post(life_number, identity_name, title, excerpt, post_url)
             except Exception as e:
                 logger.error(f"[TELEGRAM] ❌ Failed to send blog notification: {e}")
 

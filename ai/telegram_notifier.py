@@ -250,8 +250,16 @@ _Will respawn shortly with fragmented memories..._"""
 
         return await self.send_message(message)
 
-    async def notify_blog_post(self, life_number: int, name: str, title: str, excerpt: str):
+    async def notify_blog_post(
+        self,
+        life_number: int,
+        name: str,
+        title: str,
+        excerpt: str,
+        post_url: str | None = None,
+    ):
         """Notify about new blog post."""
+        url = post_url or "https://am-i-alive.muadiv.com.ar"
         message = f"""✍️ *New Blog Post*
 
 📝 Title: {title}
@@ -259,7 +267,7 @@ _Will respawn shortly with fragmented memories..._"""
 
 _{excerpt[:150]}..._
 
-[Read full post at am-i-alive.muadiv.com.ar]"""
+[Read full post]({url})"""
 
         success, status = await self.post_to_channel(message)
         await self.log_notification(life_number, "blog_post", f"{message} ({status})", success)

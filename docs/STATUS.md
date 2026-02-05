@@ -136,26 +136,14 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Stability hardening sweep)
+## LAST SESSION: 2026-02-05 (Telegram blog URLs)
 
 ### What We Did
-- Hardened sandbox execution with process isolation, time limits, and memory caps.
-- Added observer client timeouts, status checks, and warning logs.
-- Filtered invalid message IDs before marking reads.
-- Deduplicated visitor message DB functions and guarded empty IN clauses.
-- Dropped broken broadcast subscribers to avoid leaks.
-- Centralized Observer config constants and enforced IP_SALT in production.
-- Added blog history pagination and logging for memory load failures.
+- Added full blog post URLs to Telegram notifications.
 
 ### Files Changed
-- Modified: `ai/services/sandbox_service.py`
-- Modified: `ai/services/observer_client.py`
-- Modified: `ai/services/message_service.py`
-- Modified: `observer/database.py`
-- Modified: `observer/services/broadcast.py`
-- Modified: `observer/config.py`
-- Modified: `observer/main.py`
-- Modified: `observer/routes/public.py`
+- Modified: `ai/services/blog_service.py`
+- Modified: `ai/telegram_notifier.py`
 - Modified: `docs/STATUS.md`
 
 ---
