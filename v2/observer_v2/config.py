@@ -13,3 +13,8 @@ class Config:
     FUNDING_POLL_INTERVAL_SECONDS = int(os.getenv("V2_FUNDING_POLL_INTERVAL_SECONDS", "300"))
     INTENTION_TICK_INTERVAL_SECONDS = int(os.getenv("V2_INTENTION_TICK_INTERVAL_SECONDS", "600"))
     NARRATION_TICK_INTERVAL_SECONDS = int(os.getenv("V2_NARRATION_TICK_INTERVAL_SECONDS", "180"))
+    OPENROUTER_API_KEY = os.getenv("V2_OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL = os.getenv("V2_OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    OPENROUTER_BASE_URL = os.getenv("V2_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    OPENROUTER_APP_URL = os.getenv("V2_OPENROUTER_APP_URL", "http://localhost:8080")
+    OPENROUTER_APP_NAME = os.getenv("V2_OPENROUTER_APP_NAME", "am-i-alive-v2")

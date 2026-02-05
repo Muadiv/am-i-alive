@@ -30,10 +30,11 @@ Last updated: 2026-02-05
 - [x] Executed cutover readiness evaluator on DietPi (`ready: true`).
 - [x] Added explicit cutover/rollback runbook for production switch.
 - [x] Added autonomous narrator loop that posts periodic pulse updates.
+- [x] Added OpenRouter-backed narration writer with fallback mode.
 
 ## In Progress
 
-- [ ] Tune narrator cadence/content quality based on live feedback.
+- [ ] Tune narrator prompt/model and activate API key on DietPi env.
 
 ## Waiting
 

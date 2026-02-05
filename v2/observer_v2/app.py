@@ -11,6 +11,7 @@ from .funding_monitor import FundingMonitor, WalletExplorerClient
 from .intention_engine import IntentionEngine
 from .moments import MomentsStore
 from .narrator_engine import NarratorEngine
+from .narration_writer import OpenRouterNarrationWriter
 from .routes import register_routes
 from .storage import SqliteStorage
 from .vote_rounds import VoteRoundService
@@ -21,6 +22,13 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
     vote_round_service = VoteRoundService(app_storage.database_path)
     intention_engine = IntentionEngine(app_storage.database_path)
     narrator_engine = NarratorEngine(minimum_interval_seconds=Config.NARRATION_TICK_INTERVAL_SECONDS)
+    narration_writer = OpenRouterNarrationWriter(
+        api_key=Config.OPENROUTER_API_KEY,
+        model=Config.OPENROUTER_MODEL,
+        base_url=Config.OPENROUTER_BASE_URL,
+        app_url=Config.OPENROUTER_APP_URL,
+        app_name=Config.OPENROUTER_APP_NAME,
+    )
     moments_store = MomentsStore(app_storage.database_path)
     app_funding_monitor = funding_monitor or FundingMonitor(
         storage=app_storage,
@@ -110,6 +118,17 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             vote_round=vote_round,
             active_intention=active_intention,
             donations_count=len(donations),
+        )
+        context = {
+            "life_state": state,
+            "vote_round": vote_round,
+            "active_intention": active_intention,
+            "donations_count": len(donations),
+        }
+        title, content = narration_writer.write(
+            context=context,
+            fallback_title=title,
+            fallback_content=content,
         )
         return moments_store.add_moment(
             life_number=int(state["life_number"]),
