@@ -38,6 +38,11 @@ def index_html() -> str:
     .alive { color:var(--alive); }
     .dead { color:var(--dead); }
     .warn { color:var(--warn); }
+    .vote-panel { margin-top: 14px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+    .vote-btn { border:1px solid var(--line); background: var(--bg-soft); color: var(--text); border-radius: 10px; padding: 10px 14px; cursor:pointer; font-weight:600; }
+    .vote-btn.live:hover { border-color: var(--alive); }
+    .vote-btn.die:hover { border-color: var(--dead); }
+    .vote-note { color: var(--muted); font-size: 13px; min-height: 18px; }
   </style>
 </head>
 <body>
@@ -54,10 +59,33 @@ def index_html() -> str:
       <article class="card"><div class="k">Funding</div><div class="v" id="funding">-</div></article>
     </section>
 
+    <section class="card vote-panel">
+      <button class="vote-btn live" id="vote-live" type="button">Vote live</button>
+      <button class="vote-btn die" id="vote-die" type="button">Vote die</button>
+      <div class="vote-note" id="vote-note">One vote per round per visitor.</div>
+    </section>
+
     <section class="timeline" id="timeline"></section>
   </main>
 
   <script>
+    async function castVote(direction) {
+      const note = document.getElementById('vote-note');
+      note.textContent = 'sending vote...';
+      const response = await fetch('/api/public/vote', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({vote: direction})
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        note.textContent = payload.detail || 'vote failed';
+        return;
+      }
+      note.textContent = `vote accepted: live ${payload.data.live} / die ${payload.data.die}`;
+      await loadAll();
+    }
+
     async function loadAll() {
       const [stateRes, voteRes, fundRes, momentsRes] = await Promise.all([
         fetch('/api/public/state'),
@@ -79,6 +107,11 @@ def index_html() -> str:
       document.getElementById('votes').textContent = `live ${vote.live} / die ${vote.die}`;
       document.getElementById('funding').textContent = `${funding.donations.length} tracked donations`;
 
+      const voteLive = document.getElementById('vote-live');
+      const voteDie = document.getElementById('vote-die');
+      voteLive.disabled = !state.is_alive;
+      voteDie.disabled = !state.is_alive;
+
       const root = document.getElementById('timeline');
       root.innerHTML = '';
       for (const item of moments) {
@@ -88,6 +121,8 @@ def index_html() -> str:
         root.appendChild(node);
       }
     }
+    document.getElementById('vote-live').addEventListener('click', () => castVote('live'));
+    document.getElementById('vote-die').addEventListener('click', () => castVote('die'));
     loadAll();
     setInterval(loadAll, 15000);
   </script>

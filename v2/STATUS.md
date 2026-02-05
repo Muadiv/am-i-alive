@@ -31,6 +31,7 @@ Last updated: 2026-02-05
 - [x] Added explicit cutover/rollback runbook for production switch.
 - [x] Added autonomous narrator loop that posts periodic pulse updates.
 - [x] Added OpenRouter-backed narration writer with fallback mode.
+- [x] Added public vote buttons and in-page vote feedback UI.
 
 ## In Progress
 

@@ -15,6 +15,8 @@ def test_home_page_renders(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert "Am I Alive v2" in response.text
+    assert "Vote live" in response.text
+    assert "Vote die" in response.text
 
 
 def test_public_state_shape(client: TestClient) -> None:
