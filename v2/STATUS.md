@@ -10,10 +10,11 @@ Last updated: 2026-02-05
 - [x] Added baseline tests for health and public state endpoints.
 - [x] Added lifecycle state machine scaffolding and transition tests.
 - [x] Added 24h vote round scaffolding and adjudication tests.
+- [x] Added funding scaffolding (static address endpoint + donation ledger module).
 
 ## In Progress
 
-- [ ] Add funding engine scaffolding (static address + donation ledger).
+- [ ] Persist lifecycle, vote rounds, and donation ledger in v2 database.
 
 ## Waiting
 

@@ -7,3 +7,4 @@ class Config:
     APP_NAME = os.getenv("V2_APP_NAME", "Am I Alive v2")
     APP_VERSION = os.getenv("V2_APP_VERSION", "0.1.0")
     INTERNAL_API_KEY = os.getenv("V2_INTERNAL_API_KEY", "")
+    DONATION_BTC_ADDRESS = os.getenv("V2_DONATION_BTC_ADDRESS", "")
