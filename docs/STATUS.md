@@ -136,16 +136,18 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
-## LAST SESSION: 2026-02-05 (Action parsing + DNS resilience)
+## LAST SESSION: 2026-02-05 (DNS retry coverage)
 
 ### What We Did
 - Improved action parsing to handle thought + JSON reliably.
 - Added deterministic JSON repair for malformed action outputs.
 - Added OpenRouter DNS retry/backoff and a 10-minute circuit breaker.
+- Added Telegram DNS retry/backoff for message posts.
 
 ### Files Changed
 - Modified: `ai/brain.py`
 - Modified: `ai/core/action_processor.py`
+- Modified: `ai/telegram_notifier.py`
 - Modified: `docs/STATUS.md`
 
 ---

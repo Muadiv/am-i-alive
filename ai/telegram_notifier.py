@@ -5,7 +5,9 @@ Sends activity summaries to the creator's Telegram and public channel.
 The public channel is how the AI communicates with the outside world.
 """
 
+import asyncio
 import os
+import random
 from datetime import datetime
 from typing import Optional
 
@@ -52,9 +54,10 @@ class TelegramNotifier:
         """Send a text message to private Telegram chat."""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
+                response = await self._post_with_retry(
+                    client,
                     f"{self.base_url}/sendMessage",
-                    json={"chat_id": self.chat_id, "text": text, "parse_mode": parse_mode},
+                    {"chat_id": self.chat_id, "text": text, "parse_mode": parse_mode},
                 )
                 if response.status_code == 200:
                     return True
@@ -68,6 +71,33 @@ class TelegramNotifier:
         except Exception as e:
             logger.warning(f"[TELEGRAM] ❌ Failed to send message: {e}")
             return False
+
+    @staticmethod
+    def _is_dns_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "name resolution" in message or "temporary failure" in message or "name or service not known" in message
+
+    async def _post_with_retry(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        payload: dict,
+        attempts: int = 3,
+    ) -> httpx.Response:
+        delays = [1, 3, 8]
+        last_exc: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                return await client.post(url, json=payload)
+            except httpx.RequestError as exc:
+                last_exc = exc
+                if self._is_dns_error(exc) and attempt < attempts - 1:
+                    await asyncio.sleep(delays[attempt] + random.uniform(0.0, 0.5))
+                    continue
+                raise
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("Telegram request failed")
 
     def _validate_channel_id(self) -> tuple[bool, str]:
         if not self.channel_id:
@@ -116,9 +146,10 @@ class TelegramNotifier:
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(
+                response = await self._post_with_retry(
+                    client,
                     f"{self.base_url}/sendMessage",
-                    json={
+                    {
                         "chat_id": self.channel_id,
                         "text": text,
                         "parse_mode": parse_mode,
