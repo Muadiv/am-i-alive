@@ -42,8 +42,8 @@ async def notification_monitor() -> None:
                 continue
 
             try:
-                votes = await brain.check_votes()
-                if isinstance(votes, dict):
+                if brain.observer_client:
+                    votes = await brain.observer_client.fetch_votes()
                     identity_name = brain.identity.get("name", "Unknown") if brain.identity else "Unknown"
                     await notifier.notify_vote_status(brain.life_number or 0, identity_name, votes)
             except Exception as e:
