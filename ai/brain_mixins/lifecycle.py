@@ -130,7 +130,9 @@ class BrainLifecycleMixin:
         await self.birth_sequence(life_data)
 
     async def birth_sequence(self, life_data: dict[str, Any]) -> None:
-        identity = life_data.get("identity") or {}
+        identity = self.identity or life_data.get("identity") or {}
+        if not self.identity:
+            self.identity = identity
         identity_name = identity.get("name", "Unknown")
         logger.info(f"[BRAIN] 👶 Beginning birth sequence for Life #{self.life_number}...")
         self.birth_time = datetime.now(timezone.utc)
