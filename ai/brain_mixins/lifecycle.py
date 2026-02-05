@@ -113,6 +113,18 @@ class BrainLifecycleMixin:
 
         self.apply_birth_data(life_data)
         await self.load_memories()
+        if not self.identity and self.lifecycle_service:
+            identity, tokens_used = await self.lifecycle_service.birth_sequence(
+                self.life_number or 0,
+                self.memories,
+            )
+            self.identity = identity
+            self.tokens_used_life += tokens_used
+            await self.lifecycle_service.notify_creator_birth(
+                self.life_number or 0,
+                identity,
+                self.current_model.get("name", "unknown") if self.current_model else "unknown",
+            )
         if not self.current_model:
             self.current_model = self.model_rotator.select_random_model(tier="ultra_cheap")
         await self.birth_sequence(life_data)
