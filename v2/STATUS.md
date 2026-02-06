@@ -39,6 +39,7 @@ Last updated: 2026-02-05
 - [x] Filtered legacy repetitive pulses in homepage timeline view.
 - [x] Added intent-action-result activity engine with public API and homepage card.
 - [x] Added BTC support panel (copy/link/QR), vote countdown, and critical pulse state.
+- [x] Added Moltbook publish loop and internal publish trigger endpoint.
 
 ## In Progress
 

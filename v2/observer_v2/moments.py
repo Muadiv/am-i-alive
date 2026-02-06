@@ -115,6 +115,23 @@ class MomentsStore:
             return 0
         return int(row[0] or 0)
 
+    def latest_public_of_types(self, moment_types: list[str]) -> dict[str, object] | None:
+        if not moment_types:
+            return None
+        placeholders = ",".join(["?" for _ in moment_types])
+        query = f"""
+            SELECT id, life_number, moment_type, title, content, visibility, created_at
+            FROM moments
+            WHERE visibility = 'public' AND moment_type IN ({placeholders})
+            ORDER BY id DESC
+            LIMIT 1
+        """
+        with sqlite3.connect(self.database_path) as conn:
+            row = conn.execute(query, tuple(moment_types)).fetchone()
+        if not row:
+            return None
+        return self._serialize(row)
+
     def _serialize(self, row: tuple) -> dict[str, object]:
         return {
             "id": int(row[0]),
