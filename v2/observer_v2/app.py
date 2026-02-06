@@ -184,6 +184,9 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         )
 
     async def tick_moltbook_once(force: bool = False) -> dict[str, object]:
+        if not Config.MOLTBOOK_API_KEY.strip():
+            return {"success": False, "error": "missing_api_key"}
+
         latest = moments_store.latest_public_of_types(["activity", "narration"])
         if not latest:
             return {"success": False, "error": "no_moments"}
