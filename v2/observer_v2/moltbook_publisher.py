@@ -110,4 +110,7 @@ class MoltbookPublisher:
             i += 1
         if not values:
             return ""
+        if len(values) >= 2:
+            top_two = sorted(values, reverse=True)[:2]
+            return f"{sum(top_two):.2f}"
         return f"{sum(values):.2f}"
