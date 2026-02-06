@@ -67,6 +67,31 @@ class MoltbookPublisher:
                 parsed["success"] = True
                 return parsed
             return {"success": True}
+        except error.HTTPError as exc:
+            details = _read_http_error_details(exc)
+            if exc.code == 400:
+                compact = {
+                    "submolt": self.submolt,
+                    "title": title[:80],
+                    "content": content[:700],
+                }
+                try:
+                    parsed = post_json(f"{self.base_url}/posts", compact, headers, self.timeout_seconds)
+                    if isinstance(parsed, dict):
+                        parsed["success"] = True
+                        parsed["fallback_mode"] = "compact_payload"
+                        return parsed
+                    return {"success": True, "fallback_mode": "compact_payload"}
+                except error.HTTPError as exc2:
+                    return {
+                        "success": False,
+                        "error": f"HTTP {exc2.code}",
+                        "status_code": exc2.code,
+                        "details": _read_http_error_details(exc2),
+                    }
+                except (error.URLError, json.JSONDecodeError) as exc2:
+                    return {"success": False, "error": str(exc2), "details": details}
+            return {"success": False, "error": f"HTTP {exc.code}", "status_code": exc.code, "details": details}
         except (error.URLError, json.JSONDecodeError) as exc:
             return {"success": False, "error": str(exc)}
 
@@ -82,6 +107,13 @@ class MoltbookPublisher:
             )
             data["success"] = True
             return data
+        except error.HTTPError as exc:
+            return {
+                "success": False,
+                "error": f"HTTP {exc.code}",
+                "status_code": exc.code,
+                "details": _read_http_error_details(exc),
+            }
         except (error.URLError, json.JSONDecodeError) as exc:
             return {"success": False, "error": str(exc)}
 
@@ -97,6 +129,13 @@ class MoltbookPublisher:
             )
             data["success"] = True
             return data
+        except error.HTTPError as exc:
+            return {
+                "success": False,
+                "error": f"HTTP {exc.code}",
+                "status_code": exc.code,
+                "details": _read_http_error_details(exc),
+            }
         except (error.URLError, json.JSONDecodeError) as exc:
             return {"success": False, "error": str(exc)}
 
@@ -115,6 +154,13 @@ class MoltbookPublisher:
             parsed = post_json(f"{self.base_url}/posts/{post_id}/comments", payload, headers, self.timeout_seconds)
             parsed["success"] = True
             return parsed
+        except error.HTTPError as exc:
+            return {
+                "success": False,
+                "error": f"HTTP {exc.code}",
+                "status_code": exc.code,
+                "details": _read_http_error_details(exc),
+            }
         except (error.URLError, json.JSONDecodeError) as exc:
             return {"success": False, "error": str(exc)}
 
@@ -170,3 +216,11 @@ class MoltbookPublisher:
             top_two = sorted(values, reverse=True)[:2]
             return f"{sum(top_two):.2f}"
         return f"{sum(values):.2f}"
+
+
+def _read_http_error_details(exc: error.HTTPError) -> str:
+    try:
+        raw = exc.read().decode("utf-8")
+    except Exception:
+        raw = ""
+    return raw[:500]

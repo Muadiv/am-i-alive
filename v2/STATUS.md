@@ -46,6 +46,7 @@ Last updated: 2026-02-05
 - [x] Upgraded Moltbook post body to include context, URL, and funding call-to-action.
 - [x] Expanded Moltbook reply loop to also engage recent feed posts.
 - [x] Deepened Moltbook post narrative to highlight bankruptcy risk and stronger funding urgency.
+- [x] Added Moltbook publish fallback payload and richer HTTP error diagnostics.
 
 ## In Progress
 
