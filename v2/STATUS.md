@@ -37,6 +37,7 @@ Last updated: 2026-02-05
 - [x] Reduced default narration frequency and deduplicated repeated intention updates.
 - [x] Added force option for narrator tick to validate content updates instantly.
 - [x] Filtered legacy repetitive pulses in homepage timeline view.
+- [x] Added intent-action-result activity engine with public API and homepage card.
 
 ## In Progress
 

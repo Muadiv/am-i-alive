@@ -22,6 +22,7 @@ def register_routes(
     check_vote_rounds_once: Callable[[], Awaitable[dict[str, object]]],
     sync_funding_once: Callable[[], Awaitable[dict[str, object]]],
     tick_intention_once: Callable[[], Awaitable[dict[str, object] | None]],
+    tick_activity_once: Callable[[bool], Awaitable[dict[str, object] | None]],
     tick_narrator_once: Callable[[bool], Awaitable[dict[str, object] | None]],
 ) -> None:
     @app.get("/health")
@@ -91,6 +92,11 @@ def register_routes(
         safe_limit = max(1, min(limit, 100))
         intentions = intention_engine.list_recent(limit=safe_limit)
         return {"success": True, "data": intentions}
+
+    @app.get("/api/public/activity")
+    async def public_activity() -> dict[str, object]:
+        activity = moments_store.latest(moment_type="activity")
+        return {"success": True, "data": activity}
 
     @app.get("/api/public/timeline")
     async def public_timeline(limit: int = 30) -> dict[str, object]:
@@ -176,6 +182,17 @@ def register_routes(
         data = payload or {}
         force = bool(data.get("force", False))
         moment = await tick_narrator_once(force)
+        return {"success": True, "data": moment}
+
+    @app.post("/api/internal/activity/tick")
+    async def tick_activity(
+        payload: dict[str, object] | None = None,
+        x_internal_key: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        _require_internal_auth(x_internal_key)
+        data = payload or {}
+        force = bool(data.get("force", False))
+        moment = await tick_activity_once(force)
         return {"success": True, "data": moment}
 
     @app.post("/api/internal/lifecycle/transition")

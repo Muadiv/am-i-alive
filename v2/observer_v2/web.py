@@ -26,7 +26,7 @@ def index_html() -> str:
     .hero { display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; align-items:center; margin-bottom: 16px; }
     .title { font-size: 28px; font-weight: 700; letter-spacing: 0.3px; }
     .pill { padding: 6px 12px; border:1px solid var(--line); background: var(--bg-soft); border-radius: 999px; font-size: 13px; color: var(--muted); }
-    .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
     .card { background: linear-gradient(180deg, #213129 0%, var(--card) 100%); border:1px solid var(--line); border-radius: 14px; padding: 14px; }
     .k { color:var(--muted); font-size:12px; text-transform: uppercase; letter-spacing: 1px; }
     .v { margin-top:6px; font-size:18px; font-weight: 600; }
@@ -56,6 +56,7 @@ def index_html() -> str:
     <section class="grid">
       <article class="card"><div class="k">State</div><div class="v" id="state">-</div></article>
       <article class="card"><div class="k">Intention</div><div class="v" id="intention">-</div></article>
+      <article class="card"><div class="k">Current move</div><div class="v" id="activity">-</div></article>
       <article class="card"><div class="k">Vote Round</div><div class="v" id="votes">-</div></article>
       <article class="card"><div class="k">Funding</div><div class="v" id="funding">-</div></article>
     </section>
@@ -120,15 +121,17 @@ def index_html() -> str:
 
     async function loadAll() {
       try {
-        const [statePayload, votePayload, fundPayload, momentsPayload] = await Promise.all([
+        const [statePayload, votePayload, fundPayload, activityPayload, momentsPayload] = await Promise.all([
           fetchJson('/api/public/state'),
           fetchJson('/api/public/vote-round'),
           fetchJson('/api/public/funding'),
+          fetchJson('/api/public/activity'),
           fetchJson('/api/public/timeline?limit=20')
         ]);
         const state = statePayload.data;
         const vote = votePayload.data;
         const funding = fundPayload.data;
+        const activity = activityPayload.data;
         const moments = momentsPayload.data;
 
         const pulse = document.getElementById('pulse');
@@ -137,6 +140,7 @@ def index_html() -> str:
 
         document.getElementById('state').textContent = `${state.state} (life ${state.life_number})`;
         document.getElementById('intention').textContent = state.current_intention;
+        document.getElementById('activity').textContent = activity ? activity.title : 'awaiting first action';
         document.getElementById('votes').textContent = `live ${vote.live} / die ${vote.die}`;
         document.getElementById('funding').textContent = `${funding.donations.length} tracked donations`;
 

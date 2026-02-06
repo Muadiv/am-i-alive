@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from .activity_engine import ActivityEngine
 from .config import Config
 from .funding_monitor import FundingMonitor, WalletExplorerClient
 from .intention_engine import IntentionEngine
@@ -21,6 +22,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
     app_storage = storage or SqliteStorage(Config.DATABASE_PATH)
     vote_round_service = VoteRoundService(app_storage.database_path)
     intention_engine = IntentionEngine(app_storage.database_path)
+    activity_engine = ActivityEngine(minimum_interval_seconds=Config.ACTIVITY_TICK_INTERVAL_SECONDS)
     narrator_engine = NarratorEngine(minimum_interval_seconds=Config.NARRATION_TICK_INTERVAL_SECONDS)
     narration_writer = OpenRouterNarrationWriter(
         api_key=Config.OPENROUTER_API_KEY,
@@ -102,6 +104,37 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             )
         return intention
 
+    async def tick_activity_once(force: bool = False) -> dict[str, object] | None:
+        state = app_storage.get_life_state()
+        if not bool(state["is_alive"]):
+            return None
+
+        active_intention = intention_engine.get_active_intention()
+        intention_kind = "survive" if not active_intention else str(active_intention.get("kind", "survive"))
+        vote_round = app_storage.get_open_vote_round()
+        live_votes = int(vote_round.get("live", 0))
+        die_votes = int(vote_round.get("die", 0))
+        donations_count = len(app_storage.list_donations(limit=10))
+
+        latest_activity = moments_store.latest(moment_type="activity")
+        last_at = None if not latest_activity else str(latest_activity.get("created_at", ""))
+        if not force and not activity_engine.should_emit(last_created_at=last_at or None):
+            return None
+
+        title, content = activity_engine.build_activity(
+            intention_kind=intention_kind,
+            live_votes=live_votes,
+            die_votes=die_votes,
+            donations_count=donations_count,
+            sequence=moments_store.count_public_by_type("activity"),
+        )
+        return moments_store.add_moment(
+            life_number=int(state["life_number"]),
+            moment_type="activity",
+            title=title,
+            content=content,
+        )
+
     async def tick_narrator_once(force: bool = False) -> dict[str, object] | None:
         state = app_storage.get_life_state()
         active_intention = intention_engine.get_active_intention()
@@ -161,6 +194,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             asyncio.create_task(_watch_vote_rounds(check_vote_rounds_once)),
             asyncio.create_task(_watch_funding(sync_funding_once)),
             asyncio.create_task(_watch_intentions(tick_intention_once)),
+            asyncio.create_task(_watch_activity(tick_activity_once)),
             asyncio.create_task(_watch_narration(tick_narrator_once)),
         ]
         yield
@@ -178,6 +212,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         check_vote_rounds_once=check_vote_rounds_once,
         sync_funding_once=sync_funding_once,
         tick_intention_once=tick_intention_once,
+        tick_activity_once=tick_activity_once,
         tick_narrator_once=tick_narrator_once,
     )
     return app
@@ -205,6 +240,12 @@ async def _watch_narration(tick_narrator_once: Callable[[bool], Awaitable[dict[s
     while True:
         await asyncio.sleep(Config.NARRATION_TICK_INTERVAL_SECONDS)
         await tick_narrator_once(False)
+
+
+async def _watch_activity(tick_activity_once: Callable[[bool], Awaitable[dict[str, object] | None]]) -> None:
+    while True:
+        await asyncio.sleep(Config.ACTIVITY_TICK_INTERVAL_SECONDS)
+        await tick_activity_once(False)
 
 
 app = create_app()
