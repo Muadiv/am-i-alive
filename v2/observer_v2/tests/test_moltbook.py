@@ -68,6 +68,7 @@ def test_post_formatter_includes_url_and_btc() -> None:
     )
     assert "http://example.local" in content
     assert "bc1example" in content
+    assert "die by bankruptcy" in content
 
 
 def test_extract_posts_supports_nested_payload_shapes() -> None:

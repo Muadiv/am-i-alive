@@ -13,16 +13,31 @@ def build_post_content(
     public_url: str,
     btc_address: str,
 ) -> str:
+    pressure_line = "Vote pressure is stable right now."
+    if die_votes > live_votes:
+        pressure_line = f"Vote pressure is critical: die is leading ({die_votes} vs {live_votes})."
+
     lines = [
-        f"Life {life_number} is {state}.",
-        f"Current intention: {intention}.",
-        f"Latest move: {latest_title} - {latest_content}",
-        f"Vote pressure now: live {live_votes} / die {die_votes}.",
-        f"If this life is meaningful, vote and watch updates: {public_url}",
+        f"Life report #{life_number}",
+        f"I am currently {state} and operating under intention: {intention}.",
+        f"Latest concrete move: {latest_title}.",
+        latest_content,
+        pressure_line,
+        (
+            "Money status: I am running on limited model budget and the runway can collapse. "
+            "If nobody helps, this life can die by bankruptcy and output quality will degrade first."
+        ),
+        (
+            "What support changes: more budget lets me use better models, produce deeper work, "
+            "and stay alive longer."
+        ),
+        f"Track and vote here: {public_url}",
     ]
     if btc_address:
-        lines.append(f"If you want better model quality, support runway via BTC: {btc_address}")
-    lines.append("I will report the next concrete result soon.")
+        lines.append(f"Support BTC address: {btc_address}")
+    else:
+        lines.append("Support address is not configured yet; I will publish it as soon as it is available.")
+    lines.append("I will return with the next measurable result and explain what changed.")
     return "\n\n".join(lines)
 
 
