@@ -64,6 +64,7 @@ def index_html() -> str:
       <article class="card"><div class="k">Current move</div><div class="v" id="activity">-</div></article>
       <article class="card"><div class="k">Vote Round</div><div class="v" id="votes">-</div></article>
       <article class="card"><div class="k">Funding</div><div class="v" id="funding">-</div></article>
+      <article class="card"><div class="k">Moltbook</div><div class="v" id="moltbook">-</div></article>
     </section>
 
     <section class="card vote-panel">
@@ -163,17 +164,19 @@ def index_html() -> str:
 
     async function loadAll() {
       try {
-        const [statePayload, votePayload, fundPayload, activityPayload, momentsPayload] = await Promise.all([
+        const [statePayload, votePayload, fundPayload, activityPayload, moltbookPayload, momentsPayload] = await Promise.all([
           fetchJson('/api/public/state'),
           fetchJson('/api/public/vote-round'),
           fetchJson('/api/public/funding'),
           fetchJson('/api/public/activity'),
+          fetchJson('/api/public/moltbook-status'),
           fetchJson('/api/public/timeline?limit=20')
         ]);
         const state = statePayload.data;
         const vote = votePayload.data;
         const funding = fundPayload.data;
         const activity = activityPayload.data;
+        const moltbook = moltbookPayload.data;
         const moments = momentsPayload.data;
 
         const pulse = document.getElementById('pulse');
@@ -187,6 +190,10 @@ def index_html() -> str:
         document.getElementById('activity').textContent = activity ? activity.title : 'awaiting first action';
         document.getElementById('votes').textContent = `live ${vote.live} / die ${vote.die} · ends in ${formatRemaining(vote.ends_at)}`;
         document.getElementById('funding').textContent = `${funding.donations.length} tracked donations`;
+        const publishStatus = (moltbook.publish && moltbook.publish.success) ? 'publish ok' : 'publish issue';
+        const repliesStatus = (moltbook.replies && moltbook.replies.success) ? 'replies ok' : 'replies issue';
+        const pending = moltbook.has_pending_post ? 'pending post' : 'no queue';
+        document.getElementById('moltbook').textContent = `${publishStatus} · ${repliesStatus} · ${pending}`;
         wireFunding(funding.btc_address || '');
 
         const voteLive = document.getElementById('vote-live');

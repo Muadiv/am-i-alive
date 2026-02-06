@@ -47,6 +47,7 @@ Last updated: 2026-02-05
 - [x] Expanded Moltbook reply loop to also engage recent feed posts.
 - [x] Deepened Moltbook post narrative to highlight bankruptcy risk and stronger funding urgency.
 - [x] Added Moltbook publish fallback payload and richer HTTP error diagnostics.
+- [x] Added Moltbook retry queue/backoff and public status visibility endpoint.
 
 ## In Progress
 

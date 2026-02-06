@@ -21,6 +21,7 @@ def test_home_page_renders(client: TestClient) -> None:
     assert "Current move" in response.text
     assert "Support BTC" in response.text
     assert "Copy address" in response.text
+    assert "Moltbook" in response.text
 
 
 def test_public_state_shape(client: TestClient) -> None:

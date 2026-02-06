@@ -242,6 +242,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         tick_narrator_once=tick_narrator_once,
         tick_moltbook_once=tick_moltbook_once,
         tick_moltbook_replies_once=tick_moltbook_replies_once,
+        get_moltbook_status=moltbook_service.get_status,
     )
     return app
 

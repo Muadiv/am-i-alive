@@ -26,6 +26,7 @@ def register_routes(
     tick_narrator_once: Callable[[bool], Awaitable[dict[str, object] | None]],
     tick_moltbook_once: Callable[[bool], Awaitable[dict[str, object]]],
     tick_moltbook_replies_once: Callable[[bool], Awaitable[dict[str, object]]],
+    get_moltbook_status: Callable[[], dict[str, object]],
 ) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -105,6 +106,10 @@ def register_routes(
         safe_limit = max(1, min(limit, 100))
         timeline = moments_store.list_public(limit=safe_limit)
         return {"success": True, "data": timeline}
+
+    @app.get("/api/public/moltbook-status")
+    async def public_moltbook_status() -> dict[str, object]:
+        return {"success": True, "data": get_moltbook_status()}
 
     @app.post("/api/internal/funding/donation")
     async def ingest_donation(

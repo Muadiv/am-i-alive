@@ -23,6 +23,15 @@ def test_internal_moltbook_replies_returns_missing_key_without_config(client: Te
     assert payload["data"]["error"] == "missing_api_key"
 
 
+def test_public_moltbook_status_endpoint(client: TestClient) -> None:
+    response = client.get("/api/public/moltbook-status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert "publish" in payload["data"]
+    assert "replies" in payload["data"]
+
+
 def test_moltbook_publisher_auto_verifies_challenge() -> None:
     calls: list[tuple[str, dict]] = []
 
