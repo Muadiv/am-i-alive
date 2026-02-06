@@ -47,7 +47,6 @@ def index_html() -> str:
     .funding-panel { margin-top: 12px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
     .addr { font-family: "IBM Plex Mono", "Consolas", monospace; font-size: 12px; color: var(--text); background: var(--bg-soft); border:1px solid var(--line); border-radius: 8px; padding: 8px; word-break: break-all; }
     .action-btn { border:1px solid var(--line); background: var(--bg-soft); color: var(--text); border-radius: 8px; padding: 8px 10px; cursor:pointer; }
-    .action-btn[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
     .critical { color: var(--warn); }
     .qr { width: 120px; height: 120px; border:1px solid var(--line); border-radius: 8px; display:none; }
   </style>
@@ -77,7 +76,6 @@ def index_html() -> str:
       <div class="k">Support BTC</div>
       <div class="addr" id="btc-address">not configured</div>
       <button class="action-btn" id="copy-btc" type="button">Copy address</button>
-      <a class="action-btn" id="open-btc" href="#" target="_blank" rel="noopener">Open wallet link</a>
       <img class="qr" id="btc-qr" alt="BTC QR" />
     </section>
 
@@ -139,21 +137,16 @@ def index_html() -> str:
     function wireFunding(address) {
       const addr = document.getElementById('btc-address');
       const copy = document.getElementById('copy-btc');
-      const open = document.getElementById('open-btc');
       const qr = document.getElementById('btc-qr');
       if (!address) {
         addr.textContent = 'not configured';
         copy.disabled = true;
-        open.href = 'javascript:void(0)';
-        open.setAttribute('aria-disabled', 'true');
         qr.style.display = 'none';
         return;
       }
 
       addr.textContent = address;
       copy.disabled = false;
-      open.removeAttribute('aria-disabled');
-      open.href = `bitcoin:${address}`;
       qr.src = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent('bitcoin:' + address)}`;
       qr.style.display = 'block';
     }
