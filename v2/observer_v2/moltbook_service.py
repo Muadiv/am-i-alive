@@ -110,10 +110,10 @@ class MoltbookService:
 
             reply_text = build_reply_content(comment_text, self.public_url, self.donation_btc_address)
             result = await asyncio.to_thread(self.publisher.create_comment, post_id, reply_text, comment_id)
-                if not result.get("success"):
-                    if not force:
-                        break
-                    continue
+            if not result.get("success"):
+                if not force:
+                    break
+                continue
 
             replied_set.add(comment_id)
             replied_now += 1
