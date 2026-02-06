@@ -2,6 +2,23 @@
 
 ## Active Issues
 
+### ISSUE-013: Moltbook publish/reply throttling on v2
+
+**Priority:** Medium
+**Status:** Open (mitigated with retry queue/backoff)
+**Discovered:** 2026-02-06
+
+**Description:** v2 Moltbook automation intermittently hits API throttling and transient network failures (`HTTP 429`, temporary DNS errors), delaying post/reply delivery.
+
+**Current Mitigation:**
+- Retry with backoff for publish attempts.
+- Pending-post queue for failed publish retries.
+- Public status endpoint for visibility (`/api/public/moltbook-status`).
+
+**Next Step:**
+- Tune cadence + retry policy after observing a longer live window.
+- Optionally add cooldown parsing from API hints (`retry_after_minutes`) for precise rescheduling.
+
 ### ISSUE-011: Cloudflare tunnel hostname routing
 
 **Priority:** High

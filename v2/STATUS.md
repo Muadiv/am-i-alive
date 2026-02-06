@@ -1,6 +1,6 @@
 # v2 Build Status
 
-Last updated: 2026-02-05
+Last updated: 2026-02-06
 
 ## Done
 
@@ -51,13 +51,15 @@ Last updated: 2026-02-05
 
 ## In Progress
 
-- [ ] Tune narrator prompt/model and activate API key on DietPi env.
+- [ ] Polish v2 narrative quality and Moltbook engagement (queued for later).
 
 ## Waiting
 
 - [ ] Final cutover switch and v1 decommission (after explicit approval).
+- [ ] Resume v2 feature work after v1-focused cycle.
 
 ## Risks / Notes
 
 - v1 and v2 must remain isolated (service names, ports, db/data paths).
 - No v1 behavior changes during v2 parallel build unless explicitly requested.
+- Decision at end of session: keep v2 running, return active development focus to v1 for now.

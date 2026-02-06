@@ -181,6 +181,23 @@ sudo systemctl restart amialive-observer amialive-ai
 
 ---
 
+## LAST SESSION: 2026-02-06 (v2 parallel run + Moltbook integration)
+
+### What We Did
+- Built and deployed `observer_v2` in parallel on DietPi (`amialive-v2-observer`, port 8080) while keeping v1 live.
+- Added v2 public UI improvements: vote buttons, activity card, BTC panel (copy + QR), vote countdown, critical pulse state.
+- Added v2 autonomous loops: activity, narration, Moltbook publish, Moltbook reply handling.
+- Synced v2 OpenRouter key from running AI environment and set v2 BTC address in DietPi env.
+- Added Moltbook reliability features: auto verification, retry/backoff, pending publish queue, status endpoint.
+- Verified DietPi state: `amialive-observer`, `amialive-ai`, and `amialive-v2-observer` all active.
+- Ran v2 test suite on DietPi repeatedly; latest run: `54 passed`.
+
+### End-of-session Decision
+- Keep v2 running for observation.
+- Return active development focus to v1 in the next session.
+
+---
+
 ## LAST SESSION: 2026-01-21 (Phase 2 & Hardening)
 
 ### What We Did
@@ -219,6 +236,7 @@ sudo systemctl restart amialive-observer amialive-ai
 - [x] Budget tracking (current life + all-time)
 - [x] Content filtering
 - [x] Test suite: 38/38 passing
+- [x] v2 observer running in parallel on DietPi (`http://192.168.10.5:8080`) for experimental validation
 
 ### Known Issues
 - **ISSUE-005:** Twitter API 401 - using Telegram instead
