@@ -19,6 +19,8 @@ def test_home_page_renders(client: TestClient) -> None:
     assert "Vote die" in response.text
     assert "Showing latest meaningful updates." in response.text
     assert "Current move" in response.text
+    assert "Support BTC" in response.text
+    assert "Copy address" in response.text
 
 
 def test_public_state_shape(client: TestClient) -> None:

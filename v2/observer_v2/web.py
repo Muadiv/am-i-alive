@@ -44,6 +44,11 @@ def index_html() -> str:
     .vote-btn.die:hover { border-color: var(--dead); }
     .vote-note { color: var(--muted); font-size: 13px; min-height: 18px; }
     .timeline-note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+    .funding-panel { margin-top: 12px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .addr { font-family: "IBM Plex Mono", "Consolas", monospace; font-size: 12px; color: var(--text); background: var(--bg-soft); border:1px solid var(--line); border-radius: 8px; padding: 8px; word-break: break-all; }
+    .action-btn { border:1px solid var(--line); background: var(--bg-soft); color: var(--text); border-radius: 8px; padding: 8px 10px; cursor:pointer; }
+    .critical { color: var(--warn); }
+    .qr { width: 120px; height: 120px; border:1px solid var(--line); border-radius: 8px; display:none; }
   </style>
 </head>
 <body>
@@ -65,6 +70,14 @@ def index_html() -> str:
       <button class="vote-btn live" id="vote-live" type="button">Vote live</button>
       <button class="vote-btn die" id="vote-die" type="button">Vote die</button>
       <div class="vote-note" id="vote-note">One vote per round per visitor.</div>
+    </section>
+
+    <section class="card funding-panel">
+      <div class="k">Support BTC</div>
+      <div class="addr" id="btc-address">not configured</div>
+      <button class="action-btn" id="copy-btc" type="button">Copy address</button>
+      <a class="action-btn" id="open-btc" href="#" target="_blank" rel="noopener">Open wallet link</a>
+      <img class="qr" id="btc-qr" alt="BTC QR" />
     </section>
 
     <div class="timeline-note" id="timeline-note">Showing latest meaningful updates.</div>
@@ -109,6 +122,39 @@ def index_html() -> str:
       }
     }
 
+    function formatRemaining(endsAtIso) {
+      if (!endsAtIso) {
+        return 'unknown';
+      }
+      const end = new Date(endsAtIso).getTime();
+      const now = Date.now();
+      const remaining = Math.max(0, Math.floor((end - now) / 1000));
+      const h = Math.floor(remaining / 3600);
+      const m = Math.floor((remaining % 3600) / 60);
+      const s = remaining % 60;
+      return `${h}h ${m}m ${s}s`;
+    }
+
+    function wireFunding(address) {
+      const addr = document.getElementById('btc-address');
+      const copy = document.getElementById('copy-btc');
+      const open = document.getElementById('open-btc');
+      const qr = document.getElementById('btc-qr');
+      if (!address) {
+        addr.textContent = 'not configured';
+        copy.disabled = true;
+        open.href = '#';
+        qr.style.display = 'none';
+        return;
+      }
+
+      addr.textContent = address;
+      copy.disabled = false;
+      open.href = `bitcoin:${address}`;
+      qr.src = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent('bitcoin:' + address)}`;
+      qr.style.display = 'block';
+    }
+
     function shouldHideLegacyNoise(item, latestBootId) {
       if (item.moment_type === 'boot' && item.id !== latestBootId) {
         return true;
@@ -135,14 +181,17 @@ def index_html() -> str:
         const moments = momentsPayload.data;
 
         const pulse = document.getElementById('pulse');
-        pulse.textContent = state.is_alive ? 'alive pulse' : 'dead pulse';
-        pulse.className = 'pill ' + (state.is_alive ? 'alive' : 'dead');
+        const dieLeading = vote.die > vote.live;
+        pulse.textContent = !state.is_alive ? 'dead pulse' : (dieLeading ? 'critical pulse' : 'alive pulse');
+        const pulseClass = !state.is_alive ? 'dead' : (dieLeading ? 'critical' : 'alive');
+        pulse.className = 'pill ' + pulseClass;
 
         document.getElementById('state').textContent = `${state.state} (life ${state.life_number})`;
         document.getElementById('intention').textContent = state.current_intention;
         document.getElementById('activity').textContent = activity ? activity.title : 'awaiting first action';
-        document.getElementById('votes').textContent = `live ${vote.live} / die ${vote.die}`;
+        document.getElementById('votes').textContent = `live ${vote.live} / die ${vote.die} · ends in ${formatRemaining(vote.ends_at)}`;
         document.getElementById('funding').textContent = `${funding.donations.length} tracked donations`;
+        wireFunding(funding.btc_address || '');
 
         const voteLive = document.getElementById('vote-live');
         const voteDie = document.getElementById('vote-die');
@@ -171,6 +220,23 @@ def index_html() -> str:
         document.getElementById('intention').textContent = 'unreachable';
       }
     }
+
+    async function copyBtcAddress() {
+      const value = document.getElementById('btc-address').textContent.trim();
+      const note = document.getElementById('vote-note');
+      if (!value || value === 'not configured') {
+        note.textContent = 'btc address is not configured yet';
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        note.textContent = 'btc address copied';
+      } catch (_error) {
+        note.textContent = 'copy failed';
+      }
+    }
+
+    document.getElementById('copy-btc').addEventListener('click', copyBtcAddress);
     document.getElementById('vote-live').addEventListener('click', () => castVote('live'));
     document.getElementById('vote-die').addEventListener('click', () => castVote('die'));
     loadAll();
