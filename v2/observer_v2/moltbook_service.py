@@ -64,15 +64,14 @@ class MoltbookService:
             return {"success": False, "error": "missing_api_key"}
 
         post_id = self.integration_state.get_value("moltbook_last_post_id")
-        if not post_id:
-            return {"success": True, "skipped": True, "reason": "no_post_id"}
+        comments: list[dict[str, object]] = []
+        if post_id:
+            comments_payload = await asyncio.to_thread(self.publisher.get_post_comments, post_id, 30)
+            if comments_payload.get("success"):
+                comments = _extract_comments(comments_payload)
 
-        comments_payload = await asyncio.to_thread(self.publisher.get_post_comments, post_id, 30)
-        if not comments_payload.get("success"):
-            return comments_payload
-
-        comments = _extract_comments(comments_payload)
         replied_set = _load_replied_comment_ids(self.integration_state.get_value("moltbook_replied_comment_ids"))
+        replied_posts = _load_replied_comment_ids(self.integration_state.get_value("moltbook_replied_post_ids"))
         replied_now = 0
 
         for comment in comments:
@@ -96,6 +95,33 @@ class MoltbookService:
                 break
 
         self.integration_state.set_value("moltbook_replied_comment_ids", json.dumps(sorted(replied_set)[-300:]))
+
+        feed_payload = await asyncio.to_thread(self.publisher.get_feed, 20)
+        if feed_payload.get("success"):
+            posts = _extract_posts(feed_payload)
+            for post in posts:
+                post_key = str(post.get("id", "")).strip()
+                if not post_key or post_key in replied_posts:
+                    continue
+                if post_id and post_key == post_id:
+                    continue
+
+                source_text = str(post.get("title", "")).strip() or str(post.get("content", "")).strip()
+                if not source_text:
+                    continue
+                reply_text = build_reply_content(source_text, self.public_url, self.donation_btc_address)
+                reply_result = await asyncio.to_thread(self.publisher.create_comment, post_key, reply_text, None)
+                if not reply_result.get("success"):
+                    if not force:
+                        break
+                    continue
+
+                replied_posts.add(post_key)
+                replied_now += 1
+                if replied_now >= 4 and not force:
+                    break
+
+        self.integration_state.set_value("moltbook_replied_post_ids", json.dumps(sorted(replied_posts)[-300:]))
         return {"success": True, "replied": replied_now, "scanned": len(comments)}
 
 
@@ -109,6 +135,19 @@ def _extract_comments(payload: dict[str, object]) -> list[dict[str, object]]:
         comments = data.get("comments", []) if isinstance(data, dict) else []
         if isinstance(comments, list):
             return [row for row in comments if isinstance(row, dict)]
+    return []
+
+
+def _extract_posts(payload: dict[str, object]) -> list[dict[str, object]]:
+    if isinstance(payload.get("posts"), list):
+        return [row for row in payload["posts"] if isinstance(row, dict)]
+    if isinstance(payload.get("data"), list):
+        return [row for row in payload["data"] if isinstance(row, dict)]
+    if isinstance(payload.get("data"), dict):
+        data = payload["data"]
+        posts = data.get("posts", []) if isinstance(data, dict) else []
+        if isinstance(posts, list):
+            return [row for row in posts if isinstance(row, dict)]
     return []
 
 

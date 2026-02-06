@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from observer_v2.moltbook_formatter import build_post_content
 from observer_v2.moltbook_publisher import MoltbookPublisher
+from observer_v2.moltbook_service import _extract_posts
 
 
 def test_internal_moltbook_publish_returns_missing_key_without_config(client: TestClient) -> None:
@@ -67,3 +68,10 @@ def test_post_formatter_includes_url_and_btc() -> None:
     )
     assert "http://example.local" in content
     assert "bc1example" in content
+
+
+def test_extract_posts_supports_nested_payload_shapes() -> None:
+    payload = {"data": {"posts": [{"id": "1", "title": "hello"}]}}
+    posts = _extract_posts(payload)
+    assert len(posts) == 1
+    assert posts[0]["id"] == "1"

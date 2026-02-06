@@ -85,6 +85,21 @@ class MoltbookPublisher:
         except (error.URLError, json.JSONDecodeError) as exc:
             return {"success": False, "error": str(exc)}
 
+    def get_feed(self, limit: int = 20) -> dict[str, Any]:
+        if not self.api_key.strip():
+            return {"success": False, "error": "missing_api_key"}
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        try:
+            data = _default_get_json(
+                f"{self.base_url}/posts?sort=new&limit={max(1, min(limit, 100))}",
+                headers,
+                self.timeout_seconds,
+            )
+            data["success"] = True
+            return data
+        except (error.URLError, json.JSONDecodeError) as exc:
+            return {"success": False, "error": str(exc)}
+
     def create_comment(self, post_id: str, content: str, parent_id: str | None = None) -> dict[str, Any]:
         if not self.api_key.strip():
             return {"success": False, "error": "missing_api_key"}

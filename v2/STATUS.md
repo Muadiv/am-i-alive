@@ -44,6 +44,7 @@ Last updated: 2026-02-05
 - [x] Added automatic Moltbook verification challenge solving for post publish flow.
 - [x] Added Moltbook reply-reading loop and automatic reply endpoint.
 - [x] Upgraded Moltbook post body to include context, URL, and funding call-to-action.
+- [x] Expanded Moltbook reply loop to also engage recent feed posts.
 
 ## In Progress
 
