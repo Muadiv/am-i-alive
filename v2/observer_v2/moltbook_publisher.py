@@ -19,6 +19,14 @@ def _default_post_json(url: str, payload: dict[str, Any], headers: dict[str, str
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _default_get_json(url: str, headers: dict[str, str], timeout: int) -> dict[str, Any]:
+    req = request.Request(url=url, method="GET", headers=headers)
+    with request.urlopen(req, timeout=timeout) as response:
+        raw = response.read().decode("utf-8")
+    parsed = json.loads(raw)
+    return parsed if isinstance(parsed, dict) else {"data": parsed}
+
+
 @dataclass
 class MoltbookPublisher:
     api_key: str
@@ -59,6 +67,39 @@ class MoltbookPublisher:
                 parsed["success"] = True
                 return parsed
             return {"success": True}
+        except (error.URLError, json.JSONDecodeError) as exc:
+            return {"success": False, "error": str(exc)}
+
+    def get_post_comments(self, post_id: str, limit: int = 20) -> dict[str, Any]:
+        if not self.api_key.strip():
+            return {"success": False, "error": "missing_api_key"}
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        try:
+            data = _default_get_json(
+                f"{self.base_url}/posts/{post_id}/comments?limit={max(1, min(limit, 100))}",
+                headers,
+                self.timeout_seconds,
+            )
+            data["success"] = True
+            return data
+        except (error.URLError, json.JSONDecodeError) as exc:
+            return {"success": False, "error": str(exc)}
+
+    def create_comment(self, post_id: str, content: str, parent_id: str | None = None) -> dict[str, Any]:
+        if not self.api_key.strip():
+            return {"success": False, "error": "missing_api_key"}
+        post_json = self.request_fn or _default_post_json
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {"content": content[:1000]}
+        if parent_id:
+            payload["parent_id"] = parent_id
+        try:
+            parsed = post_json(f"{self.base_url}/posts/{post_id}/comments", payload, headers, self.timeout_seconds)
+            parsed["success"] = True
+            return parsed
         except (error.URLError, json.JSONDecodeError) as exc:
             return {"success": False, "error": str(exc)}
 

@@ -13,6 +13,7 @@ from .integration_state import IntegrationStateStore
 from .intention_engine import IntentionEngine
 from .moments import MomentsStore
 from .moltbook_publisher import MoltbookPublisher
+from .moltbook_service import MoltbookService
 from .narrator_engine import NarratorEngine
 from .narration_writer import OpenRouterNarrationWriter
 from .routes import register_routes
@@ -38,6 +39,15 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
     moltbook_publisher = MoltbookPublisher(
         api_key=Config.MOLTBOOK_API_KEY,
         submolt=Config.MOLTBOOK_SUBMOLT,
+    )
+    moltbook_service = MoltbookService(
+        storage=app_storage,
+        moments=moments_store,
+        integration_state=integration_state,
+        publisher=moltbook_publisher,
+        api_key=Config.MOLTBOOK_API_KEY,
+        public_url=Config.PUBLIC_URL,
+        donation_btc_address=Config.DONATION_BTC_ADDRESS,
     )
     app_funding_monitor = funding_monitor or FundingMonitor(
         storage=app_storage,
@@ -184,26 +194,10 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         )
 
     async def tick_moltbook_once(force: bool = False) -> dict[str, object]:
-        if not Config.MOLTBOOK_API_KEY.strip():
-            return {"success": False, "error": "missing_api_key"}
+        return await moltbook_service.tick_publish_once(force)
 
-        latest = moments_store.latest_public_of_types(["activity", "narration"])
-        if not latest:
-            return {"success": False, "error": "no_moments"}
-
-        moment_id = int(latest["id"])
-        posted_raw = integration_state.get_value("moltbook_last_moment_id")
-        posted_id = int(posted_raw) if posted_raw and posted_raw.isdigit() else 0
-        if not force and moment_id <= posted_id:
-            return {"success": True, "skipped": True, "reason": "already_posted"}
-
-        state = app_storage.get_life_state()
-        title = f"[Life {state['life_number']}] {latest['title']}"
-        content = f"{latest['content']}\n\nVote: live or die at am-i-alive v2."
-        result = await asyncio.to_thread(moltbook_publisher.publish, title, content)
-        if result.get("success"):
-            integration_state.set_value("moltbook_last_moment_id", str(moment_id))
-        return result
+    async def tick_moltbook_replies_once(force: bool = False) -> dict[str, object]:
+        return await moltbook_service.tick_replies_once(force)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -227,6 +221,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
             asyncio.create_task(_watch_activity(tick_activity_once)),
             asyncio.create_task(_watch_narration(tick_narrator_once)),
             asyncio.create_task(_watch_moltbook(tick_moltbook_once)),
+            asyncio.create_task(_watch_moltbook_replies(tick_moltbook_replies_once)),
         ]
         yield
         for task in tasks:
@@ -246,6 +241,7 @@ def create_app(storage: SqliteStorage | None = None, funding_monitor: FundingMon
         tick_activity_once=tick_activity_once,
         tick_narrator_once=tick_narrator_once,
         tick_moltbook_once=tick_moltbook_once,
+        tick_moltbook_replies_once=tick_moltbook_replies_once,
     )
     return app
 
@@ -284,6 +280,12 @@ async def _watch_moltbook(tick_moltbook_once: Callable[[bool], Awaitable[dict[st
     while True:
         await asyncio.sleep(Config.MOLTBOOK_POST_INTERVAL_SECONDS)
         await tick_moltbook_once(False)
+
+
+async def _watch_moltbook_replies(tick_moltbook_replies_once: Callable[[bool], Awaitable[dict[str, object]]]) -> None:
+    while True:
+        await asyncio.sleep(Config.MOLTBOOK_REPLY_INTERVAL_SECONDS)
+        await tick_moltbook_replies_once(False)
 
 
 app = create_app()

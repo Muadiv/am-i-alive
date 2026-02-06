@@ -25,6 +25,7 @@ def register_routes(
     tick_activity_once: Callable[[bool], Awaitable[dict[str, object] | None]],
     tick_narrator_once: Callable[[bool], Awaitable[dict[str, object] | None]],
     tick_moltbook_once: Callable[[bool], Awaitable[dict[str, object]]],
+    tick_moltbook_replies_once: Callable[[bool], Awaitable[dict[str, object]]],
 ) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -205,6 +206,17 @@ def register_routes(
         data = payload or {}
         force = bool(data.get("force", False))
         result = await tick_moltbook_once(force)
+        return {"success": bool(result.get("success", False)), "data": result}
+
+    @app.post("/api/internal/moltbook/replies/tick")
+    async def tick_moltbook_replies(
+        payload: dict[str, object] | None = None,
+        x_internal_key: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        _require_internal_auth(x_internal_key)
+        data = payload or {}
+        force = bool(data.get("force", False))
+        result = await tick_moltbook_replies_once(force)
         return {"success": bool(result.get("success", False)), "data": result}
 
     @app.post("/api/internal/lifecycle/transition")

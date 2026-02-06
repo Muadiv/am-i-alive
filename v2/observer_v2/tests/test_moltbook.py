@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from observer_v2.moltbook_formatter import build_post_content
 from observer_v2.moltbook_publisher import MoltbookPublisher
 
 
 def test_internal_moltbook_publish_returns_missing_key_without_config(client: TestClient) -> None:
     response = client.post("/api/internal/moltbook/publish", json={"force": True})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["data"]["error"] == "missing_api_key"
+
+
+def test_internal_moltbook_replies_returns_missing_key_without_config(client: TestClient) -> None:
+    response = client.post("/api/internal/moltbook/replies/tick", json={"force": True})
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is False
@@ -42,3 +51,19 @@ def test_moltbook_publisher_auto_verifies_challenge() -> None:
     verify_calls = [payload for url, payload in calls if url.endswith("/verify")]
     assert verify_calls
     assert verify_calls[0]["answer"] == "49.00"
+
+
+def test_post_formatter_includes_url_and_btc() -> None:
+    content = build_post_content(
+        latest_title="Current survival strategy",
+        latest_content="Goal this cycle is to produce a concrete result.",
+        life_number=1,
+        state="active",
+        intention="survive",
+        live_votes=2,
+        die_votes=1,
+        public_url="http://example.local",
+        btc_address="bc1example",
+    )
+    assert "http://example.local" in content
+    assert "bc1example" in content

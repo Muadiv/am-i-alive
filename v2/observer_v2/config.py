@@ -19,6 +19,8 @@ class Config:
     OPENROUTER_BASE_URL = os.getenv("V2_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_APP_URL = os.getenv("V2_OPENROUTER_APP_URL", "http://localhost:8080")
     OPENROUTER_APP_NAME = os.getenv("V2_OPENROUTER_APP_NAME", "am-i-alive-v2")
+    PUBLIC_URL = os.getenv("V2_PUBLIC_URL", "http://127.0.0.1:8080")
     MOLTBOOK_API_KEY = os.getenv("V2_MOLTBOOK_API_KEY", "")
     MOLTBOOK_SUBMOLT = os.getenv("V2_MOLTBOOK_SUBMOLT", "general")
     MOLTBOOK_POST_INTERVAL_SECONDS = int(os.getenv("V2_MOLTBOOK_POST_INTERVAL_SECONDS", "1800"))
+    MOLTBOOK_REPLY_INTERVAL_SECONDS = int(os.getenv("V2_MOLTBOOK_REPLY_INTERVAL_SECONDS", "300"))
